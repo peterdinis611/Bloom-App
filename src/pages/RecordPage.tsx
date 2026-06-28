@@ -20,11 +20,42 @@ import {
   Pencil,
   FolderOpen,
   X,
+  AlertCircle,
 } from "lucide-react"
 import { invoke } from "@tauri-apps/api/core"
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow"
 import { cn, formatDuration } from "@/lib/utils"
 import type { RecordingSettings, RecordingSource, RecordingStatus, ScreenTarget } from "@/types"
+
+// ── MediaRecorder helpers ─────────────────────────────────────────────────────
+/**
+ * Tauri on macOS uses WKWebView (WebKit) – no video/webm support.
+ * Must use video/mp4 on macOS; webm works on Windows/Linux.
+ */
+function getSupportedMimeType(): string {
+  const candidates = [
+    "video/mp4;codecs=avc1,mp4a.40.2",
+    "video/mp4;codecs=avc1",
+    "video/mp4",
+    "video/webm;codecs=h264",
+    "video/webm;codecs=vp9",
+    "video/webm;codecs=vp8",
+    "video/webm",
+  ]
+  for (const t of candidates) {
+    if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(t)) return t
+  }
+  return ""
+}
+
+function mimeToExt(mime: string): string {
+  return mime.includes("mp4") ? "mp4" : "webm"
+}
+
+/** Convert a Blob to Uint8Array without base64 encoding. */
+async function blobToU8(blob: Blob): Promise<Uint8Array> {
+  return new Uint8Array(await blob.arrayBuffer())
+}
 
 // ── Mock screen / window targets ─────────────────────────────────────────────
 const SCREEN_TARGETS: ScreenTarget[] = [
@@ -356,24 +387,32 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     countdown: 3,
   })
 
-  const [status,    setStatus]    = useState<RecordingStatus>("idle")
-  const [elapsed,   setElapsed]   = useState(0)
-  const [countdown, setCountdown] = useState(0)
-  const [bloomDir,  setBloomDir]  = useState<string | null>(null)
+  const [status,     setStatus]     = useState<RecordingStatus>("idle")
+  const [elapsed,    setElapsed]    = useState(0)
+  const [countdown,  setCountdown]  = useState(0)
+  const [bloomDir,   setBloomDir]   = useState<string | null>(null)
   const [showBanner, setShowBanner] = useState(false)
   const [annotating, setAnnotating] = useState(false)
+  const [error,      setError]      = useState<string | null>(null)
 
-  const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null)
-  const mediaRef     = useRef<MediaRecorder | null>(null)
-  const chunksRef    = useRef<Blob[]>([])
-  const streamRef    = useRef<MediaStream | null>(null)
+  const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null)
+  const cdTimerRef     = useRef<ReturnType<typeof setInterval> | null>(null)
+  const countdownVal   = useRef(0)
+  const mediaRef       = useRef<MediaRecorder | null>(null)
+  const streamRef      = useRef<MediaStream | null>(null)
+  const mimeTypeRef    = useRef("")
+  const sessionIdRef   = useRef<number | null>(null)   // Rust streaming session
+  const filenameRef    = useRef("")                     // current recording filename
 
   // Fetch save dir on mount
   useEffect(() => {
     invoke<string>("get_bloom_dir")
       .then((dir) => { setBloomDir(dir); setShowBanner(true) })
       .catch(() => setBloomDir("~/Movies/Bloom"))
-    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+    return () => {
+      if (timerRef.current)   clearInterval(timerRef.current)
+      if (cdTimerRef.current) clearInterval(cdTimerRef.current)
+    }
   }, [])
 
   const isActive   = status === "recording" || status === "paused"
@@ -381,95 +420,130 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   const showConfig = !isActive && !isBusy
   const needsScreen = settings.source === "screen" || settings.source === "both"
 
-  // ── Recording helpers ───────────────────────────────────────────────────────
-  const startTimer = useCallback(() => {
+  // ── Timer helpers ────────────────────────────────────────────────────────────
+  const startElapsedTimer = useCallback(() => {
     timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000)
   }, [])
 
-  const stopTimer = useCallback(() => {
+  const stopElapsedTimer = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
   }, [])
 
+  // ── Screen / mic capture ─────────────────────────────────────────────────────
   async function captureScreen(): Promise<MediaStream | null> {
     try {
-      const constraints: DisplayMediaStreamOptions = {
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: { frameRate: settings.quality === "1080p" ? 30 : 24 } as MediaTrackConstraints,
         audio: settings.systemAudio,
-      }
-      const screenStream = await navigator.mediaDevices.getDisplayMedia(constraints)
-
+      })
       if (settings.microphone) {
         try {
-          const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-          const combined  = new MediaStream([
-            ...screenStream.getTracks(),
-            ...micStream.getAudioTracks(),
-          ])
-          return combined
-        } catch {
-          return screenStream
-        }
+          const mic = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+          return new MediaStream([...screenStream.getTracks(), ...mic.getAudioTracks()])
+        } catch { /* mic denied – continue */ }
       }
       return screenStream
+    } catch (err: unknown) {
+      const name = (err as { name?: string })?.name ?? ""
+      if (name !== "NotAllowedError" && name !== "AbortError") {
+        setError("Screen capture failed. Go to System Settings → Privacy & Security → Screen Recording and allow Bloom.")
+      }
+      return null
+    }
+  }
+
+  /**
+   * Opens a Rust streaming session and wires MediaRecorder so each 500ms chunk
+   * is sent directly to Rust (no JS-side accumulation).
+   * Memory usage stays constant regardless of recording duration.
+   */
+  async function startCapture(): Promise<boolean> {
+    const stream = await captureScreen()
+    if (!stream) return false
+
+    streamRef.current   = stream
+    mimeTypeRef.current = getSupportedMimeType()
+    const ext           = mimeToExt(mimeTypeRef.current)
+    const ts            = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
+    filenameRef.current = `recording-${ts}.${ext}`
+
+    // Open Rust file session
+    try {
+      const id = await invoke<number>("open_session", { filename: filenameRef.current })
+      sessionIdRef.current = id
+    } catch (e) {
+      setError(`Could not open recording file: ${e}`)
+      stream.getTracks().forEach((t) => t.stop())
+      return false
+    }
+
+    const opts: MediaRecorderOptions = mimeTypeRef.current ? { mimeType: mimeTypeRef.current } : {}
+    const recorder = new MediaRecorder(stream, opts)
+
+    // Each chunk → Rust immediately (no in-memory accumulation)
+    recorder.ondataavailable = async (e) => {
+      if (e.data.size === 0 || sessionIdRef.current === null) return
+      try {
+        const bytes = await blobToU8(e.data)
+        await invoke("write_chunk", { sessionId: sessionIdRef.current, data: Array.from(bytes) })
+      } catch { /* non-fatal: chunk lost */ }
+    }
+
+    // User clicks "Stop sharing" in macOS menu bar
+    stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+      if (mediaRef.current?.state !== "inactive") stopRecording()
+    })
+
+    recorder.start(500) // emit chunk every 500 ms
+    mediaRef.current = recorder
+    return true
+  }
+
+  async function finaliseCapture(): Promise<string | null> {
+    streamRef.current?.getTracks().forEach((t) => t.stop())
+    streamRef.current = null
+
+    const sid = sessionIdRef.current
+    sessionIdRef.current = null
+    mediaRef.current     = null
+
+    if (sid === null) return null
+    try {
+      return await invoke<string>("close_session", { sessionId: sid })
     } catch {
       return null
     }
   }
 
-  async function startCapture() {
-    const stream = await captureScreen()
-    if (!stream) return false
-    streamRef.current = stream
-    chunksRef.current = []
-
-    const recorder = new MediaRecorder(stream, { mimeType: "video/webm;codecs=vp9" })
-    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
-    recorder.start(500)
-    mediaRef.current = recorder
-    return true
-  }
-
-  async function saveCapture() {
-    const chunks  = chunksRef.current
+  async function abortCapture() {
     streamRef.current?.getTracks().forEach((t) => t.stop())
     streamRef.current = null
     mediaRef.current  = null
 
-    if (!chunks.length) return
-    const blob     = new Blob(chunks, { type: "video/webm" })
-    const filename = `recording-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`
-
-    // Convert to base64 for Rust command
-    const buffer  = await blob.arrayBuffer()
-    const bytes   = new Uint8Array(buffer)
-    let b64 = ""
-    const chunk   = 8192
-    for (let i = 0; i < bytes.length; i += chunk) {
-      b64 += String.fromCharCode(...bytes.subarray(i, i + chunk))
-    }
-    const data_b64 = btoa(b64)
-
-    try {
-      await invoke("save_recording", { filename, data_b64 })
-    } catch {
-      // fallback: browser download
-      const url = URL.createObjectURL(blob)
-      const a   = document.createElement("a")
-      a.href = url; a.download = filename; a.click()
-      URL.revokeObjectURL(url)
+    const sid = sessionIdRef.current
+    sessionIdRef.current = null
+    if (sid !== null) {
+      await invoke("cancel_session", { sessionId: sid }).catch(() => {})
     }
   }
 
-  // ── State machine ───────────────────────────────────────────────────────────
+  // ── State machine ─────────────────────────────────────────────────────────────
   function startCountdown() {
+    setError(null)
     if (settings.countdown === 0) { doStartRecording(); return }
+
+    countdownVal.current = settings.countdown
     setCountdown(settings.countdown)
     setStatus("countdown")
-    const tick = setInterval(() => {
-      setCountdown((c) => {
-        if (c <= 1) { clearInterval(tick); doStartRecording(); return 0 }
-        return c - 1
-      })
+
+    cdTimerRef.current = setInterval(() => {
+      countdownVal.current -= 1
+      setCountdown(countdownVal.current)
+      if (countdownVal.current <= 0) {
+        clearInterval(cdTimerRef.current!)
+        cdTimerRef.current = null
+        doStartRecording()
+      }
     }, 1000)
   }
 
@@ -479,41 +553,52 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     setStatus("recording")
     setElapsed(0)
     onRecordingChange?.(true)
-    startTimer()
+    startElapsedTimer()
   }
 
   function pauseRecording() {
-    stopTimer()
-    mediaRef.current?.pause()
+    stopElapsedTimer()
+    try { mediaRef.current?.pause() } catch {}
     setStatus("paused")
   }
 
   function resumeRecording() {
-    mediaRef.current?.resume()
+    try { mediaRef.current?.resume() } catch {}
     setStatus("recording")
-    startTimer()
+    startElapsedTimer()
   }
 
   async function stopRecording() {
-    stopTimer()
+    stopElapsedTimer()
     setAnnotating(false)
     closeAnnotateWindow()
     onRecordingChange?.(false)
     setStatus("processing")
 
-    // Wait for final chunk
+    // Stop MediaRecorder and wait for last ondataavailable to fire
     await new Promise<void>((res) => {
-      if (!mediaRef.current) { res(); return }
-      mediaRef.current.onstop = () => res()
-      mediaRef.current.stop()
+      const rec = mediaRef.current
+      if (!rec || rec.state === "inactive") { res(); return }
+      rec.addEventListener("stop", () => res(), { once: true })
+      rec.stop()
     })
 
-    await saveCapture()
+    // Flush + close the Rust file (all chunks already streamed)
+    const savedPath = await finaliseCapture()
+    if (savedPath) {
+      setBloomDir(savedPath.substring(0, savedPath.lastIndexOf("/")))
+    }
+
     setStatus("done")
     setTimeout(() => { setStatus("idle"); setElapsed(0) }, 2500)
   }
 
-  function cancelCountdown() { setStatus("idle"); setCountdown(0) }
+  function cancelCountdown() {
+    if (cdTimerRef.current) { clearInterval(cdTimerRef.current); cdTimerRef.current = null }
+    abortCapture()
+    setStatus("idle")
+    setCountdown(0)
+  }
 
   async function toggleAnnotate() {
     if (annotating) {
@@ -531,6 +616,17 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
       {/* Save banner */}
       {showBanner && bloomDir && (
         <SaveBanner path={bloomDir} onDismiss={() => setShowBanner(false)} />
+      )}
+
+      {/* Error banner */}
+      {error && (
+        <div className="fade-up flex items-start gap-3 rounded-xl border border-red-500/25 bg-red-500/8 px-3.5 py-3">
+          <AlertCircle className="size-4 shrink-0 text-red-400 mt-0.5" />
+          <p className="flex-1 text-xs font-medium text-red-300 leading-relaxed">{error}</p>
+          <button onClick={() => setError(null)} className="text-muted-foreground hover:text-foreground">
+            <X className="size-3.5" />
+          </button>
+        </div>
       )}
 
       {/* Preview */}
