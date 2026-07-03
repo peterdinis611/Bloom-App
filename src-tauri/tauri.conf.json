@@ -24,7 +24,14 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$HOME/Movies/Bloom/**",
+          "$HOME/Videos/Bloom/**"
+        ]
+      }
     }
   },
   "bundle": {

@@ -22,10 +22,20 @@ import {
   X,
   AlertCircle,
 } from "lucide-react"
-import { invoke } from "@tauri-apps/api/core"
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow"
 import { cn, formatDuration } from "@/lib/utils"
 import type { RecordingSettings, RecordingSource, RecordingStatus, ScreenTarget } from "@/types"
+import {
+  getBloomDir,
+  openSession,
+  writeChunk,
+  closeSession,
+  cancelSession,
+  getDiskSpace,
+  revealInFinder,
+  formatBytes,
+  isLowDiskSpace,
+} from "@/hooks/useBloomBackend"
 
 // ── MediaRecorder helpers ─────────────────────────────────────────────────────
 /**
@@ -394,6 +404,8 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   const [showBanner, setShowBanner] = useState(false)
   const [annotating, setAnnotating] = useState(false)
   const [error,      setError]      = useState<string | null>(null)
+  const [diskWarn,   setDiskWarn]   = useState<string | null>(null)
+  const [savedMeta,  setSavedMeta]  = useState<{ title: string; size: string } | null>(null)
 
   const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null)
   const cdTimerRef     = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -404,11 +416,20 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   const sessionIdRef   = useRef<number | null>(null)   // Rust streaming session
   const filenameRef    = useRef("")                     // current recording filename
 
-  // Fetch save dir on mount
+  // Fetch save dir + disk info on mount
   useEffect(() => {
-    invoke<string>("get_bloom_dir")
+    getBloomDir()
       .then((dir) => { setBloomDir(dir); setShowBanner(true) })
       .catch(() => setBloomDir("~/Movies/Bloom"))
+
+    getDiskSpace()
+      .then((info) => {
+        if (isLowDiskSpace(info, 500)) {
+          setDiskWarn(`Low disk space: only ${formatBytes(info.available_bytes)} available`)
+        }
+      })
+      .catch(() => {})
+
     return () => {
       if (timerRef.current)   clearInterval(timerRef.current)
       if (cdTimerRef.current) clearInterval(cdTimerRef.current)
@@ -467,9 +488,15 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     const ts            = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
     filenameRef.current = `recording-${ts}.${ext}`
 
-    // Open Rust file session
+    // Open Rust streaming session with rich metadata
     try {
-      const id = await invoke<number>("open_session", { filename: filenameRef.current })
+      const id = await openSession(filenameRef.current, {
+        source:           settings.source,
+        quality:          settings.quality,
+        has_microphone:   settings.microphone,
+        has_system_audio: settings.systemAudio,
+        target_label:     settings.screenTarget.label,
+      })
       sessionIdRef.current = id
     } catch (e) {
       setError(`Could not open recording file: ${e}`)
@@ -480,26 +507,26 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     const opts: MediaRecorderOptions = mimeTypeRef.current ? { mimeType: mimeTypeRef.current } : {}
     const recorder = new MediaRecorder(stream, opts)
 
-    // Each chunk → Rust immediately (no in-memory accumulation)
+    // Each 500ms chunk → Rust immediately (no JS-side accumulation)
     recorder.ondataavailable = async (e) => {
       if (e.data.size === 0 || sessionIdRef.current === null) return
       try {
         const bytes = await blobToU8(e.data)
-        await invoke("write_chunk", { sessionId: sessionIdRef.current, data: Array.from(bytes) })
-      } catch { /* non-fatal: chunk lost */ }
+        await writeChunk(sessionIdRef.current, Array.from(bytes))
+      } catch { /* non-fatal: single chunk lost is tolerable */ }
     }
 
-    // User clicks "Stop sharing" in macOS menu bar
+    // User clicks "Stop sharing" in macOS menu bar → auto-stop recording
     stream.getVideoTracks()[0]?.addEventListener("ended", () => {
       if (mediaRef.current?.state !== "inactive") stopRecording()
     })
 
-    recorder.start(500) // emit chunk every 500 ms
+    recorder.start(500)
     mediaRef.current = recorder
     return true
   }
 
-  async function finaliseCapture(): Promise<string | null> {
+  async function finaliseCapture() {
     streamRef.current?.getTracks().forEach((t) => t.stop())
     streamRef.current = null
 
@@ -507,12 +534,17 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     sessionIdRef.current = null
     mediaRef.current     = null
 
-    if (sid === null) return null
+    if (sid === null) return
+
     try {
-      return await invoke<string>("close_session", { sessionId: sid })
-    } catch {
-      return null
-    }
+      const meta = await closeSession(sid)
+      setSavedMeta({
+        title: meta.title,
+        size:  formatBytes(meta.file_size_bytes),
+      })
+      // Refresh bloom dir in case it changed
+      if (bloomDir) setBloomDir(bloomDir)
+    } catch { /* non-critical */ }
   }
 
   async function abortCapture() {
@@ -522,9 +554,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
 
     const sid = sessionIdRef.current
     sessionIdRef.current = null
-    if (sid !== null) {
-      await invoke("cancel_session", { sessionId: sid }).catch(() => {})
-    }
+    if (sid !== null) cancelSession(sid).catch(() => {})
   }
 
   // ── State machine ─────────────────────────────────────────────────────────────
@@ -584,10 +614,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     })
 
     // Flush + close the Rust file (all chunks already streamed)
-    const savedPath = await finaliseCapture()
-    if (savedPath) {
-      setBloomDir(savedPath.substring(0, savedPath.lastIndexOf("/")))
-    }
+    await finaliseCapture()
 
     setStatus("done")
     setTimeout(() => { setStatus("idle"); setElapsed(0) }, 2500)
@@ -616,6 +643,17 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
       {/* Save banner */}
       {showBanner && bloomDir && (
         <SaveBanner path={bloomDir} onDismiss={() => setShowBanner(false)} />
+      )}
+
+      {/* Disk space warning */}
+      {diskWarn && (
+        <div className="fade-up flex items-center gap-3 rounded-xl border border-amber-500/25 bg-amber-500/8 px-3.5 py-2.5">
+          <AlertCircle className="size-4 shrink-0 text-amber-400" />
+          <p className="flex-1 text-xs font-medium text-amber-300">{diskWarn}</p>
+          <button onClick={() => setDiskWarn(null)} className="text-muted-foreground hover:text-foreground">
+            <X className="size-3.5" />
+          </button>
+        </div>
       )}
 
       {/* Error banner */}
@@ -748,17 +786,33 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
           </>
         )}
 
-        {(status === "processing" || status === "done") && (
-          <div className={cn(
-            "flex flex-1 items-center justify-center gap-2.5 rounded-xl py-4 text-sm font-semibold",
-            status === "done"
-              ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-              : "border border-border/50 bg-[var(--surface)] text-muted-foreground"
-          )}>
-            {status === "processing"
-              ? <><div className="size-4 animate-spin rounded-full border-2 border-muted-foreground border-t-foreground" /> Saving…</>
-              : <><CheckCircle2 className="size-4" /> Saved to ~/Movies/Bloom</>
-            }
+        {status === "processing" && (
+          <div className="flex flex-1 items-center justify-center gap-2.5 rounded-xl border border-border/50 bg-[var(--surface)] py-4 text-sm font-semibold text-muted-foreground">
+            <div className="size-4 animate-spin rounded-full border-2 border-muted-foreground border-t-foreground" />
+            Saving…
+          </div>
+        )}
+
+        {status === "done" && (
+          <div className="flex flex-1 items-center gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-3">
+            <CheckCircle2 className="size-5 shrink-0 text-emerald-400" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-emerald-300">Saved!</p>
+              {savedMeta && (
+                <p className="truncate text-[11px] text-muted-foreground font-mono">
+                  {savedMeta.title} · {savedMeta.size}
+                </p>
+              )}
+            </div>
+            {bloomDir && (
+              <button
+                onClick={() => revealInFinder(bloomDir)}
+                className="flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-semibold text-emerald-400 transition-all hover:bg-emerald-500/20"
+              >
+                <FolderOpen className="size-3.5" />
+                Show
+              </button>
+            )}
           </div>
         )}
       </div>
