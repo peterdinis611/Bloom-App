@@ -38,11 +38,13 @@ use serde::{Deserialize, Serialize};
 use tauri::Manager;
 use uuid::Uuid;
 
+mod video;
+
 // ────────────────────────────────────────────────────────────────────────────
 // Bloom directory helpers
 // ────────────────────────────────────────────────────────────────────────────
 
-fn bloom_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn bloom_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let home = app.path().home_dir().map_err(|e| e.to_string())?;
 
     #[cfg(target_os = "macos")]
@@ -55,7 +57,7 @@ fn bloom_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-fn meta_path_for(video_path: &Path) -> PathBuf {
+pub(crate) fn meta_path_for(video_path: &Path) -> PathBuf {
     video_path.with_extension("bloom.json")
 }
 
@@ -247,13 +249,13 @@ fn load_all_recordings(dir: &Path) -> Vec<RecordingEntry> {
     recordings
 }
 
-fn find_recording(dir: &Path, id: &str) -> Option<RecordingEntry> {
+pub(crate) fn find_recording(dir: &Path, id: &str) -> Option<RecordingEntry> {
     load_all_recordings(dir)
         .into_iter()
         .find(|r| r.meta.id == id)
 }
 
-fn now_iso() -> String {
+pub(crate) fn now_iso() -> String {
     // Use chrono if available; otherwise fall back to SystemTime
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now()
@@ -611,6 +613,7 @@ fn reveal_in_finder(path: String) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(Sessions::default())
+        .manage(video::VideoJobs::default())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             // directory
@@ -631,6 +634,12 @@ pub fn run() {
             rename_recording,
             validate_recording,
             reveal_in_finder,
+            // video optimisation
+            video::check_ffmpeg,
+            video::get_video_info,
+            video::get_thumbnail,
+            video::optimize_video,
+            video::cancel_optimize,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Bloom");

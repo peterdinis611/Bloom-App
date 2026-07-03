@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSCameraUsageDescription</key>
+  <string>Bloom uses your camera to record webcam video and picture-in-picture overlays.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Bloom uses your microphone to record narration alongside your video.</string>
+</dict>
+</plist>

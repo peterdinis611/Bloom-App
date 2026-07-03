@@ -5,6 +5,7 @@
   "windows": ["main", "annotate"],
   "permissions": [
     "core:default",
+    "core:event:default",
     "opener:default",
     "core:window:allow-create",
     "core:window:allow-destroy",

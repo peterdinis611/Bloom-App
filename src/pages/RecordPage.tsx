@@ -14,17 +14,18 @@ import {
   Play,
   ChevronDown,
   CheckCircle2,
-  LayoutGrid,
-  AppWindow,
+  CheckCircle2 as CheckIcon,
   ChevronRight,
   Pencil,
   FolderOpen,
   X,
   AlertCircle,
+  RefreshCw,
+  Info,
 } from "lucide-react"
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow"
 import { cn, formatDuration } from "@/lib/utils"
-import type { RecordingSettings, RecordingSource, RecordingStatus, ScreenTarget } from "@/types"
+import type { MonitorInfo, RecordingSettings, RecordingSource, RecordingStatus, ScreenTarget } from "@/types"
 import {
   getBloomDir,
   openSession,
@@ -36,6 +37,8 @@ import {
   formatBytes,
   isLowDiskSpace,
 } from "@/hooks/useBloomBackend"
+import { useMediaDevices } from "@/hooks/useMediaDevices"
+import { startCapture, openCameraStream, type CaptureHandle } from "@/lib/capture"
 
 // ── MediaRecorder helpers ─────────────────────────────────────────────────────
 /**
@@ -67,15 +70,18 @@ async function blobToU8(blob: Blob): Promise<Uint8Array> {
   return new Uint8Array(await blob.arrayBuffer())
 }
 
-// ── Mock screen / window targets ─────────────────────────────────────────────
-const SCREEN_TARGETS: ScreenTarget[] = [
-  { id: "screen-1", label: "Built-in Retina Display", type: "screen", index: 1 },
-  { id: "screen-2", label: "External Monitor",        type: "screen", index: 2 },
-  { id: "win-1",    label: "Google Chrome",           type: "window", appName: "Chrome"   },
-  { id: "win-2",    label: "Visual Studio Code",      type: "window", appName: "VSCode"   },
-  { id: "win-3",    label: "Figma",                   type: "window", appName: "Figma"    },
-  { id: "win-4",    label: "Terminal",                type: "window", appName: "Terminal" },
-]
+/** Build a ScreenTarget from a real display returned by the backend. */
+function monitorToTarget(m: MonitorInfo, index: number): ScreenTarget {
+  return {
+    id: m.id,
+    label: `${m.name}${m.is_primary ? " (Primary)" : ""}`,
+    type: "screen",
+    index: index + 1,
+    appName: `${m.width}×${m.height}`,
+  }
+}
+
+const DEFAULT_TARGET: ScreenTarget = { id: "default", label: "Primary Display", type: "screen", index: 1 }
 
 // ── Annotation window helper ──────────────────────────────────────────────────
 let annotateWin: WebviewWindow | null = null
@@ -106,11 +112,25 @@ async function closeAnnotateWindow() {
   try { await annotateWin?.hide() } catch {}
 }
 
-// ── Screen picker ─────────────────────────────────────────────────────────────
-function ScreenPicker({ value, onChange }: { value: ScreenTarget; onChange: (t: ScreenTarget) => void }) {
+// ── Generic dropdown select ────────────────────────────────────────────────────
+interface SelectOption {
+  id: string
+  label: string
+  sub?: string
+  icon?: React.FC<{ className?: string }>
+}
+
+function Dropdown({ value, options, onChange, icon: HeaderIcon, emptyLabel, onRefresh }: {
+  value: string
+  options: SelectOption[]
+  onChange: (id: string) => void
+  icon: React.FC<{ className?: string }>
+  emptyLabel: string
+  onRefresh?: () => void
+}) {
   const [open, setOpen] = useState(false)
-  const [tab, setTab]   = useState<"screen" | "window">("screen")
-  const ref             = useRef<HTMLDivElement>(null)
+  const ref = useRef<HTMLDivElement>(null)
+  const selected = options.find((o) => o.id === value) ?? options[0]
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
@@ -120,8 +140,6 @@ function ScreenPicker({ value, onChange }: { value: ScreenTarget; onChange: (t: 
     return () => document.removeEventListener("mousedown", close)
   }, [open])
 
-  const filtered = SCREEN_TARGETS.filter((t) => t.type === tab)
-
   return (
     <div ref={ref} className="relative w-full">
       <button
@@ -130,70 +148,58 @@ function ScreenPicker({ value, onChange }: { value: ScreenTarget; onChange: (t: 
           "flex w-full items-center justify-between gap-2 rounded-xl border px-3.5 py-3 text-left text-sm transition-all",
           open
             ? "border-orange-500/50 bg-orange-500/5 ring-1 ring-orange-500/20"
-            : "border-border bg-[var(--surface)] hover:border-border/80 hover:bg-[var(--surface-hover)]"
+            : "border-border bg-[var(--surface)] hover:border-border/80 hover:bg-[var(--surface-hover)]",
         )}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-orange-500/15">
-            {value.type === "screen"
-              ? <Monitor className="size-4 text-orange-400" />
-              : <AppWindow className="size-4 text-orange-400" />}
+            {(() => { const I = selected?.icon ?? HeaderIcon; return <I className="size-4 text-orange-400" /> })()}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-foreground">{value.label}</p>
-            <p className="text-xs text-muted-foreground">
-              {value.type === "screen" ? `Display ${value.index}` : "Window"}
-            </p>
+            <p className="truncate text-sm font-semibold text-foreground">{selected?.label ?? emptyLabel}</p>
+            {selected?.sub && <p className="truncate text-xs text-muted-foreground">{selected.sub}</p>}
           </div>
         </div>
-        <ChevronDown className={cn("size-4 text-muted-foreground shrink-0 transition-transform duration-200", open && "rotate-180")} />
+        <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-200", open && "rotate-180")} />
       </button>
 
       {open && (
-        <div className="fade-up absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-border bg-card shadow-2xl shadow-black/70 z-50">
-          <div className="flex border-b border-border">
-            {(["screen", "window"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={cn(
-                  "flex flex-1 items-center justify-center gap-1.5 py-2.5 text-xs font-semibold transition-colors",
-                  tab === t ? "border-b-2 border-orange-500 text-orange-400" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {t === "screen" ? <><LayoutGrid className="size-3.5" /> Screens</> : <><AppWindow className="size-3.5" /> Windows</>}
-              </button>
-            ))}
-          </div>
+        <div className="fade-up absolute bottom-full left-0 right-0 z-50 mb-2 overflow-hidden rounded-xl border border-border bg-card shadow-2xl shadow-black/70">
+          {onRefresh && (
+            <button
+              onClick={() => { onRefresh(); }}
+              className="flex w-full items-center gap-2 border-b border-border/60 px-3.5 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <RefreshCw className="size-3" /> Refresh devices
+            </button>
+          )}
           <div className="max-h-48 overflow-y-auto py-1">
-            {filtered.map((target) => {
-              const active = value.id === target.id
+            {options.length === 0 && (
+              <p className="px-3.5 py-3 text-xs text-muted-foreground">{emptyLabel}</p>
+            )}
+            {options.map((opt) => {
+              const active = opt.id === value
+              const I = opt.icon ?? HeaderIcon
               return (
                 <button
-                  key={target.id}
-                  onClick={() => { onChange(target); setOpen(false) }}
+                  key={opt.id}
+                  onClick={() => { onChange(opt.id); setOpen(false) }}
                   className={cn(
                     "flex w-full items-center gap-3 px-3.5 py-2.5 text-sm transition-colors hover:bg-secondary",
-                    active && "bg-orange-500/8"
+                    active && "bg-orange-500/8",
                   )}
                 >
                   <div className={cn(
-                    "flex h-10 w-16 shrink-0 items-center justify-center rounded-lg border",
-                    active ? "border-orange-500/40 bg-orange-500/10" : "border-border/50 bg-secondary/80"
+                    "flex size-8 shrink-0 items-center justify-center rounded-lg border",
+                    active ? "border-orange-500/40 bg-orange-500/10" : "border-border/50 bg-secondary/80",
                   )}>
-                    {target.type === "screen"
-                      ? <Monitor className={cn("size-5", active ? "text-orange-400" : "text-muted-foreground/40")} />
-                      : <AppWindow className={cn("size-5", active ? "text-orange-400" : "text-muted-foreground/40")} />}
+                    <I className={cn("size-4", active ? "text-orange-400" : "text-muted-foreground/50")} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className={cn("truncate font-semibold text-sm", active ? "text-orange-300" : "text-foreground")}>
-                      {target.label}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {target.type === "screen" ? `Display ${target.index}` : target.appName}
-                    </p>
+                    <p className={cn("truncate text-sm font-semibold", active ? "text-orange-300" : "text-foreground")}>{opt.label}</p>
+                    {opt.sub && <p className="truncate text-xs text-muted-foreground">{opt.sub}</p>}
                   </div>
-                  {active && <CheckCircle2 className="size-4 shrink-0 text-orange-400" />}
+                  {active && <CheckIcon className="size-4 shrink-0 text-orange-400" />}
                 </button>
               )
             })}
@@ -217,7 +223,7 @@ function AudioToggle({ active, onIcon: OnIcon, offIcon: OffIcon, label, onChange
         "flex flex-1 items-center gap-2.5 rounded-xl border px-3.5 py-3 text-sm font-medium transition-all",
         active
           ? "border-orange-500/40 bg-orange-500/10 text-orange-300"
-          : "border-border/60 bg-[var(--surface)] text-muted-foreground hover:border-border hover:text-foreground"
+          : "border-border/60 bg-[var(--surface)] text-muted-foreground hover:border-border hover:text-foreground",
       )}
     >
       <Icon className="size-4 shrink-0" />
@@ -243,7 +249,7 @@ function OptionGroup<T extends string>({ label, options, value, onChange }: {
             onClick={() => onChange(o.v)}
             className={cn(
               "flex-1 rounded-lg px-2 py-2 text-xs font-semibold transition-all",
-              o.v === value ? "bg-secondary text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              o.v === value ? "bg-secondary text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
             )}
           >
             {o.label}
@@ -255,72 +261,90 @@ function OptionGroup<T extends string>({ label, options, value, onChange }: {
 }
 
 // ── Preview canvas ─────────────────────────────────────────────────────────────
-function PreviewCanvas({ source, status, elapsed, countdown }: {
-  source: RecordingSource; status: RecordingStatus; elapsed: number; countdown: number
+function PreviewCanvas({ source, status, elapsed, countdown, stream }: {
+  source: RecordingSource; status: RecordingStatus; elapsed: number; countdown: number; stream: MediaStream | null
 }) {
   const isRecording = status === "recording"
   const isPaused    = status === "paused"
   const isActive    = isRecording || isPaused
+  const videoRef    = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    v.srcObject = stream
+    if (stream) v.play().catch(() => {})
+  }, [stream])
+
+  const showVideo = !!stream
 
   return (
     <div className={cn(
       "relative flex flex-1 items-center justify-center overflow-hidden rounded-2xl transition-all duration-500",
-      isRecording ? "border-2 border-red-500/70 glow-red" : "border border-border/50 glow-orange"
+      isRecording ? "border-2 border-red-500/70 glow-red" : "border border-border/50 glow-orange",
     )}>
-      <div className="absolute inset-0">
-        <div className={cn("absolute inset-0 transition-opacity duration-700", isRecording ? "opacity-100" : "opacity-0")}
-          style={{ background: "radial-gradient(ellipse 80% 70% at 50% 50%, rgba(239,68,68,0.06) 0%, transparent 70%)" }}
-        />
-        <div className="absolute inset-0" style={{
-          background: source === "camera"
-            ? "radial-gradient(ellipse 120% 100% at 30% 80%, rgba(16,185,129,0.10) 0%, transparent 60%)"
-            : "radial-gradient(ellipse 120% 100% at 30% 80%, rgba(234,88,12,0.10) 0%, transparent 60%), radial-gradient(ellipse 80% 80% at 80% 20%, rgba(249,115,22,0.07) 0%, transparent 60%)",
-        }} />
-        <div className="absolute inset-0 opacity-[0.04]" style={{
-          backgroundImage: "radial-gradient(circle, rgba(249,115,22,0.9) 1px, transparent 1px)",
-          backgroundSize: "24px 24px",
-        }} />
-        {status === "idle" && <div className="absolute inset-0 shimmer" />}
-      </div>
+      {/* Live video layer */}
+      <video
+        ref={videoRef}
+        muted
+        playsInline
+        className={cn("absolute inset-0 h-full w-full bg-black object-contain transition-opacity duration-300", showVideo ? "opacity-100" : "opacity-0")}
+      />
 
-      {status === "idle" && (
+      {/* Decorative background (only without live video) */}
+      {!showVideo && (
+        <div className="absolute inset-0">
+          <div className="absolute inset-0" style={{
+            background: source === "camera"
+              ? "radial-gradient(ellipse 120% 100% at 30% 80%, rgba(16,185,129,0.10) 0%, transparent 60%)"
+              : "radial-gradient(ellipse 120% 100% at 30% 80%, rgba(234,88,12,0.10) 0%, transparent 60%), radial-gradient(ellipse 80% 80% at 80% 20%, rgba(249,115,22,0.07) 0%, transparent 60%)",
+          }} />
+          <div className="absolute inset-0 opacity-[0.04]" style={{
+            backgroundImage: "radial-gradient(circle, rgba(249,115,22,0.9) 1px, transparent 1px)",
+            backgroundSize: "24px 24px",
+          }} />
+          {status === "idle" && <div className="absolute inset-0 shimmer" />}
+        </div>
+      )}
+
+      {status === "idle" && !showVideo && (
         <div className="relative flex flex-col items-center gap-4">
           <div className={cn(
-            "flex items-center justify-center rounded-2xl border",
-            source === "camera" ? "size-20 border-emerald-500/20 bg-emerald-500/10" : "size-20 border-orange-500/20 bg-orange-500/10"
+            "flex size-20 items-center justify-center rounded-2xl border",
+            source === "camera" ? "border-emerald-500/20 bg-emerald-500/10" : "border-orange-500/20 bg-orange-500/10",
           )}>
             {source === "screen" && <MonitorDot className="size-10 text-orange-400/60" />}
             {source === "camera" && <Camera     className="size-10 text-emerald-400/60" />}
             {source === "both"   && <Layers     className="size-10 text-orange-400/60" />}
           </div>
-          <p className="text-sm text-muted-foreground/50 font-medium">
-            {source === "screen" ? "Screen capture ready" : source === "camera" ? "Camera preview" : "Screen + camera"}
+          <p className="text-sm font-medium text-muted-foreground/50">
+            {source === "screen" ? "Screen capture ready" : source === "camera" ? "Starting camera…" : "Screen + camera"}
           </p>
         </div>
       )}
 
       {status === "countdown" && (
         <div className="relative flex flex-col items-center gap-4">
-          <div key={countdown} className="count-pop flex size-24 items-center justify-center rounded-full border-2 border-orange-500/40 bg-orange-500/10 shadow-xl shadow-orange-500/15">
-            <span className="text-6xl font-black text-orange-300 tabular-nums">{countdown}</span>
+          <div key={countdown} className="count-pop flex size-24 items-center justify-center rounded-full border-2 border-orange-500/40 bg-orange-500/10 shadow-xl shadow-orange-500/15 backdrop-blur-sm">
+            <span className="text-6xl font-black tabular-nums text-orange-300">{countdown}</span>
           </div>
           <p className="text-sm font-medium text-muted-foreground">Starting soon…</p>
         </div>
       )}
 
       {isActive && (
-        <div className="relative flex flex-col items-center gap-3">
+        <div className="relative flex flex-col items-center gap-3 rounded-2xl bg-black/45 px-6 py-4 backdrop-blur-md">
           <div className={cn(
-            "font-mono tabular-nums font-black tracking-tight text-5xl",
-            isPaused ? "text-amber-300 opacity-70" : "text-white"
+            "font-mono text-5xl font-black tabular-nums tracking-tight",
+            isPaused ? "text-amber-300 opacity-70" : "text-white",
           )}>
             {formatDuration(elapsed)}
           </div>
           {isPaused && <span className="text-xs font-bold uppercase tracking-[0.2em] text-amber-400">Paused</span>}
           {isRecording && (
-            <div className="flex items-end gap-0.5 h-7">
+            <div className="flex h-7 items-end gap-0.5">
               {[3,5,9,6,4,8,5,3,7,4,6,3].map((h, i) => (
-                <div key={i} className="w-0.5 rounded-full bg-red-400/70" style={{
+                <div key={i} className="w-0.5 rounded-full bg-red-400/80" style={{
                   height: `${h * 2.5}px`,
                   animation: `rec-pulse ${0.5 + i * 0.08}s ease-in-out infinite alternate`,
                   animationDelay: `${i * 55}ms`,
@@ -332,7 +356,7 @@ function PreviewCanvas({ source, status, elapsed, countdown }: {
       )}
 
       {status === "processing" && (
-        <div className="relative flex flex-col items-center gap-4">
+        <div className="relative flex flex-col items-center gap-4 rounded-2xl bg-black/40 px-6 py-4 backdrop-blur-md">
           <div className="relative flex size-16 items-center justify-center">
             <div className="absolute size-16 animate-spin rounded-full border-2 border-transparent border-t-orange-500" />
             <div className="size-10 rounded-full border border-border/60 bg-[var(--surface)]" />
@@ -342,7 +366,7 @@ function PreviewCanvas({ source, status, elapsed, countdown }: {
       )}
 
       {status === "done" && (
-        <div className="relative fade-up flex flex-col items-center gap-3">
+        <div className="fade-up relative flex flex-col items-center gap-3 rounded-2xl bg-black/40 px-6 py-4 backdrop-blur-md">
           <div className="flex size-16 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15 shadow-lg shadow-emerald-500/10">
             <CheckCircle2 className="size-8 text-emerald-400" />
           </div>
@@ -351,15 +375,9 @@ function PreviewCanvas({ source, status, elapsed, countdown }: {
       )}
 
       {isRecording && (
-        <div className="absolute top-4 left-4 flex items-center gap-2 rounded-lg bg-black/60 px-3 py-1.5 backdrop-blur-md">
+        <div className="absolute left-4 top-4 flex items-center gap-2 rounded-lg bg-black/60 px-3 py-1.5 backdrop-blur-md">
           <span className="rec-dot size-2.5 rounded-full bg-red-500" />
           <span className="text-[11px] font-bold uppercase tracking-widest text-white">Rec</span>
-        </div>
-      )}
-
-      {source === "both" && status === "idle" && (
-        <div className="absolute bottom-4 right-4 flex size-12 items-center justify-center rounded-xl border border-border/40 bg-black/40 backdrop-blur-sm">
-          <Camera className="size-5 text-white/30" />
         </div>
       )}
     </div>
@@ -373,7 +391,7 @@ function SaveBanner({ path, onDismiss }: { path: string; onDismiss: () => void }
       <FolderOpen className="size-4 shrink-0 text-emerald-400" />
       <div className="min-w-0 flex-1">
         <p className="text-xs font-semibold text-emerald-300">Recordings saved to</p>
-        <p className="truncate text-[11px] text-muted-foreground font-mono">{path}</p>
+        <p className="truncate font-mono text-[11px] text-muted-foreground">{path}</p>
       </div>
       <button onClick={onDismiss} className="text-muted-foreground hover:text-foreground">
         <X className="size-3.5" />
@@ -388,13 +406,17 @@ interface RecordPageProps {
 }
 
 export function RecordPage({ onRecordingChange }: RecordPageProps) {
+  const { cameras, microphones, monitors, hasLabels, requestPermission, refresh } = useMediaDevices()
+
   const [settings, setSettings] = useState<RecordingSettings>({
     source: "screen",
-    screenTarget: SCREEN_TARGETS[0],
+    screenTarget: DEFAULT_TARGET,
     microphone: true,
     systemAudio: false,
     quality: "1080p",
     countdown: 3,
+    cameraDeviceId: "",
+    micDeviceId: "",
   })
 
   const [status,     setStatus]     = useState<RecordingStatus>("idle")
@@ -406,15 +428,23 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   const [error,      setError]      = useState<string | null>(null)
   const [diskWarn,   setDiskWarn]   = useState<string | null>(null)
   const [savedMeta,  setSavedMeta]  = useState<{ title: string; size: string } | null>(null)
+  const [previewStream, setPreviewStream] = useState<MediaStream | null>(null)
 
   const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null)
   const cdTimerRef     = useRef<ReturnType<typeof setInterval> | null>(null)
   const countdownVal   = useRef(0)
   const mediaRef       = useRef<MediaRecorder | null>(null)
-  const streamRef      = useRef<MediaStream | null>(null)
+  const captureRef     = useRef<CaptureHandle | null>(null)
+  const liveCamRef     = useRef<MediaStream | null>(null)
   const mimeTypeRef    = useRef("")
-  const sessionIdRef   = useRef<number | null>(null)   // Rust streaming session
-  const filenameRef    = useRef("")                     // current recording filename
+  const sessionIdRef   = useRef<number | null>(null)
+  const filenameRef    = useRef("")
+
+  const isActive    = status === "recording" || status === "paused"
+  const isBusy      = status === "countdown" || status === "processing" || status === "done"
+  const showConfig  = !isActive && !isBusy
+  const needsScreen = settings.source === "screen" || settings.source === "both"
+  const needsCamera = settings.source === "camera" || settings.source === "both"
 
   // Fetch save dir + disk info on mount
   useEffect(() => {
@@ -433,13 +463,58 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     return () => {
       if (timerRef.current)   clearInterval(timerRef.current)
       if (cdTimerRef.current) clearInterval(cdTimerRef.current)
+      liveCamRef.current?.getTracks().forEach((t) => t.stop())
     }
   }, [])
 
-  const isActive   = status === "recording" || status === "paused"
-  const isBusy     = status === "countdown" || status === "processing" || status === "done"
-  const showConfig = !isActive && !isBusy
-  const needsScreen = settings.source === "screen" || settings.source === "both"
+  // Default screen target to the primary/first real monitor once loaded.
+  useEffect(() => {
+    if (monitors.length === 0) return
+    setSettings((p) => {
+      if (p.screenTarget.id !== DEFAULT_TARGET.id && monitors.some((m) => m.id === p.screenTarget.id)) return p
+      const primaryIdx = Math.max(0, monitors.findIndex((m) => m.is_primary))
+      return { ...p, screenTarget: monitorToTarget(monitors[primaryIdx], primaryIdx) }
+    })
+  }, [monitors])
+
+  // Default device selections once real labels are known.
+  useEffect(() => {
+    setSettings((p) => {
+      let next = p
+      if (!p.cameraDeviceId && cameras[0]) next = { ...next, cameraDeviceId: cameras[0].deviceId }
+      if (!p.micDeviceId && microphones[0]) next = { ...next, micDeviceId: microphones[0].deviceId }
+      return next
+    })
+  }, [cameras, microphones])
+
+  // Live camera preview while idle (camera / both).
+  useEffect(() => {
+    let cancelled = false
+    function stopLive() {
+      liveCamRef.current?.getTracks().forEach((t) => t.stop())
+      liveCamRef.current = null
+    }
+    async function run() {
+      if (status !== "idle") return  // keep the stream alive through recording
+      if (settings.source === "camera" || settings.source === "both") {
+        stopLive()
+        try {
+          const s = await openCameraStream(settings.cameraDeviceId || undefined, settings.quality)
+          if (cancelled) { s.getTracks().forEach((t) => t.stop()); return }
+          liveCamRef.current = s
+          setPreviewStream(s)
+        } catch {
+          if (!cancelled) setPreviewStream(null)
+        }
+      } else {
+        stopLive()
+        setPreviewStream(null)
+      }
+    }
+    run()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, settings.source, settings.cameraDeviceId, settings.quality])
 
   // ── Timer helpers ────────────────────────────────────────────────────────────
   const startElapsedTimer = useCallback(() => {
@@ -450,76 +525,65 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
   }, [])
 
-  // ── Screen / mic capture ─────────────────────────────────────────────────────
-  async function captureScreen(): Promise<MediaStream | null> {
-    try {
-      const screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: settings.quality === "1080p" ? 30 : 24 } as MediaTrackConstraints,
-        audio: settings.systemAudio,
-      })
-      if (settings.microphone) {
-        try {
-          const mic = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-          return new MediaStream([...screenStream.getTracks(), ...mic.getAudioTracks()])
-        } catch { /* mic denied – continue */ }
-      }
-      return screenStream
-    } catch (err: unknown) {
-      const name = (err as { name?: string })?.name ?? ""
-      if (name !== "NotAllowedError" && name !== "AbortError") {
-        setError("Screen capture failed. Go to System Settings → Privacy & Security → Screen Recording and allow Bloom.")
-      }
-      return null
-    }
-  }
-
-  /**
-   * Opens a Rust streaming session and wires MediaRecorder so each 500ms chunk
-   * is sent directly to Rust (no JS-side accumulation).
-   * Memory usage stays constant regardless of recording duration.
-   */
-  async function startCapture(): Promise<boolean> {
-    const stream = await captureScreen()
-    if (!stream) return false
-
-    streamRef.current   = stream
+  // ── Capture wiring ─────────────────────────────────────────────────────────────
+  async function startCaptureFlow(): Promise<boolean> {
     mimeTypeRef.current = getSupportedMimeType()
     const ext           = mimeToExt(mimeTypeRef.current)
     const ts            = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
     filenameRef.current = `recording-${ts}.${ext}`
 
-    // Open Rust streaming session with rich metadata
+    let handle: CaptureHandle
+    try {
+      handle = await startCapture({
+        source: settings.source,
+        quality: settings.quality,
+        microphone: settings.microphone,
+        systemAudio: settings.systemAudio,
+        cameraDeviceId: settings.cameraDeviceId || undefined,
+        micDeviceId: settings.micDeviceId || undefined,
+        cameraStream: needsCamera ? liveCamRef.current : null,
+        onEnded: () => { if (mediaRef.current?.state !== "inactive") stopRecording() },
+      })
+    } catch (err: unknown) {
+      const name = (err as { name?: string })?.name ?? ""
+      if (name !== "NotAllowedError" && name !== "AbortError") {
+        setError("Capture failed. Check System Settings → Privacy & Security → Screen Recording / Camera and allow Bloom.")
+      }
+      return false
+    }
+
+    captureRef.current = handle
+    setPreviewStream(handle.previewStream)
+
+    // Open Rust streaming session
     try {
       const id = await openSession(filenameRef.current, {
         source:           settings.source,
         quality:          settings.quality,
         has_microphone:   settings.microphone,
         has_system_audio: settings.systemAudio,
-        target_label:     settings.screenTarget.label,
+        target_label:     settings.source === "camera"
+          ? (cameras.find((c) => c.deviceId === settings.cameraDeviceId)?.label ?? "Camera")
+          : settings.screenTarget.label,
       })
       sessionIdRef.current = id
     } catch (e) {
       setError(`Could not open recording file: ${e}`)
-      stream.getTracks().forEach((t) => t.stop())
+      handle.stop()
+      captureRef.current = null
       return false
     }
 
     const opts: MediaRecorderOptions = mimeTypeRef.current ? { mimeType: mimeTypeRef.current } : {}
-    const recorder = new MediaRecorder(stream, opts)
+    const recorder = new MediaRecorder(handle.recordStream, opts)
 
-    // Each 500ms chunk → Rust immediately (no JS-side accumulation)
     recorder.ondataavailable = async (e) => {
       if (e.data.size === 0 || sessionIdRef.current === null) return
       try {
         const bytes = await blobToU8(e.data)
         await writeChunk(sessionIdRef.current, Array.from(bytes))
-      } catch { /* non-fatal: single chunk lost is tolerable */ }
+      } catch { /* single dropped chunk is tolerable */ }
     }
-
-    // User clicks "Stop sharing" in macOS menu bar → auto-stop recording
-    stream.getVideoTracks()[0]?.addEventListener("ended", () => {
-      if (mediaRef.current?.state !== "inactive") stopRecording()
-    })
 
     recorder.start(500)
     mediaRef.current = recorder
@@ -527,31 +591,24 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   }
 
   async function finaliseCapture() {
-    streamRef.current?.getTracks().forEach((t) => t.stop())
-    streamRef.current = null
+    captureRef.current?.stop()
+    captureRef.current = null
 
     const sid = sessionIdRef.current
     sessionIdRef.current = null
     mediaRef.current     = null
 
     if (sid === null) return
-
     try {
       const meta = await closeSession(sid)
-      setSavedMeta({
-        title: meta.title,
-        size:  formatBytes(meta.file_size_bytes),
-      })
-      // Refresh bloom dir in case it changed
-      if (bloomDir) setBloomDir(bloomDir)
+      setSavedMeta({ title: meta.title, size: formatBytes(meta.file_size_bytes) })
     } catch { /* non-critical */ }
   }
 
-  async function abortCapture() {
-    streamRef.current?.getTracks().forEach((t) => t.stop())
-    streamRef.current = null
-    mediaRef.current  = null
-
+  function abortCapture() {
+    captureRef.current?.stop()
+    captureRef.current = null
+    mediaRef.current   = null
     const sid = sessionIdRef.current
     sessionIdRef.current = null
     if (sid !== null) cancelSession(sid).catch(() => {})
@@ -578,7 +635,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   }
 
   async function doStartRecording() {
-    const ok = await startCapture()
+    const ok = await startCaptureFlow()
     if (!ok) { setStatus("idle"); return }
     setStatus("recording")
     setElapsed(0)
@@ -605,7 +662,6 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     onRecordingChange?.(false)
     setStatus("processing")
 
-    // Stop MediaRecorder and wait for last ondataavailable to fire
     await new Promise<void>((res) => {
       const rec = mediaRef.current
       if (!rec || rec.state === "inactive") { res(); return }
@@ -613,7 +669,6 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
       rec.stop()
     })
 
-    // Flush + close the Rust file (all chunks already streamed)
     await finaliseCapture()
 
     setStatus("done")
@@ -637,15 +692,25 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     }
   }
 
+  // ── Device option lists ────────────────────────────────────────────────────────
+  const monitorOptions: SelectOption[] = monitors.map((m) => ({
+    id: m.id,
+    label: `${m.name}${m.is_primary ? " (Primary)" : ""}`,
+    sub: `${m.width}×${m.height}`,
+    icon: Monitor,
+  }))
+  if (monitorOptions.length === 0) monitorOptions.push({ id: DEFAULT_TARGET.id, label: DEFAULT_TARGET.label, icon: Monitor })
+
+  const cameraOptions: SelectOption[] = cameras.map((c) => ({ id: c.deviceId, label: c.label, icon: Camera }))
+  const micOptions: SelectOption[]    = microphones.map((m) => ({ id: m.deviceId, label: m.label, icon: Mic }))
+
   return (
     <div className="flex h-full flex-col gap-4 p-5">
 
-      {/* Save banner */}
       {showBanner && bloomDir && (
         <SaveBanner path={bloomDir} onDismiss={() => setShowBanner(false)} />
       )}
 
-      {/* Disk space warning */}
       {diskWarn && (
         <div className="fade-up flex items-center gap-3 rounded-xl border border-amber-500/25 bg-amber-500/8 px-3.5 py-2.5">
           <AlertCircle className="size-4 shrink-0 text-amber-400" />
@@ -656,11 +721,10 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
         </div>
       )}
 
-      {/* Error banner */}
       {error && (
         <div className="fade-up flex items-start gap-3 rounded-xl border border-red-500/25 bg-red-500/8 px-3.5 py-3">
-          <AlertCircle className="size-4 shrink-0 text-red-400 mt-0.5" />
-          <p className="flex-1 text-xs font-medium text-red-300 leading-relaxed">{error}</p>
+          <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-400" />
+          <p className="flex-1 text-xs font-medium leading-relaxed text-red-300">{error}</p>
           <button onClick={() => setError(null)} className="text-muted-foreground hover:text-foreground">
             <X className="size-3.5" />
           </button>
@@ -668,7 +732,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
       )}
 
       {/* Preview */}
-      <PreviewCanvas source={settings.source} status={status} elapsed={elapsed} countdown={countdown} />
+      <PreviewCanvas source={settings.source} status={status} elapsed={elapsed} countdown={countdown} stream={previewStream} />
 
       {/* Config panel (idle only) */}
       {showConfig && (
@@ -687,7 +751,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
                   onClick={() => setSettings((p) => ({ ...p, source: src.id }))}
                   className={cn(
                     "flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-bold transition-all",
-                    active ? "bg-orange-500 text-white shadow-lg shadow-orange-500/30" : "text-muted-foreground hover:text-foreground"
+                    active ? "bg-orange-500 text-white shadow-lg shadow-orange-500/30" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   <src.icon className="size-3.5" />
@@ -697,9 +761,48 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
             })}
           </div>
 
-          {/* Screen/window picker */}
+          {/* Camera permission prompt */}
+          {needsCamera && !hasLabels && (
+            <button
+              onClick={requestPermission}
+              className="flex items-center gap-2 rounded-xl border border-orange-500/30 bg-orange-500/8 px-3.5 py-2.5 text-xs font-semibold text-orange-300 transition-colors hover:bg-orange-500/15"
+            >
+              <Info className="size-4 shrink-0" />
+              Allow camera &amp; microphone access to list your devices
+            </button>
+          )}
+
+          {/* Display picker */}
           {needsScreen && (
-            <ScreenPicker value={settings.screenTarget} onChange={(t) => setSettings((p) => ({ ...p, screenTarget: t }))} />
+            <div className="flex flex-col gap-1.5">
+              <Dropdown
+                value={settings.screenTarget.id}
+                options={monitorOptions}
+                icon={Monitor}
+                emptyLabel="No displays found"
+                onRefresh={refresh}
+                onChange={(id) => {
+                  const idx = monitors.findIndex((m) => m.id === id)
+                  if (idx >= 0) setSettings((p) => ({ ...p, screenTarget: monitorToTarget(monitors[idx], idx) }))
+                }}
+              />
+              <p className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground/60">
+                <Info className="size-3 shrink-0" />
+                Your system will confirm the exact screen or window when recording starts.
+              </p>
+            </div>
+          )}
+
+          {/* Camera picker */}
+          {needsCamera && (
+            <Dropdown
+              value={settings.cameraDeviceId}
+              options={cameraOptions}
+              icon={Camera}
+              emptyLabel={hasLabels ? "No cameras found" : "Grant access to list cameras"}
+              onRefresh={refresh}
+              onChange={(id) => setSettings((p) => ({ ...p, cameraDeviceId: id }))}
+            />
           )}
 
           {/* Audio */}
@@ -709,6 +812,18 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
             <AudioToggle active={settings.systemAudio} onIcon={Volume2} offIcon={VolumeX} label="System audio"
               onChange={() => setSettings((p) => ({ ...p, systemAudio: !p.systemAudio }))} />
           </div>
+
+          {/* Microphone picker */}
+          {settings.microphone && micOptions.length > 0 && (
+            <Dropdown
+              value={settings.micDeviceId}
+              options={micOptions}
+              icon={Mic}
+              emptyLabel="No microphones found"
+              onRefresh={refresh}
+              onChange={(id) => setSettings((p) => ({ ...p, micDeviceId: id }))}
+            />
+          )}
 
           {/* Quality + countdown */}
           <div className="flex gap-3">
@@ -735,7 +850,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
               "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-bold transition-all",
               annotating
                 ? "border-orange-500/40 bg-orange-500/15 text-orange-300 hover:bg-orange-500/25"
-                : "border-border/60 bg-secondary text-foreground hover:bg-secondary/60"
+                : "border-border/60 bg-secondary text-foreground hover:bg-secondary/60",
             )}
           >
             {annotating ? "Close overlay" : "Open overlay"}
@@ -799,7 +914,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-emerald-300">Saved!</p>
               {savedMeta && (
-                <p className="truncate text-[11px] text-muted-foreground font-mono">
+                <p className="truncate font-mono text-[11px] text-muted-foreground">
                   {savedMeta.title} · {savedMeta.size}
                 </p>
               )}

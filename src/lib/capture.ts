@@ -32,6 +32,8 @@ export interface CaptureConfig {
   micDeviceId?: string
   /** Existing (preview-owned) camera stream to reuse instead of re-opening. */
   cameraStream?: MediaStream | null
+  /** Fired when the captured screen surface ends (user clicks "Stop sharing"). */
+  onEnded?: () => void
 }
 
 export interface CaptureHandle {
@@ -216,6 +218,10 @@ export async function startCapture(config: CaptureConfig): Promise<CaptureHandle
   const screen = await openScreenStream(quality, config.systemAudio)
   cleanups.push(() => screen.getTracks().forEach((t) => t.stop()))
   const systemAudioTracks = config.systemAudio ? screen.getAudioTracks() : []
+
+  if (config.onEnded) {
+    screen.getVideoTracks()[0]?.addEventListener("ended", config.onEnded, { once: true })
+  }
 
   if (source === "screen") {
     const recordStream = new MediaStream([
