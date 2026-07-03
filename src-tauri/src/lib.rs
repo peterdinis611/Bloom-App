@@ -103,6 +103,16 @@ pub struct DiskInfo {
 }
 
 #[derive(Debug, Serialize)]
+pub struct MonitorInfo {
+    pub id: String,
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+    pub scale_factor: f64,
+    pub is_primary: bool,
+}
+
+#[derive(Debug, Serialize)]
 pub struct ValidationResult {
     pub id: String,
     pub exists: bool,
@@ -310,6 +320,44 @@ fn get_disk_space(app: tauri::AppHandle) -> Result<DiskInfo, String> {
         used_bytes: total_bytes.saturating_sub(available_bytes),
         bloom_dir_size_bytes,
     })
+}
+
+/// Enumerate the physical displays connected to the machine.
+///
+/// Note: on webview platforms the OS `getDisplayMedia` picker ultimately
+/// decides which surface is captured; this list is used to populate a
+/// friendly, real display chooser and to store the chosen label in metadata.
+#[tauri::command]
+fn list_monitors(app: tauri::AppHandle) -> Result<Vec<MonitorInfo>, String> {
+    let win = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+
+    let monitors = win.available_monitors().map_err(|e| e.to_string())?;
+    let primary = win.primary_monitor().ok().flatten();
+    let primary_pos = primary.as_ref().map(|m| *m.position());
+
+    let list = monitors
+        .into_iter()
+        .enumerate()
+        .map(|(i, m)| {
+            let size = m.size();
+            let scale = m.scale_factor();
+            let is_primary = primary_pos
+                .map(|p| p == *m.position())
+                .unwrap_or(i == 0);
+            MonitorInfo {
+                id: format!("monitor-{i}"),
+                name: m.name().cloned().unwrap_or_else(|| format!("Display {}", i + 1)),
+                width: ((size.width as f64) / scale).round() as u32,
+                height: ((size.height as f64) / scale).round() as u32,
+                scale_factor: scale,
+                is_primary,
+            }
+        })
+        .collect();
+
+    Ok(list)
 }
 
 // ── Streaming session ─────────────────────────────────────────────────────────
@@ -568,6 +616,7 @@ pub fn run() {
             // directory
             get_bloom_dir,
             get_disk_space,
+            list_monitors,
             // streaming session
             open_session,
             write_chunk,

@@ -18,6 +18,10 @@ export interface RecordingSettings {
   systemAudio: boolean
   quality: "720p" | "1080p"
   countdown: 0 | 3 | 5
+  /** Selected camera deviceId (empty = system default). */
+  cameraDeviceId: string
+  /** Selected microphone deviceId (empty = system default). */
+  micDeviceId: string
 }
 
 // ── Backend API types (mirror Rust structs) ────────────────────────────────
@@ -68,6 +72,23 @@ export interface DiskInfo {
   total_bytes: number
   used_bytes: number
   bloom_dir_size_bytes: number
+}
+
+/** Mirrors MonitorInfo in Rust */
+export interface MonitorInfo {
+  id: string
+  name: string
+  width: number
+  height: number
+  scale_factor: number
+  is_primary: boolean
+}
+
+/** A selectable audio/video input device (camera or microphone). */
+export interface MediaInputDevice {
+  deviceId: string
+  label: string
+  kind: "videoinput" | "audioinput"
 }
 
 /** Mirrors ValidationResult in Rust */

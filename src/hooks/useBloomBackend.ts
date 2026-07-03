@@ -7,10 +7,11 @@
  * All functions are async and throw on Rust errors (string message).
  */
 
-import { invoke } from "@tauri-apps/api/core"
+import { invoke, convertFileSrc } from "@tauri-apps/api/core"
 import type {
   DiskInfo,
   LibraryStats,
+  MonitorInfo,
   RecordingEntry,
   RecordingMeta,
   SessionMeta,
@@ -27,6 +28,19 @@ export async function getBloomDir(): Promise<string> {
 /** Disk space info for the volume that holds ~/Movies/Bloom. */
 export async function getDiskSpace(): Promise<DiskInfo> {
   return invoke<DiskInfo>("get_disk_space")
+}
+
+/** Enumerate the physical displays connected to the machine. */
+export async function listMonitors(): Promise<MonitorInfo[]> {
+  return invoke<MonitorInfo[]>("list_monitors")
+}
+
+/**
+ * Convert an absolute file path into a URL the webview can load
+ * (e.g. as a <video src>) via the Tauri asset protocol.
+ */
+export function fileSrc(path: string): string {
+  return convertFileSrc(path)
 }
 
 // ── Streaming session ──────────────────────────────────────────────────────
