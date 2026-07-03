@@ -19,9 +19,12 @@ import {
   ScanSearch,
   Check,
   CircleAlert,
+  Sparkles,
+  Terminal,
+  Copy,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { LibraryStats, RecordingEntry, ValidationResult } from "@/types"
+import type { FfmpegStatus, LibraryStats, RecordingEntry, ValidationResult } from "@/types"
 import {
   listRecordings,
   getLibraryStats,
@@ -29,10 +32,13 @@ import {
   renameRecording,
   revealInFinder,
   validateRecording,
+  checkFfmpeg,
+  getThumbnail,
   fileSrc,
   formatBytes,
   formatDurationSecs,
 } from "@/hooks/useBloomBackend"
+import { OptimizeModal } from "@/components/OptimizeModal"
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function relativeDate(iso: string): string {
@@ -135,23 +141,37 @@ function PlayerModal({ entry, onClose }: { entry: RecordingEntry; onClose: () =>
 }
 
 // ── Recording card ─────────────────────────────────────────────────────────
-function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, validation, busy }: {
+function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, onOptimize, validation, busy, ffmpegReady }: {
   entry: RecordingEntry
   onPlay: () => void
   onDelete: () => void
   onReveal: () => void
   onRename: (title: string) => void
   onValidate: () => void
+  onOptimize: () => void
   validation?: ValidationResult
   busy: boolean
+  ffmpegReady: boolean
 }) {
   const meta = entry.meta
   const src = SOURCE_META[meta.source] ?? SOURCE_META.screen
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(meta.title)
+  const [thumb, setThumb] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { if (editing) inputRef.current?.select() }, [editing])
+
+  // Lazily fetch a thumbnail (backend only regenerates if missing).
+  useEffect(() => {
+    let alive = true
+    if (ffmpegReady) {
+      getThumbnail(meta.id)
+        .then((p) => { if (alive) setThumb(fileSrc(p)) })
+        .catch(() => {})
+    }
+    return () => { alive = false }
+  }, [ffmpegReady, meta.id])
 
   const commit = () => {
     const next = draft.trim()
@@ -168,7 +188,11 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
           onClick={onPlay}
           className="relative flex aspect-video w-28 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border/60 bg-gradient-to-br from-secondary to-black/60"
         >
-          <src.icon className={cn("size-6 opacity-40", src.tint.split(" ")[0])} />
+          {thumb ? (
+            <img src={thumb} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          ) : (
+            <src.icon className={cn("size-6 opacity-40", src.tint.split(" ")[0])} />
+          )}
           <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/30">
             <div className="flex size-9 scale-90 items-center justify-center rounded-full bg-white/90 opacity-0 shadow-lg transition-all group-hover:scale-100 group-hover:opacity-100">
               <Play className="size-4 translate-x-0.5 fill-black text-black" />
@@ -227,6 +251,7 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
       {/* Actions */}
       <div className="flex items-center gap-1 border-t border-border/40 pt-2">
         <ActionBtn icon={Play} label="Play" onClick={onPlay} />
+        {ffmpegReady && <ActionBtn icon={Sparkles} label="Optimise" onClick={onOptimize} accent />}
         <ActionBtn icon={ScanSearch} label="Verify" onClick={onValidate} disabled={busy} />
         <ActionBtn icon={FolderOpen} label="Reveal" onClick={onReveal} />
         <div className="flex-1" />
@@ -236,8 +261,8 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
   )
 }
 
-function ActionBtn({ icon: Icon, label, onClick, danger, disabled }: {
-  icon: React.FC<{ className?: string }>; label: string; onClick: () => void; danger?: boolean; disabled?: boolean
+function ActionBtn({ icon: Icon, label, onClick, danger, accent, disabled }: {
+  icon: React.FC<{ className?: string }>; label: string; onClick: () => void; danger?: boolean; accent?: boolean; disabled?: boolean
 }) {
   return (
     <button
@@ -247,7 +272,9 @@ function ActionBtn({ icon: Icon, label, onClick, danger, disabled }: {
         "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors disabled:opacity-40",
         danger
           ? "text-muted-foreground hover:bg-red-500/15 hover:text-red-400"
-          : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+          : accent
+            ? "text-orange-300 hover:bg-orange-500/15 hover:text-orange-200"
+            : "text-muted-foreground hover:bg-secondary hover:text-foreground",
       )}
     >
       <Icon className="size-3.5" />
@@ -271,6 +298,9 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [validations, setValidations] = useState<Record<string, ValidationResult>>({})
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [ffmpeg, setFfmpeg] = useState<FfmpegStatus | null>(null)
+  const [optimizing, setOptimizing] = useState<RecordingEntry | null>(null)
+  const [copied, setCopied] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -287,6 +317,15 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
   }, [])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => { checkFfmpeg().then(setFfmpeg).catch(() => {}) }, [])
+
+  const copyInstall = useCallback(() => {
+    const cmd = ffmpeg?.install_hint.split(/:\s+/).pop() ?? "brew install ffmpeg"
+    navigator.clipboard?.writeText(cmd).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    }).catch(() => {})
+  }, [ffmpeg])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -357,6 +396,32 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
         </div>
       )}
 
+      {/* ffmpeg missing → optimisation disabled */}
+      {ffmpeg && !ffmpeg.available && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-500/25 bg-amber-500/8 px-3.5 py-3">
+          <Sparkles className="mt-0.5 size-4 shrink-0 text-amber-400" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-bold text-amber-300">Install ffmpeg to optimise videos</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              Resizing, compression and format conversion need ffmpeg on your system.
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <code className="flex items-center gap-1.5 rounded-md bg-black/40 px-2 py-1 font-mono text-[11px] text-foreground/80">
+                <Terminal className="size-3 text-muted-foreground" />
+                {ffmpeg.install_hint.split(/:\s+/).pop()}
+              </code>
+              <button
+                onClick={copyInstall}
+                className="flex items-center gap-1 rounded-md border border-border/60 bg-[var(--surface)] px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {copied ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Search */}
       {entries.length > 0 && (
         <div className="relative">
@@ -416,12 +481,14 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
                 key={entry.meta.id}
                 entry={entry}
                 busy={busyId === entry.meta.id}
+                ffmpegReady={!!ffmpeg?.available}
                 validation={validations[entry.meta.id]}
                 onPlay={() => setPlaying(entry)}
                 onDelete={() => setConfirmId(entry.meta.id)}
                 onReveal={() => revealInFinder(entry.path).catch((e) => setError(String(e)))}
                 onRename={(title) => handleRename(entry.meta.id, title)}
                 onValidate={() => handleValidate(entry.meta.id)}
+                onOptimize={() => setOptimizing(entry)}
               />
             ))}
           </div>
@@ -434,6 +501,13 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
           title={confirmEntry.meta.title}
           onCancel={() => setConfirmId(null)}
           onConfirm={() => handleDelete(confirmEntry.meta.id)}
+        />
+      )}
+      {optimizing && (
+        <OptimizeModal
+          entry={optimizing}
+          onClose={() => setOptimizing(null)}
+          onComplete={load}
         />
       )}
     </div>

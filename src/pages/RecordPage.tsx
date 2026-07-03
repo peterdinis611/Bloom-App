@@ -22,8 +22,10 @@ import {
   AlertCircle,
   RefreshCw,
   Info,
+  Image as ImageIcon,
 } from "lucide-react"
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow"
+import { listen } from "@tauri-apps/api/event"
 import { cn, formatDuration } from "@/lib/utils"
 import type { MonitorInfo, RecordingSettings, RecordingSource, RecordingStatus, ScreenTarget } from "@/types"
 import {
@@ -34,6 +36,7 @@ import {
   cancelSession,
   getDiskSpace,
   revealInFinder,
+  saveSnapshot,
   formatBytes,
   isLowDiskSpace,
 } from "@/hooks/useBloomBackend"
@@ -429,6 +432,8 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   const [diskWarn,   setDiskWarn]   = useState<string | null>(null)
   const [savedMeta,  setSavedMeta]  = useState<{ title: string; size: string } | null>(null)
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null)
+  const [snapshot,   setSnapshot]   = useState<{ path: string } | null>(null)
+  const previewStreamRef = useRef<MediaStream | null>(null)
 
   const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null)
   const cdTimerRef     = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -515,6 +520,66 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, settings.source, settings.cameraDeviceId, settings.quality])
+
+  // Keep a ref to the current preview stream for snapshot compositing.
+  useEffect(() => { previewStreamRef.current = previewStream }, [previewStream])
+
+  // ── Snapshot: composite current frame + annotation drawing → PNG ───────────────
+  const compositeAndSave = useCallback(async (drawingPng: string) => {
+    const stream = previewStreamRef.current
+    const track = stream?.getVideoTracks()[0]
+    if (!stream || !track) {
+      setError("Snímku sa nepodarilo uložiť – žiadny živý obraz.")
+      return
+    }
+    const s = track.getSettings()
+    const w = Math.round(s.width ?? 1280)
+    const h = Math.round(s.height ?? 720)
+
+    const video = document.createElement("video")
+    video.srcObject = stream
+    video.muted = true
+    video.playsInline = true
+    try { await video.play() } catch { /* frame may still be drawable */ }
+    await new Promise<void>((r) => requestAnimationFrame(() => r()))
+
+    const canvas = document.createElement("canvas")
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return
+    try { ctx.drawImage(video, 0, 0, w, h) } catch { /* ignore */ }
+
+    if (drawingPng) {
+      await new Promise<void>((res) => {
+        const img = new Image()
+        img.onload = () => { ctx.drawImage(img, 0, 0, w, h); res() }
+        img.onerror = () => res()
+        img.src = drawingPng
+      })
+    }
+    video.srcObject = null
+
+    const blob: Blob | null = await new Promise((res) => canvas.toBlob((b) => res(b), "image/png"))
+    if (!blob) return
+    const bytes = new Uint8Array(await blob.arrayBuffer())
+    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
+    try {
+      const path = await saveSnapshot(`snapshot-${ts}.png`, Array.from(bytes))
+      setSnapshot({ path })
+      setTimeout(() => setSnapshot(null), 5000)
+    } catch (e) {
+      setError(`Snímku sa nepodarilo uložiť: ${e}`)
+    }
+  }, [])
+
+  // Listen for save requests coming from the annotation overlay window.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    listen<{ png: string }>("annotation-save", (e) => { compositeAndSave(e.payload.png) })
+      .then((fn) => { unlisten = fn })
+    return () => { unlisten?.() }
+  }, [compositeAndSave])
 
   // ── Timer helpers ────────────────────────────────────────────────────────────
   const startElapsedTimer = useCallback(() => {
@@ -655,6 +720,13 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     startElapsedTimer()
   }
 
+  /** Pause the recording and open the drawing overlay in one step. */
+  async function pauseAndDraw() {
+    pauseRecording()
+    await openAnnotateWindow()
+    setAnnotating(true)
+  }
+
   async function stopRecording() {
     stopElapsedTimer()
     setAnnotating(false)
@@ -726,6 +798,26 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
           <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-400" />
           <p className="flex-1 text-xs font-medium leading-relaxed text-red-300">{error}</p>
           <button onClick={() => setError(null)} className="text-muted-foreground hover:text-foreground">
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Snapshot saved */}
+      {snapshot && (
+        <div className="fade-up flex items-center gap-3 rounded-xl border border-sky-500/25 bg-sky-500/8 px-3.5 py-3">
+          <ImageIcon className="size-4 shrink-0 text-sky-400" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-sky-300">Snímka uložená</p>
+            <p className="truncate font-mono text-[11px] text-muted-foreground">{snapshot.path}</p>
+          </div>
+          <button
+            onClick={() => revealInFinder(snapshot.path).catch(() => {})}
+            className="flex items-center gap-1.5 rounded-lg border border-sky-500/20 bg-sky-500/10 px-2.5 py-1.5 text-xs font-semibold text-sky-300 transition-all hover:bg-sky-500/20"
+          >
+            <FolderOpen className="size-3.5" /> Zobraziť
+          </button>
+          <button onClick={() => setSnapshot(null)} className="text-muted-foreground hover:text-foreground">
             <X className="size-3.5" />
           </button>
         </div>
@@ -841,19 +933,30 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
 
       {/* Annotate toolbar – during recording / paused */}
       {isActive && (
-        <div className="fade-up flex items-center gap-2 rounded-xl border border-border/50 bg-[var(--surface)] px-3 py-2">
-          <Pencil className={cn("size-4", annotating ? "text-orange-400" : "text-muted-foreground")} />
-          <span className="flex-1 text-xs font-semibold text-muted-foreground">Annotation overlay</span>
+        <div className="fade-up flex flex-wrap items-center gap-2 rounded-xl border border-border/50 bg-[var(--surface)] px-3 py-2">
+          <Pencil className={cn("size-4 shrink-0", annotating ? "text-orange-400" : "text-muted-foreground")} />
+          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-muted-foreground">
+            {annotating ? "Kreslenie · ⌘S uloží snímku" : "Anotácia"}
+          </span>
+          {status === "recording" && (
+            <button
+              onClick={pauseAndDraw}
+              className="flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-300 transition-all hover:bg-amber-500/20"
+            >
+              <Pause className="size-3.5" /> Pozastaviť a kresliť
+            </button>
+          )}
           <button
             onClick={toggleAnnotate}
             className={cn(
-              "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-bold transition-all",
+              "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-all",
               annotating
                 ? "border-orange-500/40 bg-orange-500/15 text-orange-300 hover:bg-orange-500/25"
                 : "border-border/60 bg-secondary text-foreground hover:bg-secondary/60",
             )}
           >
-            {annotating ? "Close overlay" : "Open overlay"}
+            <Pencil className="size-3.5" />
+            {annotating ? "Zavrieť" : "Kresliť naživo"}
           </button>
         </div>
       )}

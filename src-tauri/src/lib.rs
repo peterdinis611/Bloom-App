@@ -474,6 +474,21 @@ fn cancel_session(
     Ok(())
 }
 
+/// Save a still-frame snapshot (PNG bytes from the frontend) into the Bloom
+/// directory. Used by the "pause → annotate → save" flow.
+#[tauri::command]
+fn save_snapshot(app: tauri::AppHandle, filename: String, data: Vec<u8>) -> Result<String, String> {
+    let dir = bloom_dir(&app)?;
+    // Guard against path traversal – keep only the file name.
+    let name = Path::new(&filename)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "Invalid filename".to_string())?;
+    let path = dir.join(name);
+    fs::write(&path, &data).map_err(|e| format!("Cannot write snapshot: {e}"))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
 // ── Library ───────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -628,6 +643,7 @@ pub fn run() {
             // library
             list_recordings,
             get_library_stats,
+            save_snapshot,
             // management
             get_recording,
             delete_recording,

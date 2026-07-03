@@ -8,14 +8,19 @@
  */
 
 import { invoke, convertFileSrc } from "@tauri-apps/api/core"
+import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import type {
   DiskInfo,
+  FfmpegStatus,
   LibraryStats,
   MonitorInfo,
+  OptimizeOptions,
+  OptimizeProgress,
   RecordingEntry,
   RecordingMeta,
   SessionMeta,
   ValidationResult,
+  VideoInfo,
 } from "@/types"
 
 // ── Directory / setup ──────────────────────────────────────────────────────
@@ -88,6 +93,14 @@ export async function getLibraryStats(): Promise<LibraryStats> {
   return invoke<LibraryStats>("get_library_stats")
 }
 
+/**
+ * Save a still-frame PNG snapshot into ~/Movies/Bloom. Returns the saved path.
+ * `data` is the raw PNG bytes as a number array.
+ */
+export async function saveSnapshot(filename: string, data: number[]): Promise<string> {
+  return invoke<string>("save_snapshot", { filename, data })
+}
+
 // ── Recording management ───────────────────────────────────────────────────
 
 /** Fetch a single recording by its UUID. */
@@ -122,6 +135,44 @@ export async function validateRecording(id: string): Promise<ValidationResult> {
  */
 export async function revealInFinder(path: string): Promise<void> {
   return invoke<void>("reveal_in_finder", { path })
+}
+
+// ── Video optimisation (ffmpeg) ─────────────────────────────────────────────
+
+/** Detect a system ffmpeg/ffprobe install. */
+export async function checkFfmpeg(): Promise<FfmpegStatus> {
+  return invoke<FfmpegStatus>("check_ffmpeg")
+}
+
+/** Probe a video file for resolution, fps, codec, bitrate and duration. */
+export async function getVideoInfo(path: string): Promise<VideoInfo> {
+  return invoke<VideoInfo>("get_video_info", { path })
+}
+
+/**
+ * Return a JPEG thumbnail path for a recording (generating it if missing).
+ * Wrap in fileSrc() before using as an <img src>.
+ */
+export async function getThumbnail(id: string, atSecs?: number): Promise<string> {
+  return invoke<string>("get_thumbnail", { id, atSecs })
+}
+
+/**
+ * Start an async transcode job. Returns a job id immediately; subscribe to
+ * progress via onOptimizeProgress() and match on the job id.
+ */
+export async function optimizeVideo(options: OptimizeOptions): Promise<string> {
+  return invoke<string>("optimize_video", { options })
+}
+
+/** Request cancellation of a running transcode job. */
+export async function cancelOptimize(jobId: string): Promise<void> {
+  return invoke<void>("cancel_optimize", { jobId })
+}
+
+/** Subscribe to transcode progress events. Returns an unlisten function. */
+export async function onOptimizeProgress(cb: (p: OptimizeProgress) => void): Promise<UnlistenFn> {
+  return listen<OptimizeProgress>("video-progress", (e) => cb(e.payload))
 }
 
 // ── Convenience helpers ────────────────────────────────────────────────────

@@ -13,8 +13,11 @@ import {
   Undo2,
   ChevronUp,
   ChevronDown,
+  ImageDown,
+  Check,
 } from "lucide-react"
 import { getCurrentWindow } from "@tauri-apps/api/window"
+import { emit } from "@tauri-apps/api/event"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type Tool = "pen" | "highlighter" | "rect" | "circle" | "line" | "arrow" | "eraser"
@@ -148,6 +151,7 @@ export function AnnotationPage() {
     width: 3,
   })
   const [toolbarOpen, setToolbarOpen] = useState(true)
+  const [saved, setSaved] = useState(false)
 
   // Fit canvas to window
   useEffect(() => {
@@ -220,15 +224,31 @@ export function AnnotationPage() {
 
   const closeWindow = () => getCurrentWindow().hide()
 
+  // Send the current drawing to the main window, which composites it onto the
+  // live video frame and saves a PNG snapshot to the library.
+  const saveSnapshot = useCallback(async () => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    try {
+      const png = canvas.toDataURL("image/png")
+      await emit("annotation-save", { png })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 1600)
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
   // Keyboard shortcuts
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") closeWindow()
       if ((e.metaKey || e.ctrlKey) && e.key === "z") undo()
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); saveSnapshot() }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [undo])
+  }, [undo, saveSnapshot])
 
   return (
     <div className="relative h-screen w-screen overflow-hidden" style={{ background: "transparent" }}>
@@ -306,6 +326,24 @@ export function AnnotationPage() {
                 className="flex size-9 items-center justify-center rounded-xl text-white/60 transition-all hover:bg-red-500/20 hover:text-red-400"
               >
                 <Trash2 className="size-4" />
+              </button>
+
+              <div className="mx-1 h-6 w-px bg-white/15" />
+
+              {/* Save snapshot */}
+              <button
+                onClick={saveSnapshot}
+                title="Save snapshot (⌘S)"
+                className={cn(
+                  "flex items-center gap-1.5 rounded-xl px-2.5 transition-all",
+                  saved
+                    ? "bg-emerald-500/20 text-emerald-400"
+                    : "text-white/60 hover:bg-orange-500/20 hover:text-orange-300",
+                )}
+                style={{ height: "2.25rem" }}
+              >
+                {saved ? <Check className="size-4" /> : <ImageDown className="size-4" />}
+                <span className="text-xs font-bold">{saved ? "Uložené" : "Uložiť"}</span>
               </button>
 
               <div className="mx-1 h-6 w-px bg-white/15" />

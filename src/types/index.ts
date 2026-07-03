@@ -91,6 +91,56 @@ export interface MediaInputDevice {
   kind: "videoinput" | "audioinput"
 }
 
+// ── Video optimisation (ffmpeg) ─────────────────────────────────────────────
+
+/** Mirrors FfmpegStatus in Rust. */
+export interface FfmpegStatus {
+  available: boolean
+  ffmpeg_path: string | null
+  ffprobe_path: string | null
+  version: string | null
+  install_hint: string
+}
+
+/** Mirrors VideoInfo in Rust. */
+export interface VideoInfo {
+  width: number
+  height: number
+  fps: number
+  codec: string
+  duration_secs: number
+  bitrate_bps: number
+  size_bytes: number
+  has_audio: boolean
+}
+
+export type OptimizePreset = "small" | "medium" | "high"
+export type OptimizeResolution = "480p" | "720p" | "1080p" | "original"
+export type OptimizeFormat = "mp4" | "webm" | "gif"
+
+/** Payload sent to optimize_video (mirrors OptimizeOptions in Rust). */
+export interface OptimizeOptions {
+  input_path: string
+  preset: OptimizePreset
+  resolution: OptimizeResolution
+  format: OptimizeFormat
+  trim_start?: number | null
+  trim_end?: number | null
+  output_name?: string | null
+  add_to_library?: boolean
+}
+
+/** Mirrors OptimizeProgress event payload in Rust. */
+export interface OptimizeProgress {
+  job_id: string
+  percent: number
+  done: boolean
+  cancelled: boolean
+  output_path: string | null
+  output_size_bytes: number | null
+  error: string | null
+}
+
 /** Mirrors ValidationResult in Rust */
 export interface ValidationResult {
   id: string
