@@ -15,6 +15,7 @@
  */
 
 import type { RecordingSource } from "@/types"
+import type { AnnotationLayer } from "@/lib/annotation"
 
 type Quality = "720p" | "1080p"
 
@@ -63,6 +64,8 @@ export interface CaptureConfig {
   cameraBlur?: boolean
   /** Live-updated PiP layout (overrides pipSize/pipPosition when set). */
   pipLayoutRef?: { current: PipRect }
+  /** Strokes composited into every recorded frame. */
+  annotationLayerRef?: { current: AnnotationLayer | null }
   /** Fired when the captured screen surface ends (user clicks "Stop sharing"). */
   onEnded?: () => void
 }
@@ -169,11 +172,54 @@ function pipWidthFraction(size: PipSize): number {
   return size === "small" ? 0.18 : size === "large" ? 0.32 : 0.24
 }
 
+function paintAnnotations(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  layerRef?: { current: AnnotationLayer | null },
+) {
+  layerRef?.current?.draw(ctx, w, h)
+}
+
+/** Single-video compositor (screen-only or camera-only) with optional annotations. */
+async function startVideoCompositor(
+  videoStream: MediaStream,
+  quality: Quality,
+  layerRef?: { current: AnnotationLayer | null },
+): Promise<{ stream: MediaStream; stop: () => void }> {
+  const { w, h } = DIMENSIONS[quality]
+  const fps = qualityFrameRate(quality)
+
+  const canvas = document.createElement("canvas")
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext("2d")!
+  const video = await playHidden(videoStream)
+
+  let raf = 0
+  const render = () => {
+    ctx.fillStyle = "#000"
+    ctx.fillRect(0, 0, w, h)
+    drawCover(ctx, video, 0, 0, w, h)
+    paintAnnotations(ctx, w, h, layerRef)
+    raf = requestAnimationFrame(render)
+  }
+  raf = requestAnimationFrame(render)
+
+  const stream = canvas.captureStream(fps)
+  const stop = () => {
+    cancelAnimationFrame(raf)
+    video.srcObject = null
+  }
+  return { stream, stop }
+}
+
 /** Camera-only output with optional blurred background framing. */
 async function startCameraCompositor(
   camera: MediaStream,
   quality: Quality,
   blur: boolean,
+  layerRef?: { current: AnnotationLayer | null },
 ): Promise<{ stream: MediaStream; stop: () => void }> {
   const { w, h } = DIMENSIONS[quality]
   const fps = qualityFrameRate(quality)
@@ -210,6 +256,8 @@ async function startCameraCompositor(
     drawCover(ctx, camVideo, dx, dy, dw, dh)
     if (blur) ctx.restore()
 
+    paintAnnotations(ctx, w, h, layerRef)
+
     raf = requestAnimationFrame(render)
   }
   raf = requestAnimationFrame(render)
@@ -234,6 +282,7 @@ async function startCompositor(
   pipPosition: PipPosition = "bottom-right",
   cameraBlur = false,
   pipLayoutRef?: { current: PipRect },
+  layerRef?: { current: AnnotationLayer | null },
 ): Promise<{ stream: MediaStream; stop: () => void }> {
   const { w, h } = DIMENSIONS[quality]
   const fps = qualityFrameRate(quality)
@@ -282,6 +331,8 @@ async function startCompositor(
     ctx.stroke()
     ctx.restore()
 
+    paintAnnotations(ctx, w, h, layerRef)
+
     raf = requestAnimationFrame(render)
   }
   raf = requestAnimationFrame(render)
@@ -308,6 +359,7 @@ export async function startCapture(config: CaptureConfig): Promise<CaptureHandle
   const pipSize = config.pipSize ?? "medium"
   const pipPosition = config.pipPosition ?? "bottom-right"
   const cameraBlur = config.cameraBlur ?? false
+  const layerRef = config.annotationLayerRef
   const cleanups: Array<() => void> = []
 
   async function attachMic(): Promise<MediaStreamTrack[]> {
@@ -325,7 +377,7 @@ export async function startCapture(config: CaptureConfig): Promise<CaptureHandle
     const micTracks = await attachMic()
 
     if (cameraBlur) {
-      const compositor = await startCameraCompositor(camera, quality, true)
+      const compositor = await startCameraCompositor(camera, quality, true, layerRef)
       cleanups.push(compositor.stop)
       const recordStream = new MediaStream([...compositor.stream.getVideoTracks(), ...micTracks])
       return {
@@ -335,10 +387,12 @@ export async function startCapture(config: CaptureConfig): Promise<CaptureHandle
       }
     }
 
-    const recordStream = new MediaStream([...camera.getVideoTracks(), ...micTracks])
+    const compositor = await startVideoCompositor(camera, quality, layerRef)
+    cleanups.push(compositor.stop)
+    const recordStream = new MediaStream([...compositor.stream.getVideoTracks(), ...micTracks])
     return {
       recordStream,
-      previewStream: recordStream,
+      previewStream: compositor.stream,
       stop: () => cleanups.forEach((fn) => fn()),
     }
   }
@@ -355,14 +409,16 @@ export async function startCapture(config: CaptureConfig): Promise<CaptureHandle
   const micTracks = await attachMic()
 
   if (source === "screen") {
+    const compositor = await startVideoCompositor(screen, quality, layerRef)
+    cleanups.push(compositor.stop)
     const recordStream = new MediaStream([
-      ...screen.getVideoTracks(),
+      ...compositor.stream.getVideoTracks(),
       ...systemAudioTracks,
       ...micTracks,
     ])
     return {
       recordStream,
-      previewStream: recordStream,
+      previewStream: compositor.stream,
       stop: () => cleanups.forEach((fn) => fn()),
     }
   }
@@ -373,7 +429,7 @@ export async function startCapture(config: CaptureConfig): Promise<CaptureHandle
   if (ownsCamera) cleanups.push(() => camera.getTracks().forEach((t) => t.stop()))
 
   const compositor = await startCompositor(
-    screen, camera, quality, pipSize, pipPosition, cameraBlur, config.pipLayoutRef,
+    screen, camera, quality, pipSize, pipPosition, cameraBlur, config.pipLayoutRef, layerRef,
   )
   cleanups.push(compositor.stop)
 

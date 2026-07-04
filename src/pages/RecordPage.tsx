@@ -1,5 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react"
-import { formatForDisplay } from "@tanstack/react-hotkeys"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import {
   MonitorDot,
   Camera,
@@ -21,15 +20,15 @@ import {
   AlertCircle,
   RefreshCw,
   Info,
-  Image as ImageIcon,
   Zap,
   MousePointer2,
   Sparkles,
 } from "lucide-react"
-import { openAnnotateWindow, closeAnnotateWindow } from "@/lib/annotateWindow"
 import { openRecordingHud, closeRecordingHud } from "@/lib/recordingHud"
 import { openCursorOverlay, closeCursorOverlay } from "@/lib/cursorOverlay"
 import { minimizeMainWindow, restoreMainWindow } from "@/lib/windowControl"
+import { AnnotationLayer, type DrawState } from "@/lib/annotation"
+import { LiveDrawOverlay } from "@/components/record/LiveDrawOverlay"
 import { findPreset } from "@/lib/presets"
 import { defaultPipRect, type PipRect, type PipPosition, type PipSize } from "@/lib/capture"
 import { createAudioMeter } from "@/lib/audioMeter"
@@ -47,7 +46,6 @@ import {
   cancelSession,
   getDiskSpace,
   revealInFinder,
-  saveSnapshot,
   formatBytes,
   isLowDiskSpace,
 } from "@/hooks/useBloomBackend"
@@ -262,9 +260,11 @@ function OptionGroup<T extends string>({ label, options, value, onChange }: {
 }
 
 // ── Preview canvas ─────────────────────────────────────────────────────────────
-function PreviewCanvas({ source, status, elapsed, countdown, stream, summary }: {
+function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, drawing, drawOverlay }: {
   source: RecordingSource; status: RecordingStatus; elapsed: number; countdown: number
   stream: MediaStream | null; summary?: string
+  drawing?: boolean
+  drawOverlay?: React.ReactNode
 }) {
   const isRecording = status === "recording"
   const isPaused    = status === "paused"
@@ -316,7 +316,7 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary }: 
       )}
 
       {isActive && (
-        <div className="flex flex-col items-center gap-1">
+        <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center">
           <div className="font-mono text-4xl font-medium tabular-nums text-white">{formatDuration(elapsed)}</div>
           {isPaused && <span className="text-[11px] text-muted-foreground">Paused</span>}
         </div>
@@ -348,6 +348,8 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary }: 
           {summary}
         </div>
       )}
+
+      {drawing && drawOverlay}
     </div>
   )
 }
@@ -409,7 +411,17 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     pipLayoutRef.current = r
     setPipRectState({ ...r })
   }, [])
-  const [armHighlight, setArmHighlight] = useState(false) // used by rec-arm shortcut pulse
+  useEffect(() => {
+    setDrawState((s) => ({
+      ...s,
+      tool: appSettings.annotation.defaultTool,
+      color: appSettings.annotation.defaultColor,
+      width: appSettings.annotation.defaultWidth,
+    }))
+  }, [appSettings.annotation.defaultTool, appSettings.annotation.defaultColor, appSettings.annotation.defaultWidth])
+
+  const annotationLayer = useMemo(() => annotationLayerRef.current, [])
+  const [armHighlight, setArmHighlight] = useState(false)
 
   const [micLevel, setMicLevel] = useState(0)
   const [sysLevel, setSysLevel] = useState(0)
@@ -422,13 +434,17 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   const [countdown,  setCountdown]  = useState(0)
   const [bloomDir,   setBloomDir]   = useState<string | null>(null)
   const [showBanner, setShowBanner] = useState(false)
-  const [annotating, setAnnotating] = useState(false)
+  const annotationLayerRef = useRef<AnnotationLayer>(new AnnotationLayer())
+  const [drawingMode, setDrawingMode] = useState(false)
+  const [drawState, setDrawState] = useState<DrawState>(() => ({
+    tool: appSettings.annotation.defaultTool,
+    color: appSettings.annotation.defaultColor,
+    width: appSettings.annotation.defaultWidth,
+  }))
   const [error,      setError]      = useState<string | null>(null)
   const [diskWarn,   setDiskWarn]   = useState<string | null>(null)
   const [savedMeta,  setSavedMeta]  = useState<{ title: string; size: string } | null>(null)
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null)
-  const [snapshot,   setSnapshot]   = useState<{ path: string } | null>(null)
-  const previewStreamRef = useRef<MediaStream | null>(null)
 
   const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null)
   const cdTimerRef     = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -552,9 +568,6 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, settings.source, settings.cameraDeviceId, settings.quality])
 
-  // Keep a ref to the current preview stream for snapshot compositing.
-  useEffect(() => { previewStreamRef.current = previewStream }, [previewStream])
-
   function applyPreset(preset: NonNullable<ReturnType<typeof findPreset>>) {
     setSettings((p) => ({
       ...p,
@@ -578,71 +591,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     startCountdownRef.current()
   }
 
-  // ── Snapshot: composite current frame + annotation drawing → PNG ───────────────
-  const compositeAndSave = useCallback(async (drawingPng: string) => {
-    const stream = previewStreamRef.current
-    const track = stream?.getVideoTracks()[0]
-    if (!stream || !track) {
-      setError("Snímku sa nepodarilo uložiť – žiadny živý obraz.")
-      return
-    }
-    const s = track.getSettings()
-    const w = Math.round(s.width ?? 1280)
-    const h = Math.round(s.height ?? 720)
-
-    const video = document.createElement("video")
-    video.srcObject = stream
-    video.muted = true
-    video.playsInline = true
-    try { await video.play() } catch { /* frame may still be drawable */ }
-    await new Promise<void>((r) => requestAnimationFrame(() => r()))
-
-    const canvas = document.createElement("canvas")
-    canvas.width = w
-    canvas.height = h
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-    try { ctx.drawImage(video, 0, 0, w, h) } catch { /* ignore */ }
-
-    if (drawingPng) {
-      await new Promise<void>((res) => {
-        const img = new Image()
-        img.onload = () => { ctx.drawImage(img, 0, 0, w, h); res() }
-        img.onerror = () => res()
-        img.src = drawingPng
-      })
-    }
-    video.srcObject = null
-
-    const blob: Blob | null = await new Promise((res) => canvas.toBlob((b) => res(b), "image/png"))
-    if (!blob) return
-    const bytes = new Uint8Array(await blob.arrayBuffer())
-    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
-    try {
-      const path = await saveSnapshot(`snapshot-${ts}.png`, Array.from(bytes))
-      setSnapshot({ path })
-      setTimeout(() => setSnapshot(null), 5000)
-    } catch (e) {
-      setError(`Snímku sa nepodarilo uložiť: ${e}`)
-    }
-  }, [])
-
-  // Listen for save / close from the annotation overlay window.
-  useEffect(() => {
-    let unlistenSave: (() => void) | undefined
-    let unlistenClose: (() => void) | undefined
-    listen<{ png: string }>("annotation-save", (e) => { compositeAndSave(e.payload.png) })
-      .then((fn) => { unlistenSave = fn })
-    listen("annotation-closed", () => {
-      setAnnotating(false)
-      closeAnnotateWindow().catch(() => {})
-    }).then((fn) => { unlistenClose = fn })
-    return () => {
-      unlistenSave?.()
-      unlistenClose?.()
-    }
-  }, [compositeAndSave])
-
+  // Remove old overlay snapshot flow — strokes are baked into the recording.
   // Floating HUD + tray / global shortcut controls.
   useEffect(() => {
     const unsubs: Array<() => void> = []
@@ -711,6 +660,8 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
 
   // ── Capture wiring ─────────────────────────────────────────────────────────────
   async function prepareCaptureFlow(): Promise<boolean> {
+    annotationLayerRef.current.clear()
+    setDrawingMode(false)
     let handle: CaptureHandle
     try {
       handle = await startCapture({
@@ -725,6 +676,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
         pipPosition: settings.pipPosition,
         cameraBlur: settings.cameraBlur,
         pipLayoutRef: settings.source === "both" ? pipLayoutRef : undefined,
+        annotationLayerRef,
         onEnded: () => { if (mediaRef.current?.state !== "inactive") stopRecording() },
       })
     } catch (err: unknown) {
@@ -896,22 +848,14 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     startElapsedTimer()
   }
 
-  /** Pause the recording and open the drawing overlay in one step. */
-  async function pauseAndDraw() {
-    pauseRecording()
-    try {
-      await openAnnotateWindow()
-      setAnnotating(true)
-    } catch (e) {
-      setError(`Kreslenie sa nepodarilo otvoriť: ${e}`)
-      setAnnotating(false)
-    }
+  /** Toggle live drawing — strokes are composited into the recorded video. */
+  function toggleDrawingMode() {
+    setDrawingMode((on) => !on)
   }
 
   async function stopRecording() {
     stopElapsedTimer()
-    setAnnotating(false)
-    closeAnnotateWindow()
+    setDrawingMode(false)
     closeCursorOverlay().catch(() => {})
     metersRef.current.forEach((m) => m.stop())
     metersRef.current = []
@@ -935,25 +879,13 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   function cancelCountdown() {
     if (cdTimerRef.current) { clearInterval(cdTimerRef.current); cdTimerRef.current = null }
     abortCapture()
+    annotationLayerRef.current.clear()
+    setDrawingMode(false)
     closeCursorOverlay().catch(() => {})
     setPreviewStream(needsCamera ? liveCamRef.current : null)
     showAfterRecording()
     setStatus("idle")
     setCountdown(0)
-  }
-
-  async function toggleAnnotate() {
-    if (annotating) {
-      await closeAnnotateWindow()
-      setAnnotating(false)
-    } else {
-      try {
-        await openAnnotateWindow()
-        setAnnotating(true)
-      } catch (e) {
-        setError(`Kreslenie sa nepodarilo otvoriť: ${e}`)
-      }
-    }
   }
 
   stopRecordingRef.current = stopRecording
@@ -1004,29 +936,28 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
         </div>
       )}
 
-      {/* Snapshot saved */}
-      {snapshot && (
-        <div className="fade-up banner-info flex items-center gap-3 rounded-xl px-3.5 py-3">
-          <ImageIcon className="size-4 shrink-0 opacity-80" />
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold">Snímka uložená</p>
-            <p className="truncate font-mono text-[11px] text-muted-foreground">{snapshot.path}</p>
-          </div>
-          <button
-            onClick={() => revealInFinder(snapshot.path).catch(() => {})}
-            className="flex items-center gap-1.5 rounded-lg border border-border/40 bg-[var(--surface)] px-2.5 py-1.5 text-xs font-semibold transition-all hover:bg-[var(--surface-hover)]"
-          >
-            <FolderOpen className="size-3.5" /> Zobraziť
-          </button>
-          <button onClick={() => setSnapshot(null)} className="text-muted-foreground hover:text-foreground">
-            <X className="size-3.5" />
-          </button>
-        </div>
-      )}
-
       {/* Preview */}
       <div className="relative shrink-0">
-        <PreviewCanvas source={settings.source} status={status} elapsed={elapsed} countdown={countdown} stream={previewStream} summary={previewSummary} />
+        <PreviewCanvas
+          source={settings.source}
+          status={status}
+          elapsed={elapsed}
+          countdown={countdown}
+          stream={previewStream}
+          summary={previewSummary}
+          drawing={drawingMode && isActive}
+          drawOverlay={
+            drawingMode && isActive ? (
+              <LiveDrawOverlay
+                layer={annotationLayer}
+                drawState={drawState}
+                onToolChange={(tool) => setDrawState((s) => ({ ...s, tool }))}
+                onColorChange={(color) => setDrawState((s) => ({ ...s, color, tool: s.tool === "eraser" ? "pen" : s.tool }))}
+                onClose={() => setDrawingMode(false)}
+              />
+            ) : undefined
+          }
+        />
         {settings.source === "both" && isActive && (
           <PipOverlay rect={pipRect} onChange={setPipRect} disabled={status === "paused"} />
         )}
@@ -1254,44 +1185,36 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
         </div>
       )}
 
-      {/* Annotate toolbar – during recording / paused */}
+      {/* Draw toolbar – during recording / paused */}
       {isActive && (
         <div className="fade-up flex flex-wrap items-center gap-2 rounded-xl border border-border/50 bg-[var(--surface)] px-3 py-2.5">
           <div className={cn(
             "flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors",
-            annotating ? "bg-primary/15" : "bg-secondary",
+            drawingMode ? "bg-primary/15" : "bg-secondary",
           )}>
-            <Pencil className={cn("size-4", annotating ? "text-primary" : "text-muted-foreground")} />
+            <Pencil className={cn("size-4", drawingMode ? "text-primary" : "text-muted-foreground")} />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-xs font-bold text-foreground">
-              {annotating ? "Kreslenie aktívne" : "Anotácia"}
+              {drawingMode ? "Drawing on video" : "Annotate"}
             </p>
             <p className="text-[10px] text-muted-foreground">
-              {annotating
-                ? `${formatForDisplay("Mod+S")} uloží snímku · Esc zavrie panel`
-                : "Kresli priamo na obrazovku"}
+              {drawingMode
+                ? "Strokes are recorded live into the video"
+                : "Highlight areas while recording — no pause needed"}
             </p>
           </div>
-          {status === "recording" && (
-            <button
-              onClick={pauseAndDraw}
-              className="flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-300 transition-all hover:bg-amber-500/20"
-            >
-              <Pause className="size-3.5" /> Pozastaviť a kresliť
-            </button>
-          )}
           <button
-            onClick={toggleAnnotate}
+            onClick={toggleDrawingMode}
             className={cn(
               "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-all",
-              annotating
+              drawingMode
                 ? "border-primary/40 bg-primary/15 text-primary hover:bg-primary/25"
                 : "border-border/60 bg-secondary text-foreground hover:bg-secondary/60",
             )}
           >
             <Pencil className="size-3.5" />
-            {annotating ? "Zavrieť" : "Otvoriť panel"}
+            {drawingMode ? "Done" : "Draw"}
           </button>
         </div>
       )}
