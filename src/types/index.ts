@@ -1,5 +1,7 @@
+import type { PipPosition, PipSize } from "@/lib/capture"
+
 // ── App state ──────────────────────────────────────────────────────────────
-export type RecordingStatus = "idle" | "countdown" | "recording" | "paused" | "processing" | "done"
+export type RecordingStatus = "idle" | "preparing" | "countdown" | "recording" | "paused" | "processing" | "done"
 
 export type RecordingSource = "screen" | "camera" | "both"
 
@@ -22,6 +24,12 @@ export interface RecordingSettings {
   cameraDeviceId: string
   /** Selected microphone deviceId (empty = system default). */
   micDeviceId: string
+  /** Highlight cursor with spotlight overlay during recording. */
+  cursorHighlight: boolean
+  /** Blur camera background in PiP / camera-only mode. */
+  cameraBlur: boolean
+  pipSize: PipSize
+  pipPosition: PipPosition
 }
 
 // ── Backend API types (mirror Rust structs) ────────────────────────────────
@@ -48,6 +56,9 @@ export interface RecordingMeta {
   has_microphone: boolean
   has_system_audio: boolean
   target_label: string
+  starred?: boolean
+  tags?: string[]
+  folder?: string
 }
 
 /** Mirrors RecordingEntry in Rust */
@@ -82,6 +93,10 @@ export interface MonitorInfo {
   height: number
   scale_factor: number
   is_primary: boolean
+  x: number
+  y: number
+  physical_width: number
+  physical_height: number
 }
 
 /** A selectable audio/video input device (camera or microphone). */

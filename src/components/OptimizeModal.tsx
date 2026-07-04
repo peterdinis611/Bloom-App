@@ -69,7 +69,7 @@ function Segmented<T extends string>({ icon: Icon, label, options, value, onChan
             onClick={() => onChange(o.v)}
             className={cn(
               "flex flex-col items-center rounded-lg px-2 py-2 text-xs font-semibold transition-all",
-              o.v === value ? "bg-orange-500 text-white shadow-sm" : "text-muted-foreground hover:text-foreground",
+              o.v === value ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground",
             )}
           >
             {render ? render(o) : o.label}
@@ -175,8 +175,8 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
       <div className="flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center gap-3 border-b border-border/60 px-4 py-3">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-orange-500/15">
-            <Sparkles className="size-4 text-orange-400" />
+          <div className="flex size-9 items-center justify-center rounded-xl bg-primary/15">
+            <Sparkles className="size-4 text-accent" />
           </div>
           <div className="min-w-0 flex-1">
             <h3 className="truncate text-sm font-bold text-foreground">Optimise video</h3>
@@ -221,7 +221,7 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
                   className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground/60 transition-colors hover:text-foreground"
                 >
                   <Scissors className="size-3" /> Trim
-                  <div className={cn("ml-1 flex h-4 w-7 items-center rounded-full p-0.5 transition-colors", trimOn ? "bg-orange-500" : "bg-secondary")}>
+                  <div className={cn("ml-1 flex h-4 w-7 items-center rounded-full p-0.5 transition-colors", trimOn ? "bg-primary" : "bg-secondary")}>
                     <div className={cn("size-3 rounded-full bg-white transition-transform", trimOn ? "translate-x-3" : "translate-x-0")} />
                   </div>
                 </button>
@@ -234,7 +234,7 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
                     <input
                       type="range" min={0} max={duration} step={0.1} value={trimStart}
                       onChange={(e) => setTrimStart(Math.min(Number(e.target.value), trimEnd - 0.1))}
-                      className="accent-orange-500"
+                      className="accent-primary"
                     />
                     <label className="flex items-center justify-between text-[11px] font-semibold text-muted-foreground">
                       <span>End</span>
@@ -243,7 +243,7 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
                     <input
                       type="range" min={0} max={duration} step={0.1} value={trimEnd}
                       onChange={(e) => setTrimEnd(Math.max(Number(e.target.value), trimStart + 0.1))}
-                      className="accent-orange-500"
+                      className="accent-primary"
                     />
                     <p className="text-[11px] text-muted-foreground">
                       Clip length: <span className="font-mono text-foreground">{formatDurationSecs(Math.max(0, trimEnd - trimStart))}</span>
@@ -254,7 +254,7 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
 
               <button
                 onClick={start}
-                className="flex items-center justify-center gap-2 rounded-xl bg-orange-500 py-3 text-sm font-bold text-white shadow-lg shadow-orange-500/25 transition-all hover:bg-orange-400 active:scale-[0.98]"
+                className="flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-accent active:scale-[0.98]"
               >
                 <Zap className="size-4" /> Optimise
               </button>
@@ -264,12 +264,12 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
           {phase === "running" && (
             <div className="flex flex-col items-center gap-4 py-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                <LoaderCircle className="size-4 animate-spin text-orange-400" />
+                <LoaderCircle className="size-4 animate-spin text-accent" />
                 Transcoding…
               </div>
               <div className="h-2.5 w-full overflow-hidden rounded-full bg-secondary">
                 <div
-                  className={cn("h-full rounded-full bg-orange-500 transition-all duration-200", percent < 0 && "animate-pulse w-1/3")}
+                  className={cn("h-full rounded-full bg-primary transition-all duration-200", percent < 0 && "animate-pulse w-1/3")}
                   style={percent >= 0 ? { width: `${percent}%` } : undefined}
                 />
               </div>
@@ -310,7 +310,7 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
                 </button>
                 <button
                   onClick={() => { onComplete(); onClose() }}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-orange-500 py-2.5 text-sm font-bold text-white transition-colors hover:bg-orange-400"
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-primary py-2.5 text-sm font-bold text-white transition-colors hover:bg-accent"
                 >
                   Done
                 </button>

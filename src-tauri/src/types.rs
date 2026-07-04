@@ -16,6 +16,12 @@ pub struct RecordingMeta {
     pub has_microphone: bool,
     pub has_system_audio: bool,
     pub target_label: String, // "Built-in Retina Display", "Google Chrome", …
+    #[serde(default)]
+    pub starred: bool,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub folder: String, // empty = inbox
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,6 +56,11 @@ pub struct MonitorInfo {
     pub height: u32,
     pub scale_factor: f64,
     pub is_primary: bool,
+    /// Top-left corner in physical screen coordinates (for overlay positioning).
+    pub x: i32,
+    pub y: i32,
+    pub physical_width: u32,
+    pub physical_height: u32,
 }
 
 #[derive(Debug, Serialize)]

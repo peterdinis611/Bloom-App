@@ -121,6 +121,25 @@ export async function renameRecording(id: string, newTitle: string): Promise<Rec
   return invoke<RecordingMeta>("rename_recording", { id, newTitle })
 }
 
+export interface RecordingMetaPatch {
+  starred?: boolean
+  tags?: string[]
+  folder?: string
+}
+
+export async function updateRecordingMeta(id: string, patch: RecordingMetaPatch): Promise<RecordingMeta> {
+  return invoke<RecordingMeta>("update_recording_meta", { id, patch })
+}
+
+export async function batchDeleteRecordings(ids: string[]): Promise<number> {
+  return invoke<number>("batch_delete_recordings", { ids })
+}
+
+/** Reveal recording in Finder for sharing (AirDrop, Mail, …). */
+export async function shareRecording(id: string): Promise<string> {
+  return invoke<string>("share_recording", { id })
+}
+
 /**
  * Checks whether a recording's video file and sidecar actually exist on disk
  * and are non-empty. Useful for health-checks or pre-upload validation.

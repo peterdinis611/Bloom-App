@@ -23,9 +23,17 @@ import {
   RefreshCw,
   Info,
   Image as ImageIcon,
+  Zap,
+  MousePointer2,
+  Sparkles,
 } from "lucide-react"
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow"
-import { listen } from "@tauri-apps/api/event"
+import { openAnnotateWindow, closeAnnotateWindow } from "@/lib/annotateWindow"
+import { openRecordingHud, closeRecordingHud } from "@/lib/recordingHud"
+import { openCursorOverlay, closeCursorOverlay } from "@/lib/cursorOverlay"
+import { minimizeMainWindow, restoreMainWindow } from "@/lib/windowControl"
+import { findPreset } from "@/lib/presets"
+import type { PipPosition, PipSize } from "@/lib/capture"
+import { emit, listen } from "@tauri-apps/api/event"
 import { cn, formatDuration } from "@/lib/utils"
 import type { MonitorInfo, RecordingSettings, RecordingSource, RecordingStatus, ScreenTarget } from "@/types"
 import {
@@ -41,9 +49,25 @@ import {
   isLowDiskSpace,
 } from "@/hooks/useBloomBackend"
 import { useMediaDevices } from "@/hooks/useMediaDevices"
+import { useSettings } from "@/hooks/useSettings"
 import { startCapture, openCameraStream, type CaptureHandle } from "@/lib/capture"
+import { highlightMonitor } from "@/lib/monitorHighlight"
+import { MonitorPicker } from "@/components/record/MonitorPicker"
 
-// ── MediaRecorder helpers ─────────────────────────────────────────────────────
+function captureErrorMessage(err: unknown): string {
+  const name = (err as { name?: string })?.name ?? ""
+  const msg = (err as { message?: string })?.message ?? String(err)
+  if (name === "NotAllowedError" || name === "AbortError") {
+    return "Prístup bol zamietnutý. Povoľ Screen Recording a kameru v Systémové nastavenia → Súkromie a zabezpečenie."
+  }
+  if (name === "NotFoundError") {
+    return "Zariadenie sa nenašlo. Skontroluj pripojenie kamery / mikrofónu."
+  }
+  if (name === "NotSupportedError" || msg.includes("MediaRecorder")) {
+    return "Formát nahrávania nie je podporovaný v tomto prehliadači. Skús zmeniť kvalitu alebo reštartovať app."
+  }
+  return `Nahrávanie sa nepodarilo spustiť: ${msg}`
+}
 /**
  * Tauri on macOS uses WKWebView (WebKit) – no video/webm support.
  * Must use video/mp4 on macOS; webm works on Windows/Linux.
@@ -86,35 +110,6 @@ function monitorToTarget(m: MonitorInfo, index: number): ScreenTarget {
 
 const DEFAULT_TARGET: ScreenTarget = { id: "default", label: "Primary Display", type: "screen", index: 1 }
 
-// ── Annotation window helper ──────────────────────────────────────────────────
-let annotateWin: WebviewWindow | null = null
-
-async function openAnnotateWindow() {
-  try {
-    if (annotateWin) {
-      await annotateWin.show()
-      await annotateWin.setFocus()
-      return
-    }
-    annotateWin = new WebviewWindow("annotate", {
-      url: "index.html#annotate",
-      transparent: true,
-      fullscreen: true,
-      alwaysOnTop: true,
-      decorations: false,
-      skipTaskbar: true,
-      resizable: false,
-    })
-    annotateWin.once("tauri://error", () => { annotateWin = null })
-  } catch {
-    annotateWin = null
-  }
-}
-
-async function closeAnnotateWindow() {
-  try { await annotateWin?.hide() } catch {}
-}
-
 // ── Generic dropdown select ────────────────────────────────────────────────────
 interface SelectOption {
   id: string
@@ -150,13 +145,13 @@ function Dropdown({ value, options, onChange, icon: HeaderIcon, emptyLabel, onRe
         className={cn(
           "flex w-full items-center justify-between gap-2 rounded-xl border px-3.5 py-3 text-left text-sm transition-all",
           open
-            ? "border-orange-500/50 bg-orange-500/5 ring-1 ring-orange-500/20"
+            ? "border-primary/50 bg-primary/5 ring-1 ring-primary/20"
             : "border-border bg-[var(--surface)] hover:border-border/80 hover:bg-[var(--surface-hover)]",
         )}
       >
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-orange-500/15">
-            {(() => { const I = selected?.icon ?? HeaderIcon; return <I className="size-4 text-orange-400" /> })()}
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/15">
+            {(() => { const I = selected?.icon ?? HeaderIcon; return <I className="size-4 text-accent" /> })()}
           </div>
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-foreground">{selected?.label ?? emptyLabel}</p>
@@ -189,20 +184,20 @@ function Dropdown({ value, options, onChange, icon: HeaderIcon, emptyLabel, onRe
                   onClick={() => { onChange(opt.id); setOpen(false) }}
                   className={cn(
                     "flex w-full items-center gap-3 px-3.5 py-2.5 text-sm transition-colors hover:bg-secondary",
-                    active && "bg-orange-500/8",
+                    active && "bg-primary/8",
                   )}
                 >
                   <div className={cn(
                     "flex size-8 shrink-0 items-center justify-center rounded-lg border",
-                    active ? "border-orange-500/40 bg-orange-500/10" : "border-border/50 bg-secondary/80",
+                    active ? "border-primary/40 bg-primary/10" : "border-border/50 bg-secondary/80",
                   )}>
-                    <I className={cn("size-4", active ? "text-orange-400" : "text-muted-foreground/50")} />
+                    <I className={cn("size-4", active ? "text-accent" : "text-muted-foreground/50")} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className={cn("truncate text-sm font-semibold", active ? "text-orange-300" : "text-foreground")}>{opt.label}</p>
+                    <p className={cn("truncate text-sm font-semibold", active ? "text-primary" : "text-foreground")}>{opt.label}</p>
                     {opt.sub && <p className="truncate text-xs text-muted-foreground">{opt.sub}</p>}
                   </div>
-                  {active && <CheckIcon className="size-4 shrink-0 text-orange-400" />}
+                  {active && <CheckIcon className="size-4 shrink-0 text-accent" />}
                 </button>
               )
             })}
@@ -225,13 +220,13 @@ function AudioToggle({ active, onIcon: OnIcon, offIcon: OffIcon, label, onChange
       className={cn(
         "flex flex-1 items-center gap-2.5 rounded-xl border px-3.5 py-3 text-sm font-medium transition-all",
         active
-          ? "border-orange-500/40 bg-orange-500/10 text-orange-300"
+          ? "border-primary/40 bg-primary/10 text-primary"
           : "border-border/60 bg-[var(--surface)] text-muted-foreground hover:border-border hover:text-foreground",
       )}
     >
       <Icon className="size-4 shrink-0" />
       <span className="flex-1 text-left">{label}</span>
-      <div className={cn("flex h-5 w-9 items-center rounded-full p-0.5 transition-colors", active ? "bg-orange-500" : "bg-secondary")}>
+      <div className={cn("flex h-5 w-9 items-center rounded-full p-0.5 transition-colors", active ? "bg-primary" : "bg-secondary")}>
         <div className={cn("size-4 rounded-full bg-white shadow-sm transition-transform", active ? "translate-x-4" : "translate-x-0")} />
       </div>
     </button>
@@ -285,7 +280,7 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary }: 
   return (
     <div className={cn(
       "relative flex aspect-video w-full shrink-0 items-center justify-center overflow-hidden rounded-2xl transition-all duration-500",
-      isRecording ? "border-2 border-red-500/70 glow-red" : "border border-border/50 glow-orange",
+      isRecording ? "border-2 border-red-500/70 glow-red" : "border border-border/50 glow-accent",
     )}>
       {/* Live video layer */}
       <video
@@ -311,15 +306,27 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary }: 
         </div>
       )}
 
+      {status === "preparing" && (
+        <div className="relative flex flex-col items-center gap-4 rounded-2xl bg-black/40 px-6 py-4 backdrop-blur-md">
+          <div className="size-10 animate-spin rounded-full border-2 border-transparent border-t-primary" />
+          <p className="text-sm font-medium text-muted-foreground">Pripravujem zachytenie…</p>
+          <p className="max-w-xs text-center text-[11px] text-muted-foreground/70">
+            {source === "camera"
+              ? "Povoľ prístup ku kamere."
+              : "Vyber displej alebo okno v systémovom dialógu."}
+          </p>
+        </div>
+      )}
+
       {status === "idle" && !showVideo && (
         <div className="relative flex flex-col items-center gap-4">
           <div className={cn(
             "flex size-20 items-center justify-center rounded-2xl border",
-            source === "camera" ? "border-emerald-500/20 bg-emerald-500/10" : "border-orange-500/20 bg-orange-500/10",
+            source === "camera" ? "border-emerald-500/20 bg-emerald-500/10" : "border-primary/20 bg-primary/10",
           )}>
-            {source === "screen" && <MonitorDot className="size-10 text-orange-400/60" />}
+            {source === "screen" && <MonitorDot className="size-10 text-accent/60" />}
             {source === "camera" && <Camera     className="size-10 text-emerald-400/60" />}
-            {source === "both"   && <Layers     className="size-10 text-orange-400/60" />}
+            {source === "both"   && <Layers     className="size-10 text-accent/60" />}
           </div>
           <p className="text-sm font-medium text-muted-foreground/50">
             {source === "screen" ? "Screen capture ready" : source === "camera" ? "Starting camera…" : "Screen + camera"}
@@ -329,8 +336,8 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary }: 
 
       {status === "countdown" && (
         <div className="relative flex flex-col items-center gap-4">
-          <div key={countdown} className="count-pop flex size-24 items-center justify-center rounded-full border-2 border-orange-500/40 bg-orange-500/10 shadow-xl shadow-orange-500/15 backdrop-blur-sm">
-            <span className="text-6xl font-black tabular-nums text-orange-300">{countdown}</span>
+          <div key={countdown} className="count-pop flex size-24 items-center justify-center rounded-full border-2 border-primary/40 bg-primary/10 shadow-xl shadow-primary/15 backdrop-blur-sm">
+            <span className="text-6xl font-black tabular-nums text-primary">{countdown}</span>
           </div>
           <p className="text-sm font-medium text-muted-foreground">Starting soon…</p>
         </div>
@@ -362,7 +369,7 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary }: 
       {status === "processing" && (
         <div className="relative flex flex-col items-center gap-4 rounded-2xl bg-black/40 px-6 py-4 backdrop-blur-md">
           <div className="relative flex size-16 items-center justify-center">
-            <div className="absolute size-16 animate-spin rounded-full border-2 border-transparent border-t-orange-500" />
+            <div className="absolute size-16 animate-spin rounded-full border-2 border-transparent border-t-primary" />
             <div className="size-10 rounded-full border border-border/60 bg-[var(--surface)]" />
           </div>
           <p className="text-sm font-medium text-muted-foreground">Saving to ~/Movies/Bloom…</p>
@@ -420,23 +427,23 @@ function SourceCard({ active, title, desc, icon: Icon, onClick }: {
       className={cn(
         "group relative flex flex-col items-center gap-2 overflow-hidden rounded-xl border px-2 py-3.5 text-center transition-all active:scale-[0.98]",
         active
-          ? "border-orange-500/60 bg-orange-500/10 shadow-lg shadow-orange-500/10"
+          ? "border-primary/60 bg-primary/10 shadow-lg shadow-primary/10"
           : "border-border/60 bg-[var(--surface)] hover:border-border hover:bg-[var(--surface-hover)]",
       )}
     >
       <div className={cn(
         "flex size-9 items-center justify-center rounded-lg transition-all",
         active
-          ? "bg-orange-500 text-white shadow-md shadow-orange-500/30"
+          ? "bg-primary text-white shadow-md shadow-primary/30"
           : "bg-secondary text-muted-foreground group-hover:text-foreground",
       )}>
         <Icon className="size-5" />
       </div>
       <div className="min-w-0">
-        <p className={cn("truncate text-xs font-bold", active ? "text-orange-200" : "text-foreground")}>{title}</p>
+        <p className={cn("truncate text-xs font-bold", active ? "text-primary" : "text-foreground")}>{title}</p>
         <p className="mt-0.5 truncate text-[10px] leading-tight text-muted-foreground/70">{desc}</p>
       </div>
-      {active && <span className="absolute right-2 top-2 size-1.5 rounded-full bg-orange-400" />}
+      {active && <span className="absolute right-2 top-2 size-1.5 rounded-full bg-accent" />}
     </button>
   )
 }
@@ -464,17 +471,24 @@ interface RecordPageProps {
 
 export function RecordPage({ onRecordingChange }: RecordPageProps) {
   const { cameras, microphones, monitors, hasLabels, requestPermission, refresh } = useMediaDevices()
+  const { settings: appSettings, updateRecording } = useSettings()
 
   const [settings, setSettings] = useState<RecordingSettings>({
     source: "screen",
     screenTarget: DEFAULT_TARGET,
     microphone: true,
     systemAudio: false,
-    quality: "1080p",
-    countdown: 3,
+    quality: appSettings.recording.defaultQuality,
+    countdown: appSettings.recording.defaultCountdown,
     cameraDeviceId: "",
     micDeviceId: "",
+    cursorHighlight: appSettings.recording.cursorHighlight,
+    cameraBlur: appSettings.recording.cameraBlur,
+    pipSize: appSettings.recording.pipSize,
+    pipPosition: appSettings.recording.pipPosition,
   })
+
+  const [armHighlight, setArmHighlight] = useState(false)
 
   const [status,     setStatus]     = useState<RecordingStatus>("idle")
   const [elapsed,    setElapsed]    = useState(0)
@@ -498,9 +512,14 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   const mimeTypeRef    = useRef("")
   const sessionIdRef   = useRef<number | null>(null)
   const filenameRef    = useRef("")
+  const stopRecordingRef = useRef<() => Promise<void>>(async () => {})
+  const pauseRecordingRef = useRef<() => void>(() => {})
+  const resumeRecordingRef = useRef<() => void>(() => {})
+  const startCountdownRef = useRef<() => void>(() => {})
+  const statusRef = useRef<RecordingStatus>("idle")
 
   const isActive    = status === "recording" || status === "paused"
-  const isBusy      = status === "countdown" || status === "processing" || status === "done"
+  const isBusy      = status === "preparing" || status === "countdown" || status === "processing" || status === "done"
   const showConfig  = !isActive && !isBusy
   const needsScreen = settings.source === "screen" || settings.source === "both"
   const needsCamera = settings.source === "camera" || settings.source === "both"
@@ -635,9 +654,55 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     return () => { unlisten?.() }
   }, [compositeAndSave])
 
+  // Floating HUD + tray / global shortcut controls.
+  useEffect(() => {
+    const unsubs: Array<() => void> = []
+    listen("hud-stop", () => { void stopRecordingRef.current() }).then((fn) => unsubs.push(fn))
+    listen("hud-pause", () => { pauseRecordingRef.current() }).then((fn) => unsubs.push(fn))
+    listen("hud-resume", () => { resumeRecordingRef.current() }).then((fn) => unsubs.push(fn))
+    listen("rec-stop", () => { void stopRecordingRef.current() }).then((fn) => unsubs.push(fn))
+    listen("rec-toggle-pause", () => {
+      if (statusRef.current === "recording") pauseRecordingRef.current()
+      else if (statusRef.current === "paused") resumeRecordingRef.current()
+    }).then((fn) => unsubs.push(fn))
+    listen("rec-arm", () => {
+      setArmHighlight(true)
+      setTimeout(() => setArmHighlight(false), 2500)
+      const preset = findPreset(appSettings.recording.activePresetId)
+      if (preset) applyPreset(preset)
+    }).then((fn) => unsubs.push(fn))
+    return () => { unsubs.forEach((fn) => fn()) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appSettings.recording.activePresetId])
+
+  const syncHud = useCallback((payload: {
+    phase: "countdown" | "recording" | "paused"
+    countdown?: number
+    elapsed?: number
+  }) => {
+    emit("hud-sync", payload).catch(() => {})
+  }, [])
+
+  const hideForRecording = useCallback(async () => {
+    if (!appSettings.recording.minimizeOnRecord) return
+    await openRecordingHud()
+    await minimizeMainWindow()
+  }, [appSettings.recording.minimizeOnRecord])
+
+  const showAfterRecording = useCallback(async () => {
+    await closeRecordingHud()
+    await restoreMainWindow()
+  }, [])
+
   // ── Timer helpers ────────────────────────────────────────────────────────────
   const startElapsedTimer = useCallback(() => {
-    timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000)
+    timerRef.current = setInterval(() => {
+      setElapsed((e) => {
+        const next = e + 1
+        emit("hud-tick", { elapsed: next }).catch(() => {})
+        return next
+      })
+    }, 1000)
   }, [])
 
   const stopElapsedTimer = useCallback(() => {
@@ -645,12 +710,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   }, [])
 
   // ── Capture wiring ─────────────────────────────────────────────────────────────
-  async function startCaptureFlow(): Promise<boolean> {
-    mimeTypeRef.current = getSupportedMimeType()
-    const ext           = mimeToExt(mimeTypeRef.current)
-    const ts            = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
-    filenameRef.current = `recording-${ts}.${ext}`
-
+  async function prepareCaptureFlow(): Promise<boolean> {
     let handle: CaptureHandle
     try {
       handle = await startCapture({
@@ -664,17 +724,24 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
         onEnded: () => { if (mediaRef.current?.state !== "inactive") stopRecording() },
       })
     } catch (err: unknown) {
-      const name = (err as { name?: string })?.name ?? ""
-      if (name !== "NotAllowedError" && name !== "AbortError") {
-        setError("Capture failed. Check System Settings → Privacy & Security → Screen Recording / Camera and allow Bloom.")
-      }
+      setError(captureErrorMessage(err))
       return false
     }
 
     captureRef.current = handle
     setPreviewStream(handle.previewStream)
+    return true
+  }
 
-    // Open Rust streaming session
+  async function beginRecording(): Promise<boolean> {
+    const handle = captureRef.current
+    if (!handle) return false
+
+    mimeTypeRef.current = getSupportedMimeType()
+    const ext           = mimeToExt(mimeTypeRef.current)
+    const ts            = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
+    filenameRef.current = `recording-${ts}.${ext}`
+
     try {
       const id = await openSession(filenameRef.current, {
         source:           settings.source,
@@ -693,20 +760,31 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
       return false
     }
 
-    const opts: MediaRecorderOptions = mimeTypeRef.current ? { mimeType: mimeTypeRef.current } : {}
-    const recorder = new MediaRecorder(handle.recordStream, opts)
+    try {
+      const opts: MediaRecorderOptions = mimeTypeRef.current ? { mimeType: mimeTypeRef.current } : {}
+      const recorder = new MediaRecorder(handle.recordStream, opts)
 
-    recorder.ondataavailable = async (e) => {
-      if (e.data.size === 0 || sessionIdRef.current === null) return
-      try {
-        const bytes = await blobToU8(e.data)
-        await writeChunk(sessionIdRef.current, Array.from(bytes))
-      } catch { /* single dropped chunk is tolerable */ }
+      recorder.onerror = () => {
+        setError("MediaRecorder zlyhal. Skús znova alebo zmeň kvalitu.")
+        stopRecording()
+      }
+
+      recorder.ondataavailable = async (e) => {
+        if (e.data.size === 0 || sessionIdRef.current === null) return
+        try {
+          const bytes = await blobToU8(e.data)
+          await writeChunk(sessionIdRef.current, Array.from(bytes))
+        } catch { /* single dropped chunk is tolerable */ }
+      }
+
+      recorder.start(500)
+      mediaRef.current = recorder
+      return true
+    } catch (err: unknown) {
+      setError(captureErrorMessage(err))
+      abortCapture()
+      return false
     }
-
-    recorder.start(500)
-    mediaRef.current = recorder
-    return true
   }
 
   async function finaliseCapture() {
@@ -734,17 +812,32 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   }
 
   // ── State machine ─────────────────────────────────────────────────────────────
-  function startCountdown() {
+  async function startCountdown() {
+    // No setState before getDisplayMedia – must stay inside the click user-gesture window.
+
+    const prepared = await prepareCaptureFlow()
+    if (!prepared) {
+      setStatus("idle")
+      return
+    }
     setError(null)
-    if (settings.countdown === 0) { doStartRecording(); return }
+
+    await hideForRecording()
+
+    if (settings.countdown === 0) {
+      await doStartRecording()
+      return
+    }
 
     countdownVal.current = settings.countdown
     setCountdown(settings.countdown)
     setStatus("countdown")
+    syncHud({ phase: "countdown", countdown: settings.countdown })
 
     cdTimerRef.current = setInterval(() => {
       countdownVal.current -= 1
       setCountdown(countdownVal.current)
+      syncHud({ phase: "countdown", countdown: countdownVal.current })
       if (countdownVal.current <= 0) {
         clearInterval(cdTimerRef.current!)
         cdTimerRef.current = null
@@ -754,10 +847,16 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   }
 
   async function doStartRecording() {
-    const ok = await startCaptureFlow()
-    if (!ok) { setStatus("idle"); return }
+    const ok = await beginRecording()
+    if (!ok) {
+      abortCapture()
+      await showAfterRecording()
+      setStatus("idle")
+      return
+    }
     setStatus("recording")
     setElapsed(0)
+    syncHud({ phase: "recording", elapsed: 0 })
     onRecordingChange?.(true)
     startElapsedTimer()
   }
@@ -766,19 +865,26 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     stopElapsedTimer()
     try { mediaRef.current?.pause() } catch {}
     setStatus("paused")
+    syncHud({ phase: "paused", elapsed })
   }
 
   function resumeRecording() {
     try { mediaRef.current?.resume() } catch {}
     setStatus("recording")
+    syncHud({ phase: "recording", elapsed })
     startElapsedTimer()
   }
 
   /** Pause the recording and open the drawing overlay in one step. */
   async function pauseAndDraw() {
     pauseRecording()
-    await openAnnotateWindow()
-    setAnnotating(true)
+    try {
+      await openAnnotateWindow()
+      setAnnotating(true)
+    } catch (e) {
+      setError(`Kreslenie sa nepodarilo otvoriť: ${e}`)
+      setAnnotating(false)
+    }
   }
 
   async function stopRecording() {
@@ -798,12 +904,15 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     await finaliseCapture()
 
     setStatus("done")
+    await showAfterRecording()
     setTimeout(() => { setStatus("idle"); setElapsed(0) }, 2500)
   }
 
   function cancelCountdown() {
     if (cdTimerRef.current) { clearInterval(cdTimerRef.current); cdTimerRef.current = null }
     abortCapture()
+    setPreviewStream(needsCamera ? liveCamRef.current : null)
+    showAfterRecording()
     setStatus("idle")
     setCountdown(0)
   }
@@ -813,20 +922,20 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
       await closeAnnotateWindow()
       setAnnotating(false)
     } else {
-      await openAnnotateWindow()
-      setAnnotating(true)
+      try {
+        await openAnnotateWindow()
+        setAnnotating(true)
+      } catch (e) {
+        setError(`Kreslenie sa nepodarilo otvoriť: ${e}`)
+      }
     }
   }
 
-  // ── Device option lists ────────────────────────────────────────────────────────
-  const monitorOptions: SelectOption[] = monitors.map((m) => ({
-    id: m.id,
-    label: `${m.name}${m.is_primary ? " (Primary)" : ""}`,
-    sub: `${m.width}×${m.height}`,
-    icon: Monitor,
-  }))
-  if (monitorOptions.length === 0) monitorOptions.push({ id: DEFAULT_TARGET.id, label: DEFAULT_TARGET.label, icon: Monitor })
+  stopRecordingRef.current = stopRecording
+  pauseRecordingRef.current = pauseRecording
+  resumeRecordingRef.current = resumeRecording
 
+  // ── Device option lists ────────────────────────────────────────────────────────
   const cameraOptions: SelectOption[] = cameras.map((c) => ({ id: c.deviceId, label: c.label, icon: Camera }))
   const micOptions: SelectOption[]    = microphones.map((m) => ({ id: m.deviceId, label: m.label, icon: Mic }))
 
@@ -914,32 +1023,33 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
             {needsCamera && !hasLabels && (
               <button
                 onClick={requestPermission}
-                className="flex items-center gap-2 rounded-xl border border-orange-500/30 bg-orange-500/8 px-3.5 py-2.5 text-xs font-semibold text-orange-300 transition-colors hover:bg-orange-500/15"
+                className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/8 px-3.5 py-2.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/15"
               >
                 <Info className="size-4 shrink-0" />
                 Allow camera &amp; microphone access to list your devices
               </button>
             )}
 
-            {needsScreen && (
-              <div className="flex flex-col gap-1.5">
-                <Dropdown
-                  value={settings.screenTarget.id}
-                  options={monitorOptions}
-                  icon={Monitor}
-                  emptyLabel="No displays found"
-                  onRefresh={refresh}
-                  onChange={(id) => {
-                    const idx = monitors.findIndex((m) => m.id === id)
-                    if (idx >= 0) setSettings((p) => ({ ...p, screenTarget: monitorToTarget(monitors[idx], idx) }))
-                  }}
-                />
-                <p className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground/60">
-                  <Info className="size-3 shrink-0" />
-                  Your system will confirm the exact screen or window when recording starts.
-                </p>
-              </div>
-            )}
+          {needsScreen && (
+            <div className="flex flex-col gap-1.5">
+              <MonitorPicker
+                monitors={monitors}
+                selectedId={settings.screenTarget.id}
+                onChange={(id, index) => {
+                  const idx = monitors.findIndex((m) => m.id === id)
+                  if (idx >= 0) setSettings((p) => ({ ...p, screenTarget: monitorToTarget(monitors[idx], idx) }))
+                  else if (index >= 0 && monitors[index]) {
+                    setSettings((p) => ({ ...p, screenTarget: monitorToTarget(monitors[index], index) }))
+                  }
+                }}
+                onHighlight={(m) => highlightMonitor(m).catch(() => {})}
+              />
+              <p className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground/60">
+                <Info className="size-3 shrink-0" />
+                Klikni na displej v mape alebo „Ukázať“ — pri nahrávaní potvrdíš výber v systémovom dialógu.
+              </p>
+            </div>
+          )}
 
             {needsCamera && (
               <Dropdown
@@ -993,11 +1103,21 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
 
       {/* Annotate toolbar – during recording / paused */}
       {isActive && (
-        <div className="fade-up flex flex-wrap items-center gap-2 rounded-xl border border-border/50 bg-[var(--surface)] px-3 py-2">
-          <Pencil className={cn("size-4 shrink-0", annotating ? "text-orange-400" : "text-muted-foreground")} />
-          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-muted-foreground">
-            {annotating ? "Kreslenie · ⌘S uloží snímku" : "Anotácia"}
-          </span>
+        <div className="fade-up flex flex-wrap items-center gap-2 rounded-xl border border-border/50 bg-[var(--surface)] px-3 py-2.5">
+          <div className={cn(
+            "flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors",
+            annotating ? "bg-primary/15" : "bg-secondary",
+          )}>
+            <Pencil className={cn("size-4", annotating ? "text-primary" : "text-muted-foreground")} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-bold text-foreground">
+              {annotating ? "Kreslenie aktívne" : "Anotácia"}
+            </p>
+            <p className="text-[10px] text-muted-foreground">
+              {annotating ? "⌘S uloží snímku · Esc zavrie panel" : "Kresli priamo na obrazovku"}
+            </p>
+          </div>
           {status === "recording" && (
             <button
               onClick={pauseAndDraw}
@@ -1011,12 +1131,12 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
             className={cn(
               "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-all",
               annotating
-                ? "border-orange-500/40 bg-orange-500/15 text-orange-300 hover:bg-orange-500/25"
+                ? "border-primary/40 bg-primary/15 text-primary hover:bg-primary/25"
                 : "border-border/60 bg-secondary text-foreground hover:bg-secondary/60",
             )}
           >
             <Pencil className="size-3.5" />
-            {annotating ? "Zavrieť" : "Kresliť naživo"}
+            {annotating ? "Zavrieť" : "Otvoriť panel"}
           </button>
         </div>
       )}
@@ -1028,7 +1148,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
         <div className="flex gap-2">
         {status === "idle" && (
           <button onClick={startCountdown}
-            className="group flex flex-1 items-center justify-center gap-2 rounded-xl bg-orange-500 py-4 text-sm font-bold text-white shadow-lg shadow-orange-500/25 transition-all hover:bg-orange-400 hover:shadow-orange-500/35 active:scale-[0.98]"
+            className="group flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-4 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-accent hover:shadow-primary/35 active:scale-[0.98]"
           >
             <Video className="size-4 transition-transform group-hover:scale-110" />
             Start Recording
@@ -1036,7 +1156,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
           </button>
         )}
 
-        {status === "countdown" && (
+        {(status === "countdown" || status === "preparing") && (
           <button onClick={cancelCountdown}
             className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border/60 bg-[var(--surface)] py-4 text-sm font-bold text-muted-foreground transition-all hover:border-border hover:text-foreground"
           >

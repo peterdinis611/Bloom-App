@@ -11,16 +11,15 @@ import {
   Trash2,
   X,
   Undo2,
-  ChevronUp,
-  ChevronDown,
   ImageDown,
   Check,
+  GripVertical,
 } from "lucide-react"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import { emit } from "@tauri-apps/api/event"
+import { ANNOTATION_COLORS, applyTheme, readStoredSettings, type AnnotationTool } from "@/hooks/useSettings"
 
-// ── Types ────────────────────────────────────────────────────────────────────
-type Tool = "pen" | "highlighter" | "rect" | "circle" | "line" | "arrow" | "eraser"
+type Tool = AnnotationTool
 
 interface DrawState {
   tool: Tool
@@ -34,45 +33,31 @@ interface Stroke {
   color: string
   width: number
   points: Point[]
-  start?: Point   // for shapes
+  start?: Point
   end?: Point
 }
 
-// ── Color palette ─────────────────────────────────────────────────────────────
-const COLORS = [
-  "#ef4444", // red
-  "#f97316", // orange
-  "#eab308", // yellow
-  "#22c55e", // green
-  "#3b82f6", // blue
-  "#a855f7", // purple
-  "#ffffff",  // white
-  "#000000",  // black
+const TOOLS: { id: Tool; icon: React.FC<{ className?: string }>; label: string; shortcut?: string }[] = [
+  { id: "pen",         icon: Pen,         label: "Pero",       shortcut: "P" },
+  { id: "highlighter", icon: Highlighter, label: "Zvýrazniť",  shortcut: "H" },
+  { id: "line",        icon: Minus,       label: "Čiara",      shortcut: "L" },
+  { id: "arrow",       icon: ArrowRight,  label: "Šípka",      shortcut: "A" },
+  { id: "rect",        icon: Square,      label: "Obdĺžnik",   shortcut: "R" },
+  { id: "circle",      icon: Circle,      label: "Kruh",       shortcut: "C" },
+  { id: "eraser",      icon: Eraser,      label: "Guma",       shortcut: "E" },
 ]
 
-// ── Tool definitions ─────────────────────────────────────────────────────────
-const TOOLS: { id: Tool; icon: React.FC<{ className?: string }>; label: string }[] = [
-  { id: "pen",         icon: Pen,       label: "Pen"         },
-  { id: "highlighter", icon: Highlighter, label: "Highlight" },
-  { id: "line",        icon: Minus,     label: "Line"        },
-  { id: "arrow",       icon: ArrowRight, label: "Arrow"      },
-  { id: "rect",        icon: Square,    label: "Rectangle"   },
-  { id: "circle",      icon: Circle,    label: "Circle"      },
-  { id: "eraser",      icon: Eraser,    label: "Eraser"      },
-]
-
-// ── Canvas helpers ────────────────────────────────────────────────────────────
 function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke) {
-  if (!stroke.points.length) return
+  if (!stroke.points.length && !(stroke.start && stroke.end)) return
   ctx.save()
 
   if (stroke.tool === "highlighter") {
-    ctx.globalAlpha = 0.35
+    ctx.globalAlpha = 0.38
     ctx.globalCompositeOperation = "source-over"
-    ctx.lineWidth = stroke.width * 4
+    ctx.lineWidth = stroke.width * 5
   } else if (stroke.tool === "eraser") {
     ctx.globalCompositeOperation = "destination-out"
-    ctx.lineWidth = stroke.width * 6
+    ctx.lineWidth = stroke.width * 7
   } else {
     ctx.globalAlpha = 1
     ctx.globalCompositeOperation = "source-over"
@@ -80,7 +65,7 @@ function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke) {
   }
 
   ctx.strokeStyle = stroke.color
-  ctx.lineCap  = "round"
+  ctx.lineCap = "round"
   ctx.lineJoin = "round"
 
   if (stroke.tool === "pen" || stroke.tool === "highlighter" || stroke.tool === "eraser") {
@@ -95,15 +80,10 @@ function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke) {
     ctx.moveTo(stroke.start.x, stroke.start.y)
     ctx.lineTo(stroke.end.x, stroke.end.y)
     ctx.stroke()
-    if (stroke.tool === "arrow") {
-      drawArrowHead(ctx, stroke.start, stroke.end, stroke.width)
-    }
+    if (stroke.tool === "arrow") drawArrowHead(ctx, stroke.start, stroke.end, stroke.width)
   } else if (stroke.tool === "rect" && stroke.start && stroke.end) {
     ctx.beginPath()
-    ctx.strokeRect(
-      stroke.start.x, stroke.start.y,
-      stroke.end.x - stroke.start.x, stroke.end.y - stroke.start.y
-    )
+    ctx.strokeRect(stroke.start.x, stroke.start.y, stroke.end.x - stroke.start.x, stroke.end.y - stroke.start.y)
   } else if (stroke.tool === "circle" && stroke.start && stroke.end) {
     const rx = Math.abs(stroke.end.x - stroke.start.x) / 2
     const ry = Math.abs(stroke.end.y - stroke.start.y) / 2
@@ -119,14 +99,14 @@ function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke) {
 
 function drawArrowHead(ctx: CanvasRenderingContext2D, from: Point, to: Point, width: number) {
   const angle = Math.atan2(to.y - from.y, to.x - from.x)
-  const size  = width * 4 + 8
+  const size = width * 4 + 10
   ctx.save()
   ctx.translate(to.x, to.y)
   ctx.rotate(angle)
   ctx.beginPath()
   ctx.moveTo(0, 0)
   ctx.lineTo(-size, -size * 0.5)
-  ctx.lineTo(-size,  size * 0.5)
+  ctx.lineTo(-size, size * 0.5)
   ctx.closePath()
   ctx.fillStyle = ctx.strokeStyle as string
   ctx.fill()
@@ -138,32 +118,36 @@ function redrawAll(ctx: CanvasRenderingContext2D, strokes: Stroke[]) {
   strokes.forEach((s) => drawStroke(ctx, s))
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
 export function AnnotationPage() {
-  const canvasRef  = useRef<HTMLCanvasElement>(null)
-  const drawing    = useRef(false)
-  const strokes    = useRef<Stroke[]>([])
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const drawing = useRef(false)
+  const strokes = useRef<Stroke[]>([])
   const liveStroke = useRef<Stroke | null>(null)
 
-  const [drawState, setDrawState] = useState<DrawState>({
-    tool: "pen",
-    color: "#ef4444",
-    width: 3,
-  })
-  const [toolbarOpen, setToolbarOpen] = useState(true)
-  const [saved, setSaved] = useState(false)
+  const stored = readStoredSettings()
+  applyTheme(stored.theme)
 
-  // Fit canvas to window
+  const [drawState, setDrawState] = useState<DrawState>({
+    tool: stored.annotation.defaultTool,
+    color: stored.annotation.defaultColor,
+    width: stored.annotation.defaultWidth,
+  })
+  const [saved, setSaved] = useState(false)
+  const [expanded, setExpanded] = useState(true)
+
   useEffect(() => {
     function resize() {
       const canvas = canvasRef.current
       if (!canvas) return
       const ctx = canvas.getContext("2d")!
-      // Save current drawing
-      const img = ctx.getImageData(0, 0, canvas.width, canvas.height)
-      canvas.width  = window.innerWidth
-      canvas.height = window.innerHeight
-      ctx.putImageData(img, 0, 0)
+      const dpr = window.devicePixelRatio || 1
+      const cssW = window.innerWidth
+      const cssH = window.innerHeight
+      canvas.width = Math.round(cssW * dpr)
+      canvas.height = Math.round(cssH * dpr)
+      canvas.style.width = `${cssW}px`
+      canvas.style.height = `${cssH}px`
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       redrawAll(ctx, strokes.current)
     }
     resize()
@@ -171,7 +155,6 @@ export function AnnotationPage() {
     return () => window.removeEventListener("resize", resize)
   }, [])
 
-  // ── Pointer events ────────────────────────────────────────────────────────
   const getPos = (e: React.PointerEvent<HTMLCanvasElement>): Point => {
     const r = canvasRef.current!.getBoundingClientRect()
     return { x: e.clientX - r.left, y: e.clientY - r.top }
@@ -197,7 +180,6 @@ export function AnnotationPage() {
     const ctx = canvasRef.current!.getContext("2d")!
     liveStroke.current.points.push(p)
     liveStroke.current.end = p
-
     redrawAll(ctx, strokes.current)
     drawStroke(ctx, liveStroke.current)
   }
@@ -212,8 +194,7 @@ export function AnnotationPage() {
   const undo = useCallback(() => {
     if (!strokes.current.length) return
     strokes.current.pop()
-    const ctx = canvasRef.current!.getContext("2d")!
-    redrawAll(ctx, strokes.current)
+    redrawAll(canvasRef.current!.getContext("2d")!, strokes.current)
   }, [])
 
   const clearAll = useCallback(() => {
@@ -224,35 +205,41 @@ export function AnnotationPage() {
 
   const closeWindow = () => getCurrentWindow().hide()
 
-  // Send the current drawing to the main window, which composites it onto the
-  // live video frame and saves a PNG snapshot to the library.
   const saveSnapshot = useCallback(async () => {
     const canvas = canvasRef.current
     if (!canvas) return
     try {
-      const png = canvas.toDataURL("image/png")
-      await emit("annotation-save", { png })
+      await emit("annotation-save", { png: canvas.toDataURL("image/png") })
       setSaved(true)
       setTimeout(() => setSaved(false), 1600)
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
   }, [])
 
-  // Keyboard shortcuts
+  const pickTool = useCallback((tool: Tool) => {
+    setDrawState((s) => ({ ...s, tool }))
+  }, [])
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") closeWindow()
-      if ((e.metaKey || e.ctrlKey) && e.key === "z") undo()
+      if ((e.metaKey || e.ctrlKey) && e.key === "z") { e.preventDefault(); undo() }
       if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); saveSnapshot() }
+      if (e.target instanceof HTMLInputElement) return
+      const map: Record<string, Tool> = { p: "pen", h: "highlighter", l: "line", a: "arrow", r: "rect", c: "circle", e: "eraser" }
+      const t = map[e.key.toLowerCase()]
+      if (t && !e.metaKey && !e.ctrlKey) pickTool(t)
+      if (e.key === "[") setDrawState((s) => ({ ...s, width: Math.max(1, s.width - 1) }))
+      if (e.key === "]") setDrawState((s) => ({ ...s, width: Math.min(16, s.width + 1) }))
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [undo, saveSnapshot])
+  }, [undo, saveSnapshot, pickTool])
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden" style={{ background: "transparent" }}>
-      {/* Canvas */}
+    <div
+      className="relative h-screen w-screen overflow-hidden"
+      style={{ background: "rgba(0,0,0,0.001)" }}
+    >
       <canvas
         ref={canvasRef}
         className="absolute inset-0 cursor-crosshair"
@@ -263,127 +250,127 @@ export function AnnotationPage() {
         onPointerLeave={onPointerUp}
       />
 
-      {/* Floating toolbar */}
+      {/* Left tool rail */}
       <div
-        className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-50"
+        className="absolute left-4 top-1/2 z-50 flex -translate-y-1/2 flex-col gap-1.5 annot-dock rounded-2xl p-2 shadow-2xl"
         style={{ pointerEvents: "all" }}
         onPointerDown={(e) => e.stopPropagation()}
       >
-        {toolbarOpen && (
-          <div className="fade-up flex flex-col gap-2 rounded-2xl border border-white/10 bg-black/80 p-3 backdrop-blur-xl shadow-2xl">
-            {/* Tool row */}
-            <div className="flex items-center gap-1">
-              {TOOLS.map((t) => (
-                <button
-                  key={t.id}
-                  title={t.label}
-                  onClick={() => setDrawState((s) => ({ ...s, tool: t.id }))}
-                  className={cn(
-                    "flex size-9 items-center justify-center rounded-xl transition-all",
-                    drawState.tool === t.id
-                      ? "bg-orange-500 text-white shadow-md shadow-orange-500/30"
-                      : "text-white/60 hover:bg-white/10 hover:text-white"
-                  )}
-                >
-                  <t.icon className="size-4" />
-                </button>
-              ))}
+        {TOOLS.map((t) => (
+          <button
+            key={t.id}
+            title={`${t.label}${t.shortcut ? ` (${t.shortcut})` : ""}`}
+            onClick={() => pickTool(t.id)}
+            className={cn(
+              "group relative flex size-10 items-center justify-center rounded-xl transition-all",
+              drawState.tool === t.id
+                ? "bg-primary text-primary-foreground shadow-md shadow-primary/30"
+                : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+            )}
+          >
+            <t.icon className="size-4" />
+          </button>
+        ))}
 
-              <div className="mx-1 h-6 w-px bg-white/15" />
+        <div className="my-1 h-px bg-border/60" />
 
-              {/* Width */}
-              <div className="flex flex-col items-center gap-0.5">
-                <button
-                  onClick={() => setDrawState((s) => ({ ...s, width: Math.min(s.width + 1, 12) }))}
-                  className="text-white/50 hover:text-white transition-colors"
-                >
-                  <ChevronUp className="size-3" />
-                </button>
-                <span className="text-[11px] font-mono font-bold text-white/70 tabular-nums w-4 text-center">
-                  {drawState.width}
-                </span>
-                <button
-                  onClick={() => setDrawState((s) => ({ ...s, width: Math.max(s.width - 1, 1) }))}
-                  className="text-white/50 hover:text-white transition-colors"
-                >
-                  <ChevronDown className="size-3" />
-                </button>
+        <button onClick={undo} title="Späť (⌘Z)" className="flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-all hover:bg-secondary hover:text-foreground">
+          <Undo2 className="size-4" />
+        </button>
+        <button onClick={clearAll} title="Vymazať všetko" className="flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-all hover:bg-red-500/15 hover:text-red-400">
+          <Trash2 className="size-4" />
+        </button>
+        <button
+          onClick={saveSnapshot}
+          title="Uložiť snímku (⌘S)"
+          className={cn(
+            "flex size-10 items-center justify-center rounded-xl transition-all",
+            saved ? "bg-emerald-500/20 text-emerald-400" : "text-muted-foreground hover:bg-primary/15 hover:text-primary",
+          )}
+        >
+          {saved ? <Check className="size-4" /> : <ImageDown className="size-4" />}
+        </button>
+        <button onClick={closeWindow} title="Zavrieť (Esc)" className="flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-all hover:bg-red-500/15 hover:text-red-400">
+          <X className="size-4" />
+        </button>
+      </div>
+
+      {/* Bottom properties panel */}
+      <div
+        className="absolute bottom-5 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2"
+        style={{ pointerEvents: "all" }}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        {expanded && (
+          <div className="fade-up annot-dock flex flex-col gap-3 rounded-2xl px-4 py-3 shadow-2xl">
+            {/* Colours */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">Farba</span>
+              <div className="flex flex-wrap gap-1.5">
+                {ANNOTATION_COLORS.map((c) => (
+                  <button
+                    key={c.id}
+                    title={c.label}
+                    onClick={() => setDrawState((s) => ({ ...s, color: c.hex, tool: s.tool === "eraser" ? "pen" : s.tool }))}
+                    className={cn(
+                      "size-7 rounded-full border-2 transition-all hover:scale-110",
+                      drawState.color === c.hex && drawState.tool !== "eraser"
+                        ? "scale-110 border-primary ring-2 ring-primary/40"
+                        : "border-border/50",
+                    )}
+                    style={{ background: c.hex }}
+                  />
+                ))}
               </div>
-
-              <div className="mx-1 h-6 w-px bg-white/15" />
-
-              {/* Undo + Clear */}
-              <button
-                onClick={undo}
-                title="Undo (⌘Z)"
-                className="flex size-9 items-center justify-center rounded-xl text-white/60 transition-all hover:bg-white/10 hover:text-white"
-              >
-                <Undo2 className="size-4" />
-              </button>
-              <button
-                onClick={clearAll}
-                title="Clear all"
-                className="flex size-9 items-center justify-center rounded-xl text-white/60 transition-all hover:bg-red-500/20 hover:text-red-400"
-              >
-                <Trash2 className="size-4" />
-              </button>
-
-              <div className="mx-1 h-6 w-px bg-white/15" />
-
-              {/* Save snapshot */}
-              <button
-                onClick={saveSnapshot}
-                title="Save snapshot (⌘S)"
-                className={cn(
-                  "flex items-center gap-1.5 rounded-xl px-2.5 transition-all",
-                  saved
-                    ? "bg-emerald-500/20 text-emerald-400"
-                    : "text-white/60 hover:bg-orange-500/20 hover:text-orange-300",
-                )}
-                style={{ height: "2.25rem" }}
-              >
-                {saved ? <Check className="size-4" /> : <ImageDown className="size-4" />}
-                <span className="text-xs font-bold">{saved ? "Uložené" : "Uložiť"}</span>
-              </button>
-
-              <div className="mx-1 h-6 w-px bg-white/15" />
-
-              {/* Close */}
-              <button
-                onClick={closeWindow}
-                title="Close (Esc)"
-                className="flex size-9 items-center justify-center rounded-xl text-white/60 transition-all hover:bg-red-500/20 hover:text-red-400"
-              >
-                <X className="size-4" />
-              </button>
             </div>
 
-            {/* Color palette */}
-            <div className="flex items-center justify-center gap-1.5">
-              {COLORS.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setDrawState((s) => ({ ...s, color: c, tool: s.tool === "eraser" ? "pen" : s.tool }))}
-                  className={cn(
-                    "size-6 rounded-full border-2 transition-all hover:scale-110",
-                    drawState.color === c && drawState.tool !== "eraser"
-                      ? "border-white scale-110 shadow-md"
-                      : "border-transparent"
-                  )}
-                  style={{ background: c }}
+            {/* Width slider */}
+            <div className="flex items-center gap-3">
+              <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">Hrúbka</span>
+              <input
+                type="range"
+                min={1}
+                max={16}
+                value={drawState.width}
+                onChange={(e) => setDrawState((s) => ({ ...s, width: Number(e.target.value) }))}
+                className="w-36 accent-primary sm:w-48"
+              />
+              <div
+                className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary"
+                title={`${drawState.width}px`}
+              >
+                <div
+                  className="rounded-full bg-primary"
+                  style={{ width: Math.max(4, drawState.width * 2), height: Math.max(4, drawState.width * 2) }}
                 />
-              ))}
+              </div>
+              <span className="w-5 font-mono text-xs font-bold tabular-nums text-foreground">{drawState.width}</span>
             </div>
+
+            <p className="text-center text-[10px] text-muted-foreground/50">
+              ⌘Z späť · ⌘S uložiť · P H L A R C E skratky · [ ] hrúbka
+            </p>
           </div>
         )}
 
-        {/* Toggle toolbar button */}
         <button
-          onClick={() => setToolbarOpen((o) => !o)}
-          className="flex items-center gap-1.5 rounded-full border border-white/10 bg-black/70 px-3 py-1.5 text-xs text-white/60 backdrop-blur-xl transition-all hover:text-white hover:border-white/20"
+          onClick={() => setExpanded((v) => !v)}
+          className="annot-dock flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold text-muted-foreground shadow-lg transition-colors hover:text-foreground"
         >
-          {toolbarOpen ? "Hide tools" : "Show tools"}
+          <GripVertical className="size-3" />
+          {expanded ? "Skryť panel" : "Farby & hrúbka"}
         </button>
+      </div>
+
+      {/* Active tool indicator (top-right) */}
+      <div className="pointer-events-none absolute right-4 top-4 z-40 rounded-xl annot-dock px-3 py-2 text-[11px] font-semibold text-muted-foreground shadow-lg">
+        <span className="text-primary">{TOOLS.find((t) => t.id === drawState.tool)?.label}</span>
+        {" · "}
+        <span style={{ color: drawState.tool === "eraser" ? undefined : drawState.color }}>
+          {drawState.tool === "eraser" ? "Guma" : drawState.color}
+        </span>
+        {" · "}
+        {drawState.width}px
       </div>
     </div>
   )

@@ -1,5 +1,6 @@
 //! Library listing, per-recording management and snapshot saving.
 
+use serde::Deserialize;
 use std::fs;
 use std::path::Path;
 
@@ -88,6 +89,62 @@ pub(crate) fn rename_recording(
     fs::write(&entry.meta_path, json).map_err(|e| format!("Cannot update sidecar: {e}"))?;
 
     Ok(meta)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RecordingMetaPatch {
+    pub starred: Option<bool>,
+    pub tags: Option<Vec<String>>,
+    pub folder: Option<String>,
+}
+
+#[tauri::command]
+pub(crate) fn update_recording_meta(
+    app: tauri::AppHandle,
+    id: String,
+    patch: RecordingMetaPatch,
+) -> Result<RecordingMeta, String> {
+    let dir = bloom_dir(&app)?;
+    let entry = find_recording(&dir, &id).ok_or_else(|| format!("Recording {id} not found"))?;
+
+    let mut meta = entry.meta;
+    if let Some(starred) = patch.starred {
+        meta.starred = starred;
+    }
+    if let Some(tags) = patch.tags {
+        meta.tags = tags;
+    }
+    if let Some(folder) = patch.folder {
+        meta.folder = folder;
+    }
+
+    let json = serde_json::to_string_pretty(&meta).map_err(|e| format!("Serialise error: {e}"))?;
+    fs::write(&entry.meta_path, json).map_err(|e| format!("Cannot update sidecar: {e}"))?;
+
+    Ok(meta)
+}
+
+#[tauri::command]
+pub(crate) fn batch_delete_recordings(app: tauri::AppHandle, ids: Vec<String>) -> Result<u32, String> {
+    let dir = bloom_dir(&app)?;
+    let mut deleted = 0u32;
+    for id in ids {
+        if let Some(entry) = find_recording(&dir, &id) {
+            if fs::remove_file(&entry.path).is_ok() {
+                let _ = fs::remove_file(&entry.meta_path);
+                deleted += 1;
+            }
+        }
+    }
+    Ok(deleted)
+}
+
+#[tauri::command]
+pub(crate) fn share_recording(app: tauri::AppHandle, id: String) -> Result<String, String> {
+    let dir = bloom_dir(&app)?;
+    let entry = find_recording(&dir, &id).ok_or_else(|| format!("Recording {id} not found"))?;
+    reveal_in_finder(entry.path.clone())?;
+    Ok(entry.path)
 }
 
 #[tauri::command]

@@ -18,6 +18,9 @@ import type { RecordingSource } from "@/types"
 
 type Quality = "720p" | "1080p"
 
+export type PipSize = "small" | "medium" | "large"
+export type PipPosition = "bottom-right" | "bottom-left" | "top-right" | "top-left"
+
 const DIMENSIONS: Record<Quality, { w: number; h: number }> = {
   "720p": { w: 1280, h: 720 },
   "1080p": { w: 1920, h: 1080 },
@@ -32,6 +35,11 @@ export interface CaptureConfig {
   micDeviceId?: string
   /** Existing (preview-owned) camera stream to reuse instead of re-opening. */
   cameraStream?: MediaStream | null
+  /** PiP size when source is "both". */
+  pipSize?: PipSize
+  pipPosition?: PipPosition
+  /** Blur camera background (PiP halo or camera-only framing). */
+  cameraBlur?: boolean
   /** Fired when the captured screen surface ends (user clicks "Stop sharing"). */
   onEnded?: () => void
 }
@@ -54,7 +62,7 @@ export async function openCameraStream(deviceId: string | undefined, quality: Qu
   const { w, h } = DIMENSIONS[quality]
   return navigator.mediaDevices.getUserMedia({
     video: {
-      deviceId: deviceId ? { exact: deviceId } : undefined,
+      deviceId: deviceId ? { ideal: deviceId } : undefined,
       width: { ideal: w },
       height: { ideal: h },
       frameRate: { ideal: qualityFrameRate(quality) },
@@ -66,7 +74,7 @@ export async function openCameraStream(deviceId: string | undefined, quality: Qu
 async function openMicStream(deviceId: string | undefined): Promise<MediaStream | null> {
   try {
     return await navigator.mediaDevices.getUserMedia({
-      audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+      audio: deviceId ? { deviceId: { ideal: deviceId } } : true,
       video: false,
     })
   } catch {
@@ -76,8 +84,15 @@ async function openMicStream(deviceId: string | undefined): Promise<MediaStream 
 
 async function openScreenStream(quality: Quality, systemAudio: boolean): Promise<MediaStream> {
   return navigator.mediaDevices.getDisplayMedia({
-    video: { frameRate: qualityFrameRate(quality) } as MediaTrackConstraints,
+    video: {
+      frameRate: { ideal: qualityFrameRate(quality) },
+      // Prefer full displays over individual windows/tabs in the OS picker.
+      displaySurface: "monitor",
+    } as MediaTrackConstraints,
     audio: systemAudio,
+    // @ts-expect-error – Chromium / WebKit extension
+    monitorTypeSurfaces: "include",
+    preferCurrentTab: false,
   })
 }
 
@@ -125,14 +140,94 @@ async function playHidden(stream: MediaStream): Promise<HTMLVideoElement> {
   return v
 }
 
+function pipWidthFraction(size: PipSize): number {
+  return size === "small" ? 0.18 : size === "large" ? 0.32 : 0.24
+}
+
+function pipCoords(
+  position: PipPosition,
+  w: number,
+  h: number,
+  pipW: number,
+  pipH: number,
+  margin: number,
+): { px: number; py: number } {
+  switch (position) {
+    case "bottom-left":
+      return { px: margin, py: h - pipH - margin }
+    case "top-right":
+      return { px: w - pipW - margin, py: margin }
+    case "top-left":
+      return { px: margin, py: margin }
+    default:
+      return { px: w - pipW - margin, py: h - pipH - margin }
+  }
+}
+
+/** Camera-only output with optional blurred background framing. */
+async function startCameraCompositor(
+  camera: MediaStream,
+  quality: Quality,
+  blur: boolean,
+): Promise<{ stream: MediaStream; stop: () => void }> {
+  const { w, h } = DIMENSIONS[quality]
+  const fps = qualityFrameRate(quality)
+
+  const canvas = document.createElement("canvas")
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext("2d")!
+  const camVideo = await playHidden(camera)
+
+  let raf = 0
+  const render = () => {
+    ctx.fillStyle = "#111"
+    ctx.fillRect(0, 0, w, h)
+
+    if (blur) {
+      ctx.save()
+      ctx.filter = "blur(28px) brightness(0.85)"
+      drawCover(ctx, camVideo, -w * 0.05, -h * 0.05, w * 1.1, h * 1.1)
+      ctx.restore()
+    }
+
+    const inset = blur ? 0.08 : 0
+    const dx = w * inset
+    const dy = h * inset
+    const dw = w * (1 - inset * 2)
+    const dh = h * (1 - inset * 2)
+
+    if (blur) {
+      ctx.save()
+      roundedRectPath(ctx, dx, dy, dw, dh, Math.round(w * 0.02))
+      ctx.clip()
+    }
+    drawCover(ctx, camVideo, dx, dy, dw, dh)
+    if (blur) ctx.restore()
+
+    raf = requestAnimationFrame(render)
+  }
+  raf = requestAnimationFrame(render)
+
+  const stream = canvas.captureStream(fps)
+  const stop = () => {
+    cancelAnimationFrame(raf)
+    camVideo.srcObject = null
+  }
+  return { stream, stop }
+}
+
 /**
- * Composites `screen` (background) + `camera` (rounded PiP, bottom-right) onto
+ * Composites `screen` (background) + `camera` (rounded PiP) onto
  * a canvas and returns a captured stream plus a stop() to end the raf loop.
  */
 async function startCompositor(
   screen: MediaStream,
   camera: MediaStream,
   quality: Quality,
+  pipSize: PipSize = "medium",
+  pipPosition: PipPosition = "bottom-right",
+  cameraBlur = false,
 ): Promise<{ stream: MediaStream; stop: () => void }> {
   const { w, h } = DIMENSIONS[quality]
   const fps = qualityFrameRate(quality)
@@ -144,7 +239,7 @@ async function startCompositor(
 
   const [screenVideo, camVideo] = await Promise.all([playHidden(screen), playHidden(camera)])
 
-  const pipW = Math.round(w * 0.24)
+  const pipW = Math.round(w * pipWidthFraction(pipSize))
   const margin = Math.round(w * 0.02)
   const radius = Math.round(pipW * 0.12)
 
@@ -156,8 +251,16 @@ async function startCompositor(
 
     const aspect = camVideo.videoWidth && camVideo.videoHeight ? camVideo.videoHeight / camVideo.videoWidth : 9 / 16
     const pipH = Math.round(pipW * aspect)
-    const px = w - pipW - margin
-    const py = h - pipH - margin
+    const { px, py } = pipCoords(pipPosition, w, h, pipW, pipH, margin)
+
+    if (cameraBlur) {
+      ctx.save()
+      ctx.filter = "blur(16px)"
+      roundedRectPath(ctx, px - 4, py - 4, pipW + 8, pipH + 8, radius + 4)
+      ctx.clip()
+      drawCover(ctx, camVideo, px, py, pipW, pipH)
+      ctx.restore()
+    }
 
     ctx.save()
     roundedRectPath(ctx, px, py, pipW, pipH, radius)
@@ -188,23 +291,42 @@ async function startCompositor(
 /**
  * Builds record + preview streams for the requested source.
  * Throws if the user cancels/denies screen capture (caller shows guidance).
+ *
+ * WebKit requires getDisplayMedia / the first getUserMedia for a new capture to
+ * run before any other `await` in the call chain (must stay inside the click
+ * handler's user-gesture window). Mic is therefore opened *after* screen/camera.
  */
 export async function startCapture(config: CaptureConfig): Promise<CaptureHandle> {
   const { source, quality } = config
+  const pipSize = config.pipSize ?? "medium"
+  const pipPosition = config.pipPosition ?? "bottom-right"
+  const cameraBlur = config.cameraBlur ?? false
   const cleanups: Array<() => void> = []
 
-  // Mic audio (shared across sources)
-  let micStream: MediaStream | null = null
-  if (config.microphone) {
-    micStream = await openMicStream(config.micDeviceId)
-    if (micStream) cleanups.push(() => micStream!.getTracks().forEach((t) => t.stop()))
+  async function attachMic(): Promise<MediaStreamTrack[]> {
+    if (!config.microphone) return []
+    const micStream = await openMicStream(config.micDeviceId)
+    if (micStream) cleanups.push(() => micStream.getTracks().forEach((t) => t.stop()))
+    return micStream?.getAudioTracks() ?? []
   }
-  const micTracks = micStream?.getAudioTracks() ?? []
 
   if (source === "camera") {
     const ownsCamera = !config.cameraStream
     const camera = config.cameraStream ?? (await openCameraStream(config.cameraDeviceId, quality))
     if (ownsCamera) cleanups.push(() => camera.getTracks().forEach((t) => t.stop()))
+
+    const micTracks = await attachMic()
+
+    if (cameraBlur) {
+      const compositor = await startCameraCompositor(camera, quality, true)
+      cleanups.push(compositor.stop)
+      const recordStream = new MediaStream([...compositor.stream.getVideoTracks(), ...micTracks])
+      return {
+        recordStream,
+        previewStream: compositor.stream,
+        stop: () => cleanups.forEach((fn) => fn()),
+      }
+    }
 
     const recordStream = new MediaStream([...camera.getVideoTracks(), ...micTracks])
     return {
@@ -214,7 +336,7 @@ export async function startCapture(config: CaptureConfig): Promise<CaptureHandle
     }
   }
 
-  // screen + both both need a screen capture
+  // screen + both: getDisplayMedia must be the very first await.
   const screen = await openScreenStream(quality, config.systemAudio)
   cleanups.push(() => screen.getTracks().forEach((t) => t.stop()))
   const systemAudioTracks = config.systemAudio ? screen.getAudioTracks() : []
@@ -222,6 +344,8 @@ export async function startCapture(config: CaptureConfig): Promise<CaptureHandle
   if (config.onEnded) {
     screen.getVideoTracks()[0]?.addEventListener("ended", config.onEnded, { once: true })
   }
+
+  const micTracks = await attachMic()
 
   if (source === "screen") {
     const recordStream = new MediaStream([
@@ -241,7 +365,7 @@ export async function startCapture(config: CaptureConfig): Promise<CaptureHandle
   const camera = config.cameraStream ?? (await openCameraStream(config.cameraDeviceId, quality))
   if (ownsCamera) cleanups.push(() => camera.getTracks().forEach((t) => t.stop()))
 
-  const compositor = await startCompositor(screen, camera, quality)
+  const compositor = await startCompositor(screen, camera, quality, pipSize, pipPosition, cameraBlur)
   cleanups.push(compositor.stop)
 
   const recordStream = new MediaStream([

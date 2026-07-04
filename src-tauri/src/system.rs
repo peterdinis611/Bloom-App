@@ -87,8 +87,9 @@ pub(crate) fn list_monitors(app: tauri::AppHandle) -> Result<Vec<MonitorInfo>, S
         .enumerate()
         .map(|(i, m)| {
             let size = m.size();
+            let position = m.position();
             let scale = m.scale_factor();
-            let is_primary = primary_pos.map(|p| p == *m.position()).unwrap_or(i == 0);
+            let is_primary = primary_pos.map(|p| p == *position).unwrap_or(i == 0);
             MonitorInfo {
                 id: format!("monitor-{i}"),
                 name: m.name().cloned().unwrap_or_else(|| format!("Display {}", i + 1)),
@@ -96,6 +97,10 @@ pub(crate) fn list_monitors(app: tauri::AppHandle) -> Result<Vec<MonitorInfo>, S
                 height: ((size.height as f64) / scale).round() as u32,
                 scale_factor: scale,
                 is_primary,
+                x: position.x,
+                y: position.y,
+                physical_width: size.width,
+                physical_height: size.height,
             }
         })
         .collect();

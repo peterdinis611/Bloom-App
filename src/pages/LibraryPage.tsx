@@ -56,7 +56,7 @@ function relativeDate(iso: string): string {
 }
 
 const SOURCE_META: Record<string, { icon: React.FC<{ className?: string }>; label: string; tint: string }> = {
-  screen: { icon: Monitor, label: "Screen", tint: "text-orange-400 bg-orange-500/12" },
+  screen: { icon: Monitor, label: "Screen", tint: "text-accent bg-primary/12" },
   camera: { icon: Camera, label: "Camera", tint: "text-emerald-400 bg-emerald-500/12" },
   both: { icon: Layers, label: "Screen + Cam", tint: "text-sky-400 bg-sky-500/12" },
 }
@@ -69,7 +69,7 @@ function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, checkingFfmpe
   checkingFfmpeg: boolean
 }) {
   const hints = [
-    { icon: Monitor, label: "Screen capture", tint: "text-orange-400 bg-orange-500/12 border-orange-500/20" },
+    { icon: Monitor, label: "Screen capture", tint: "text-accent bg-primary/12 border-primary/20" },
     { icon: Camera, label: "Webcam", tint: "text-emerald-400 bg-emerald-500/12 border-emerald-500/20" },
     { icon: Sparkles, label: "Optimise & trim", tint: "text-sky-400 bg-sky-500/12 border-sky-500/20" },
   ]
@@ -77,9 +77,9 @@ function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, checkingFfmpe
   return (
     <div className="flex h-full flex-col items-center justify-center px-6 py-10 text-center">
       <div className="relative mb-6">
-        <div className="absolute inset-0 scale-150 rounded-full bg-orange-500/10 blur-3xl" />
-        <div className="relative flex size-20 items-center justify-center rounded-3xl border border-orange-500/25 bg-gradient-to-br from-orange-500/15 to-[var(--surface)] shadow-xl shadow-orange-500/10">
-          <Film className="size-9 text-orange-400/80" />
+        <div className="absolute inset-0 scale-150 rounded-full bg-primary/10 blur-3xl" />
+        <div className="relative flex size-20 items-center justify-center rounded-3xl border border-primary/25 bg-gradient-to-br from-primary/15 to-[var(--surface)] shadow-xl shadow-primary/10">
+          <Film className="size-9 text-accent/80" />
         </div>
       </div>
 
@@ -98,7 +98,7 @@ function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, checkingFfmpe
 
       <button
         onClick={onStartRecording}
-        className="group mt-8 flex items-center gap-2.5 rounded-2xl bg-orange-500 px-6 py-3.5 text-sm font-bold text-white shadow-xl shadow-orange-500/25 transition-all hover:bg-orange-400 hover:shadow-orange-500/35 active:scale-[0.98]"
+        className="group mt-8 flex items-center gap-2.5 rounded-2xl bg-primary px-6 py-3.5 text-sm font-bold text-white shadow-xl shadow-primary/25 transition-all hover:bg-accent hover:shadow-primary/35 active:scale-[0.98]"
       >
         <Video className="size-4 transition-transform group-hover:scale-110" />
         Start your first recording
@@ -145,8 +145,8 @@ function StatPill({ icon: Icon, label, value }: {
 }) {
   return (
     <div className="flex flex-1 items-center gap-2.5 rounded-xl border border-border/50 bg-[var(--surface)] px-3 py-2.5">
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-orange-500/12">
-        <Icon className="size-4 text-orange-400" />
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/12">
+        <Icon className="size-4 text-accent" />
       </div>
       <div className="min-w-0">
         <p className="truncate text-sm font-bold text-foreground tabular-nums">{value}</p>
@@ -293,7 +293,7 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
                 if (e.key === "Enter") commit()
                 if (e.key === "Escape") { setDraft(meta.title); setEditing(false) }
               }}
-              className="w-full rounded-md border border-orange-500/40 bg-black/40 px-2 py-1 text-sm font-semibold text-foreground outline-none ring-1 ring-orange-500/20"
+              className="w-full rounded-md border border-primary/40 bg-black/40 px-2 py-1 text-sm font-semibold text-foreground outline-none ring-1 ring-primary/20"
             />
           ) : (
             <button onClick={() => setEditing(true)} className="flex items-center gap-1.5 text-left" title="Click to rename">
@@ -351,7 +351,7 @@ function ActionBtn({ icon: Icon, label, onClick, danger, accent, disabled }: {
         danger
           ? "text-muted-foreground hover:bg-red-500/15 hover:text-red-400"
           : accent
-            ? "text-orange-300 hover:bg-orange-500/15 hover:text-orange-200"
+            ? "text-primary hover:bg-primary/15 hover:text-primary"
             : "text-muted-foreground hover:bg-secondary hover:text-foreground",
       )}
     >
@@ -540,7 +540,7 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search recordings…"
-            className="w-full rounded-xl border border-border/60 bg-[var(--surface)] py-2.5 pl-9 pr-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/50 focus:border-orange-500/40"
+            className="w-full rounded-xl border border-border/60 bg-[var(--surface)] py-2.5 pl-9 pr-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/50 focus:border-primary/40"
           />
         </div>
       )}
@@ -560,7 +560,7 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
       <div className="flex-1 min-h-0 overflow-y-auto -mx-1 px-1">
         {loading ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
-            <div className="size-8 animate-spin rounded-full border-2 border-border border-t-orange-500" />
+            <div className="size-8 animate-spin rounded-full border-2 border-border border-t-primary" />
             <p className="text-sm">Loading library…</p>
           </div>
         ) : entries.length === 0 ? (
