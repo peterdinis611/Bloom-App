@@ -67,6 +67,9 @@ pub(crate) fn open_session(
         has_microphone: meta.has_microphone,
         has_system_audio: meta.has_system_audio,
         target_label: meta.target_label,
+        starred: false,
+        tags: vec![],
+        folder: String::new(),
     };
 
     let mut sm = state.lock().unwrap();

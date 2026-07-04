@@ -32,7 +32,10 @@ import { openRecordingHud, closeRecordingHud } from "@/lib/recordingHud"
 import { openCursorOverlay, closeCursorOverlay } from "@/lib/cursorOverlay"
 import { minimizeMainWindow, restoreMainWindow } from "@/lib/windowControl"
 import { findPreset } from "@/lib/presets"
-import type { PipPosition, PipSize } from "@/lib/capture"
+import { defaultPipRect, type PipRect, type PipPosition, type PipSize } from "@/lib/capture"
+import { createAudioMeter } from "@/lib/audioMeter"
+import { AudioMeterBar } from "@/components/record/AudioMeterBar"
+import { PipOverlay } from "@/components/record/PipOverlay"
 import { emit, listen } from "@tauri-apps/api/event"
 import { cn, formatDuration } from "@/lib/utils"
 import type { MonitorInfo, RecordingSettings, RecordingSource, RecordingStatus, ScreenTarget } from "@/types"
@@ -488,7 +491,19 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     pipPosition: appSettings.recording.pipPosition,
   })
 
+  const pipLayoutRef = useRef<PipRect>(defaultPipRect(appSettings.recording.pipSize, appSettings.recording.pipPosition))
+  const [pipRect, setPipRectState] = useState<PipRect>(() => pipLayoutRef.current)
+  const setPipRect = useCallback((r: PipRect) => {
+    pipLayoutRef.current = r
+    setPipRectState({ ...r })
+  }, [])
   const [armHighlight, setArmHighlight] = useState(false)
+
+  const [micLevel, setMicLevel] = useState(0)
+  const [sysLevel, setSysLevel] = useState(0)
+  const metersRef = useRef<Array<{ stop: () => void }>>([])
+  const lastActivityRef = useRef(Date.now())
+  const elapsedRef = useRef(0)
 
   const [status,     setStatus]     = useState<RecordingStatus>("idle")
   const [elapsed,    setElapsed]    = useState(0)
@@ -523,6 +538,37 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   const showConfig  = !isActive && !isBusy
   const needsScreen = settings.source === "screen" || settings.source === "both"
   const needsCamera = settings.source === "camera" || settings.source === "both"
+
+  useEffect(() => {
+    if (isActive) return
+    setPipRect(defaultPipRect(settings.pipSize, settings.pipPosition))
+  }, [settings.pipSize, settings.pipPosition, isActive, setPipRect])
+
+  useEffect(() => {
+    if (!isActive) return
+    const bump = () => { lastActivityRef.current = Date.now() }
+    window.addEventListener("mousemove", bump)
+    window.addEventListener("keydown", bump)
+    window.addEventListener("mousedown", bump)
+    return () => {
+      window.removeEventListener("mousemove", bump)
+      window.removeEventListener("keydown", bump)
+      window.removeEventListener("mousedown", bump)
+    }
+  }, [isActive])
+
+  useEffect(() => {
+    if (!isActive) return
+    let raf = 0
+    const tick = () => {
+      const meters = metersRef.current as Array<{ level: number; stop: () => void }>
+      if (meters[0]) setMicLevel(meters[0].level)
+      if (meters[1]) setSysLevel(meters[1].level)
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [isActive])
 
   // Fetch save dir + disk info on mount
   useEffect(() => {
@@ -597,6 +643,29 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   // Keep a ref to the current preview stream for snapshot compositing.
   useEffect(() => { previewStreamRef.current = previewStream }, [previewStream])
 
+  function applyPreset(preset: NonNullable<ReturnType<typeof findPreset>>) {
+    setSettings((p) => ({
+      ...p,
+      source: preset.source,
+      quality: preset.quality,
+      countdown: preset.countdown,
+      microphone: preset.microphone,
+      systemAudio: preset.systemAudio,
+      cursorHighlight: preset.cursorHighlight,
+      cameraBlur: preset.cameraBlur,
+      pipSize: preset.pipSize,
+      pipPosition: preset.pipPosition,
+    }))
+    setPipRect(defaultPipRect(preset.pipSize, preset.pipPosition))
+    updateRecording({ activePresetId: preset.id })
+  }
+
+  async function startWithPreset(presetId: string) {
+    const preset = findPreset(presetId, appSettings.recording.presets)
+    if (preset) applyPreset(preset)
+    startCountdownRef.current()
+  }
+
   // ── Snapshot: composite current frame + annotation drawing → PNG ───────────────
   const compositeAndSave = useCallback(async (drawingPng: string) => {
     const stream = previewStreamRef.current
@@ -668,7 +737,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     listen("rec-arm", () => {
       setArmHighlight(true)
       setTimeout(() => setArmHighlight(false), 2500)
-      const preset = findPreset(appSettings.recording.activePresetId)
+      const preset = findPreset(appSettings.recording.activePresetId, appSettings.recording.presets)
       if (preset) applyPreset(preset)
     }).then((fn) => unsubs.push(fn))
     return () => { unsubs.forEach((fn) => fn()) }
@@ -699,11 +768,22 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     timerRef.current = setInterval(() => {
       setElapsed((e) => {
         const next = e + 1
+        elapsedRef.current = next
         emit("hud-tick", { elapsed: next }).catch(() => {})
+
+        const max = appSettings.recording.maxDurationSecs
+        if (max > 0 && next >= max) {
+          void stopRecordingRef.current()
+          return next
+        }
+        const idle = appSettings.recording.idleStopSecs
+        if (idle > 0 && (Date.now() - lastActivityRef.current) / 1000 >= idle) {
+          void stopRecordingRef.current()
+        }
         return next
       })
     }, 1000)
-  }, [])
+  }, [appSettings.recording.maxDurationSecs, appSettings.recording.idleStopSecs])
 
   const stopElapsedTimer = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
@@ -721,6 +801,10 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
         cameraDeviceId: settings.cameraDeviceId || undefined,
         micDeviceId: settings.micDeviceId || undefined,
         cameraStream: needsCamera ? liveCamRef.current : null,
+        pipSize: settings.pipSize,
+        pipPosition: settings.pipPosition,
+        cameraBlur: settings.cameraBlur,
+        pipLayoutRef: settings.source === "both" ? pipLayoutRef : undefined,
         onEnded: () => { if (mediaRef.current?.state !== "inactive") stopRecording() },
       })
     } catch (err: unknown) {
@@ -779,6 +863,22 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
 
       recorder.start(500)
       mediaRef.current = recorder
+
+      metersRef.current.forEach((m) => m.stop())
+      metersRef.current = []
+      const audioTracks = handle.recordStream.getAudioTracks()
+      if (settings.microphone && audioTracks.length > 0) {
+        const idx = settings.systemAudio ? 1 : 0
+        const t = audioTracks[idx] ?? audioTracks[0]
+        const m = createAudioMeter(new MediaStream([t]))
+        if (m) metersRef.current.push(m)
+      }
+      if (settings.systemAudio && audioTracks.length > 0) {
+        const m = createAudioMeter(new MediaStream([audioTracks[0]]))
+        if (m) metersRef.current.push(m)
+      }
+      lastActivityRef.current = Date.now()
+
       return true
     } catch (err: unknown) {
       setError(captureErrorMessage(err))
@@ -858,6 +958,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     setElapsed(0)
     syncHud({ phase: "recording", elapsed: 0 })
     onRecordingChange?.(true)
+    if (settings.cursorHighlight) openCursorOverlay().catch(() => {})
     startElapsedTimer()
   }
 
@@ -891,6 +992,9 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     stopElapsedTimer()
     setAnnotating(false)
     closeAnnotateWindow()
+    closeCursorOverlay().catch(() => {})
+    metersRef.current.forEach((m) => m.stop())
+    metersRef.current = []
     onRecordingChange?.(false)
     setStatus("processing")
 
@@ -911,6 +1015,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   function cancelCountdown() {
     if (cdTimerRef.current) { clearInterval(cdTimerRef.current); cdTimerRef.current = null }
     abortCapture()
+    closeCursorOverlay().catch(() => {})
     setPreviewStream(needsCamera ? liveCamRef.current : null)
     showAfterRecording()
     setStatus("idle")
@@ -934,6 +1039,10 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   stopRecordingRef.current = stopRecording
   pauseRecordingRef.current = pauseRecording
   resumeRecordingRef.current = resumeRecording
+  startCountdownRef.current = startCountdown
+  statusRef.current = status
+
+  const presets = appSettings.recording.presets
 
   // ── Device option lists ────────────────────────────────────────────────────────
   const cameraOptions: SelectOption[] = cameras.map((c) => ({ id: c.deviceId, label: c.label, icon: Camera }))
@@ -994,11 +1103,55 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
       )}
 
       {/* Preview */}
-      <PreviewCanvas source={settings.source} status={status} elapsed={elapsed} countdown={countdown} stream={previewStream} summary={previewSummary} />
+      <div className="relative shrink-0">
+        <PreviewCanvas source={settings.source} status={status} elapsed={elapsed} countdown={countdown} stream={previewStream} summary={previewSummary} />
+        {settings.source === "both" && isActive && (
+          <PipOverlay rect={pipRect} onChange={setPipRect} disabled={status === "paused"} />
+        )}
+      </div>
+
+      {/* Audio meters */}
+      {isActive && (settings.microphone || settings.systemAudio) && (
+        <div className="flex gap-3 rounded-xl border border-border/50 bg-[var(--surface)] px-3.5 py-2.5">
+          {settings.microphone && <AudioMeterBar label="Microphone" level={micLevel} active={settings.microphone} />}
+          {settings.systemAudio && <AudioMeterBar label="System audio" level={sysLevel} active={settings.systemAudio} />}
+        </div>
+      )}
 
       {/* Config panel (idle only) */}
       {showConfig && (
         <div className="fade-up flex flex-col gap-5">
+          {/* Quick presets */}
+          <section className="flex flex-col gap-2.5">
+            <SectionLabel>Quick start</SectionLabel>
+            <div className="flex flex-wrap gap-2">
+              {presets.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => applyPreset(p)}
+                  className={cn(
+                    "flex flex-1 min-w-[100px] flex-col items-start gap-0.5 rounded-xl border px-3 py-2.5 text-left transition-all active:scale-[0.98]",
+                    appSettings.recording.activePresetId === p.id
+                      ? "border-primary/50 bg-primary/10"
+                      : "border-border/60 bg-[var(--surface)] hover:border-border",
+                  )}
+                >
+                  <span className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                    <Zap className="size-3 text-accent" /> {p.name}
+                  </span>
+                  <span className="text-[10px] leading-tight text-muted-foreground">{p.description}</span>
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => startWithPreset(appSettings.recording.activePresetId)}
+              className="flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/8 py-2.5 text-xs font-bold text-primary transition-all hover:bg-primary/15"
+            >
+              <Zap className="size-3.5" />
+              Record with {findPreset(appSettings.recording.activePresetId, appSettings.recording.presets)?.name ?? "preset"}
+            </button>
+          </section>
+
           {/* Source */}
           <section className="flex flex-col gap-2.5">
             <SectionLabel>Source</SectionLabel>
@@ -1084,6 +1237,87 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
             )}
           </section>
 
+          {/* Webcam / PiP */}
+          {needsCamera && (
+            <section className="flex flex-col gap-2.5">
+              <SectionLabel>Camera</SectionLabel>
+              <button
+                type="button"
+                onClick={() => setSettings((p) => ({ ...p, cameraBlur: !p.cameraBlur }))}
+                className={cn(
+                  "flex items-center justify-between rounded-xl border px-3.5 py-3 text-left transition-colors",
+                  settings.cameraBlur
+                    ? "border-primary/40 bg-primary/10"
+                    : "border-border/60 bg-[var(--surface)] hover:bg-[var(--surface-hover)]",
+                )}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Sparkles className="size-4 text-accent" />
+                  <div>
+                    <p className="text-xs font-bold text-foreground">Blur background</p>
+                    <p className="text-[10px] text-muted-foreground">Soft halo around PiP or camera framing</p>
+                  </div>
+                </div>
+                <div className={cn(
+                  "flex h-5 w-9 items-center rounded-full p-0.5 transition-colors",
+                  settings.cameraBlur ? "bg-primary" : "bg-secondary",
+                )}>
+                  <div className={cn("size-4 rounded-full bg-white shadow-sm transition-transform", settings.cameraBlur ? "translate-x-4" : "translate-x-0")} />
+                </div>
+              </button>
+              {settings.source === "both" && (
+                <div className="flex gap-3">
+                  <OptionGroup label="PiP size" value={settings.pipSize}
+                    options={[
+                      { v: "small" as PipSize, label: "S" },
+                      { v: "medium" as PipSize, label: "M" },
+                      { v: "large" as PipSize, label: "L" },
+                    ]}
+                    onChange={(v) => setSettings((p) => ({ ...p, pipSize: v }))}
+                  />
+                  <OptionGroup label="PiP position" value={settings.pipPosition}
+                    options={[
+                      { v: "bottom-right" as PipPosition, label: "BR" },
+                      { v: "bottom-left" as PipPosition, label: "BL" },
+                      { v: "top-right" as PipPosition, label: "TR" },
+                      { v: "top-left" as PipPosition, label: "TL" },
+                    ]}
+                    onChange={(v) => setSettings((p) => ({ ...p, pipPosition: v }))}
+                  />
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Cursor highlight */}
+          <section className="flex flex-col gap-2.5">
+            <SectionLabel>Cursor</SectionLabel>
+            <button
+              type="button"
+              onClick={() => setSettings((p) => ({ ...p, cursorHighlight: !p.cursorHighlight }))}
+              className={cn(
+                "flex items-center justify-between rounded-xl border px-3.5 py-3 text-left transition-colors",
+                settings.cursorHighlight
+                  ? "border-primary/40 bg-primary/10"
+                  : "border-border/60 bg-[var(--surface)] hover:bg-[var(--surface-hover)]",
+              )}
+            >
+              <div className="flex items-center gap-2.5">
+                <MousePointer2 className="size-4 text-accent" />
+                <div>
+                  <p className="text-xs font-bold text-foreground">Spotlight &amp; click rings</p>
+                  <p className="text-[10px] text-muted-foreground">Great for tutorials — overlay during recording</p>
+                </div>
+              </div>
+              <div className={cn(
+                "flex h-5 w-9 items-center rounded-full p-0.5 transition-colors",
+                settings.cursorHighlight ? "bg-primary" : "bg-secondary",
+              )}>
+                <div className={cn("size-4 rounded-full bg-white shadow-sm transition-transform", settings.cursorHighlight ? "translate-x-4" : "translate-x-0")} />
+              </div>
+            </button>
+          </section>
+
           {/* Output */}
           <section className="flex flex-col gap-2.5">
             <SectionLabel>Output</SectionLabel>
@@ -1148,7 +1382,10 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
         <div className="flex gap-2">
         {status === "idle" && (
           <button onClick={startCountdown}
-            className="group flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-4 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-accent hover:shadow-primary/35 active:scale-[0.98]"
+            className={cn(
+              "group flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-4 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-accent hover:shadow-primary/35 active:scale-[0.98]",
+              armHighlight && "ring-2 ring-accent ring-offset-2 ring-offset-background animate-pulse",
+            )}
           >
             <Video className="size-4 transition-transform group-hover:scale-110" />
             Start Recording

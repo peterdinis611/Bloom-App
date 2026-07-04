@@ -61,6 +61,14 @@ export const BUILTIN_PRESETS: RecordingPreset[] = [
   },
 ]
 
-export function findPreset(id: string): RecordingPreset | undefined {
-  return BUILTIN_PRESETS.find((p) => p.id === id)
+export function findPreset(id: string, list: RecordingPreset[] = BUILTIN_PRESETS): RecordingPreset | undefined {
+  return list.find((p) => p.id === id)
+}
+
+export function isBuiltinPreset(id: string): boolean {
+  return BUILTIN_PRESETS.some((p) => p.id === id)
+}
+
+export function newPresetId(): string {
+  return `custom-${Date.now()}`
 }

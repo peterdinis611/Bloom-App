@@ -172,6 +172,9 @@ mod tests {
             has_microphone: true,
             has_system_audio: false,
             target_label: "Display 1".to_string(),
+            starred: false,
+            tags: vec![],
+            folder: String::new(),
         }
     }
 

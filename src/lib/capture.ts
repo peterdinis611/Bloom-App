@@ -21,6 +21,27 @@ type Quality = "720p" | "1080p"
 export type PipSize = "small" | "medium" | "large"
 export type PipPosition = "bottom-right" | "bottom-left" | "top-right" | "top-left"
 
+/** Normalised PiP rectangle (0–1) relative to canvas. */
+export interface PipRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export function defaultPipRect(size: PipSize, position: PipPosition): PipRect {
+  const w = pipWidthFraction(size)
+  const aspect = 9 / 16
+  const h = w * aspect
+  const margin = 0.02
+  let x = 1 - w - margin
+  let y = 1 - h - margin
+  if (position === "bottom-left") x = margin
+  else if (position === "top-right") y = margin
+  else if (position === "top-left") { x = margin; y = margin }
+  return { x, y, w, h }
+}
+
 const DIMENSIONS: Record<Quality, { w: number; h: number }> = {
   "720p": { w: 1280, h: 720 },
   "1080p": { w: 1920, h: 1080 },
@@ -40,6 +61,8 @@ export interface CaptureConfig {
   pipPosition?: PipPosition
   /** Blur camera background (PiP halo or camera-only framing). */
   cameraBlur?: boolean
+  /** Live-updated PiP layout (overrides pipSize/pipPosition when set). */
+  pipLayoutRef?: { current: PipRect }
   /** Fired when the captured screen surface ends (user clicks "Stop sharing"). */
   onEnded?: () => void
 }
@@ -49,6 +72,8 @@ export interface CaptureHandle {
   recordStream: MediaStream
   /** Stream to show in the live preview <video>. */
   previewStream: MediaStream
+  /** Live PiP layout ref (when source is "both"). */
+  pipLayoutRef?: { current: PipRect }
   /** Tears down everything this handle created (not the passed-in camera). */
   stop: () => void
 }
@@ -144,26 +169,6 @@ function pipWidthFraction(size: PipSize): number {
   return size === "small" ? 0.18 : size === "large" ? 0.32 : 0.24
 }
 
-function pipCoords(
-  position: PipPosition,
-  w: number,
-  h: number,
-  pipW: number,
-  pipH: number,
-  margin: number,
-): { px: number; py: number } {
-  switch (position) {
-    case "bottom-left":
-      return { px: margin, py: h - pipH - margin }
-    case "top-right":
-      return { px: w - pipW - margin, py: margin }
-    case "top-left":
-      return { px: margin, py: margin }
-    default:
-      return { px: w - pipW - margin, py: h - pipH - margin }
-  }
-}
-
 /** Camera-only output with optional blurred background framing. */
 async function startCameraCompositor(
   camera: MediaStream,
@@ -228,6 +233,7 @@ async function startCompositor(
   pipSize: PipSize = "medium",
   pipPosition: PipPosition = "bottom-right",
   cameraBlur = false,
+  pipLayoutRef?: { current: PipRect },
 ): Promise<{ stream: MediaStream; stop: () => void }> {
   const { w, h } = DIMENSIONS[quality]
   const fps = qualityFrameRate(quality)
@@ -239,9 +245,7 @@ async function startCompositor(
 
   const [screenVideo, camVideo] = await Promise.all([playHidden(screen), playHidden(camera)])
 
-  const pipW = Math.round(w * pipWidthFraction(pipSize))
-  const margin = Math.round(w * 0.02)
-  const radius = Math.round(pipW * 0.12)
+  const fallback = defaultPipRect(pipSize, pipPosition)
 
   let raf = 0
   const render = () => {
@@ -249,9 +253,12 @@ async function startCompositor(
     ctx.fillRect(0, 0, w, h)
     drawCover(ctx, screenVideo, 0, 0, w, h)
 
-    const aspect = camVideo.videoWidth && camVideo.videoHeight ? camVideo.videoHeight / camVideo.videoWidth : 9 / 16
-    const pipH = Math.round(pipW * aspect)
-    const { px, py } = pipCoords(pipPosition, w, h, pipW, pipH, margin)
+    const layout = pipLayoutRef?.current ?? fallback
+    const pipW = Math.round(layout.w * w)
+    const pipH = Math.round(layout.h * h)
+    const px = Math.round(layout.x * w)
+    const py = Math.round(layout.y * h)
+    const radius = Math.round(pipW * 0.12)
 
     if (cameraBlur) {
       ctx.save()
@@ -365,7 +372,9 @@ export async function startCapture(config: CaptureConfig): Promise<CaptureHandle
   const camera = config.cameraStream ?? (await openCameraStream(config.cameraDeviceId, quality))
   if (ownsCamera) cleanups.push(() => camera.getTracks().forEach((t) => t.stop()))
 
-  const compositor = await startCompositor(screen, camera, quality, pipSize, pipPosition, cameraBlur)
+  const compositor = await startCompositor(
+    screen, camera, quality, pipSize, pipPosition, cameraBlur, config.pipLayoutRef,
+  )
   cleanups.push(compositor.stop)
 
   const recordStream = new MediaStream([
@@ -376,6 +385,7 @@ export async function startCapture(config: CaptureConfig): Promise<CaptureHandle
   return {
     recordStream,
     previewStream: compositor.stream,
+    pipLayoutRef: config.pipLayoutRef,
     stop: () => cleanups.forEach((fn) => fn()),
   }
 }

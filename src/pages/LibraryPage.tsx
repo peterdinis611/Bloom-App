@@ -22,6 +22,13 @@ import {
   Sparkles,
   Terminal,
   Copy,
+  Star,
+  Tag,
+  Share2,
+  CheckSquare,
+  Square,
+  Folder,
+  Scissors,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { FfmpegStatus, LibraryStats, RecordingEntry, ValidationResult } from "@/types"
@@ -30,6 +37,9 @@ import {
   getLibraryStats,
   deleteRecording,
   renameRecording,
+  updateRecordingMeta,
+  batchDeleteRecordings,
+  shareRecording,
   revealInFinder,
   validateRecording,
   checkFfmpeg,
@@ -39,6 +49,8 @@ import {
   formatDurationSecs,
 } from "@/hooks/useBloomBackend"
 import { OptimizeModal } from "@/components/OptimizeModal"
+import { TrimModal } from "@/components/TrimModal"
+import { BatchOptimizeModal } from "@/components/BatchOptimizeModal"
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function relativeDate(iso: string): string {
@@ -219,7 +231,7 @@ function PlayerModal({ entry, onClose }: { entry: RecordingEntry; onClose: () =>
 }
 
 // ── Recording card ─────────────────────────────────────────────────────────
-function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, onOptimize, validation, busy, ffmpegReady }: {
+function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, onOptimize, onTrim, onToggleStar, onShare, validation, busy, ffmpegReady, batchMode, selected, onSelect }: {
   entry: RecordingEntry
   onPlay: () => void
   onDelete: () => void
@@ -227,11 +239,20 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
   onRename: (title: string) => void
   onValidate: () => void
   onOptimize: () => void
+  onTrim: () => void
+  onToggleStar: () => void
+  onShare: () => void
   validation?: ValidationResult
   busy: boolean
   ffmpegReady: boolean
+  batchMode?: boolean
+  selected?: boolean
+  onSelect?: () => void
 }) {
   const meta = entry.meta
+  const starred = meta.starred ?? false
+  const tags = meta.tags ?? []
+  const folder = meta.folder ?? ""
   const src = SOURCE_META[meta.source] ?? SOURCE_META.screen
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(meta.title)
@@ -259,8 +280,19 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
   }
 
   return (
-    <div className="group flex flex-col gap-3 rounded-2xl border border-border/50 bg-[var(--surface)] p-3 transition-colors hover:border-border">
+    <div className={cn(
+      "group flex flex-col gap-3 rounded-2xl border bg-[var(--surface)] p-3 transition-colors hover:border-border",
+      selected ? "border-primary/50 ring-1 ring-primary/25" : "border-border/50",
+    )}>
       <div className="flex items-start gap-3">
+        {batchMode && (
+          <button
+            onClick={onSelect}
+            className="mt-1 shrink-0 text-muted-foreground hover:text-primary"
+          >
+            {selected ? <CheckSquare className="size-5 text-primary" /> : <Square className="size-5" />}
+          </button>
+        )}
         {/* Thumbnail */}
         <button
           onClick={onPlay}
@@ -296,13 +328,38 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
               className="w-full rounded-md border border-primary/40 bg-black/40 px-2 py-1 text-sm font-semibold text-foreground outline-none ring-1 ring-primary/20"
             />
           ) : (
-            <button onClick={() => setEditing(true)} className="flex items-center gap-1.5 text-left" title="Click to rename">
-              <span className="truncate text-sm font-bold text-foreground">{meta.title}</span>
-              <Pencil className="size-3 shrink-0 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground/60" />
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => setEditing(true)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left" title="Click to rename">
+                <span className="truncate text-sm font-bold text-foreground">{meta.title}</span>
+                <Pencil className="size-3 shrink-0 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground/60" />
+              </button>
+              <button
+                type="button"
+                onClick={onToggleStar}
+                className="shrink-0"
+                title={starred ? "Unstar" : "Star"}
+              >
+                <Star className={cn("size-3.5", starred ? "fill-amber-400 text-amber-400" : "text-muted-foreground/40 hover:text-amber-400")} />
+              </button>
+            </div>
           )}
 
           <p className="mt-0.5 text-[11px] text-muted-foreground">{relativeDate(meta.created_at)}</p>
+
+          {(folder || tags.length > 0) && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1">
+              {folder && (
+                <span className="flex items-center gap-0.5 rounded-md bg-secondary px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground">
+                  <Folder className="size-2.5" /> {folder}
+                </span>
+              )}
+              {tags.map((t) => (
+                <span key={t} className="flex items-center gap-0.5 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+                  <Tag className="size-2.5" /> {t}
+                </span>
+              ))}
+            </div>
+          )}
 
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             <span className={cn("flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold", src.tint)}>
@@ -330,8 +387,10 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
       <div className="flex items-center gap-1 border-t border-border/40 pt-2">
         <ActionBtn icon={Play} label="Play" onClick={onPlay} />
         {ffmpegReady && <ActionBtn icon={Sparkles} label="Optimise" onClick={onOptimize} accent />}
+        {ffmpegReady && <ActionBtn icon={Scissors} label="Trim" onClick={onTrim} />}
         <ActionBtn icon={ScanSearch} label="Verify" onClick={onValidate} disabled={busy} />
         <ActionBtn icon={FolderOpen} label="Reveal" onClick={onReveal} />
+        <ActionBtn icon={Share2} label="Share" onClick={onShare} />
         <div className="flex-1" />
         <ActionBtn icon={Trash2} label="Delete" onClick={onDelete} danger />
       </div>
@@ -379,7 +438,14 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
   const [ffmpeg, setFfmpeg] = useState<FfmpegStatus | null>(null)
   const [checkingFfmpeg, setCheckingFfmpeg] = useState(false)
   const [optimizing, setOptimizing] = useState<RecordingEntry | null>(null)
+  const [trimming, setTrimming] = useState<RecordingEntry | null>(null)
+  const [batchOptimizing, setBatchOptimizing] = useState<RecordingEntry[] | null>(null)
   const [copied, setCopied] = useState(false)
+  const [starredOnly, setStarredOnly] = useState(false)
+  const [folderFilter, setFolderFilter] = useState<string>("")
+  const [batchMode, setBatchMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [tagDraft, setTagDraft] = useState<Record<string, string>>({})
 
   const recheckFfmpeg = useCallback(async () => {
     setCheckingFfmpeg(true)
@@ -419,10 +485,26 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
   }, [ffmpeg])
 
   const filtered = useMemo(() => {
+    let list = entries
+    if (starredOnly) list = list.filter((e) => e.meta.starred)
+    if (folderFilter) list = list.filter((e) => (e.meta.folder ?? "") === folderFilter)
     const q = query.trim().toLowerCase()
-    if (!q) return entries
-    return entries.filter((e) => e.meta.title.toLowerCase().includes(q) || e.meta.source.includes(q))
-  }, [entries, query])
+    if (!q) return list
+    return list.filter((e) =>
+      e.meta.title.toLowerCase().includes(q)
+      || e.meta.source.includes(q)
+      || (e.meta.tags ?? []).some((t) => t.toLowerCase().includes(q)),
+    )
+  }, [entries, query, starredOnly, folderFilter])
+
+  const folders = useMemo(() => {
+    const set = new Set<string>()
+    for (const e of entries) {
+      const f = e.meta.folder?.trim()
+      if (f) set.add(f)
+    }
+    return [...set].sort()
+  }, [entries])
 
   const handleRename = async (id: string, title: string) => {
     try {
@@ -443,6 +525,63 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
     } catch (e) {
       setError(String(e))
     }
+  }
+
+  const handleBatchDelete = async () => {
+    const ids = [...selectedIds]
+    if (ids.length === 0) return
+    try {
+      await batchDeleteRecordings(ids)
+      setEntries((prev) => prev.filter((e) => !selectedIds.has(e.meta.id)))
+      setSelectedIds(new Set())
+      setBatchMode(false)
+      const st = await getLibraryStats().catch(() => null)
+      if (st) setStats(st)
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  const handleToggleStar = async (id: string, starred: boolean) => {
+    try {
+      const meta = await updateRecordingMeta(id, { starred: !starred })
+      setEntries((prev) => prev.map((e) => (e.meta.id === id ? { ...e, meta } : e)))
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  const handleSetFolder = async (id: string, folder: string) => {
+    try {
+      const meta = await updateRecordingMeta(id, { folder: folder.trim() })
+      setEntries((prev) => prev.map((e) => (e.meta.id === id ? { ...e, meta } : e)))
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  const handleAddTag = async (id: string) => {
+    const raw = tagDraft[id]?.trim()
+    if (!raw) return
+    const entry = entries.find((e) => e.meta.id === id)
+    if (!entry) return
+    const tags = [...new Set([...(entry.meta.tags ?? []), raw])]
+    try {
+      const meta = await updateRecordingMeta(id, { tags })
+      setEntries((prev) => prev.map((e) => (e.meta.id === id ? { ...e, meta } : e)))
+      setTagDraft((d) => ({ ...d, [id]: "" }))
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
 
   const handleValidate = async (id: string) => {
@@ -474,6 +613,17 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {entries.length > 0 && (
+            <button
+              onClick={() => { setBatchMode((b) => !b); setSelectedIds(new Set()) }}
+              className={cn(
+                "hidden items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[10px] font-bold transition-colors sm:flex",
+                batchMode ? "border-primary/40 bg-primary/10 text-primary" : "border-border/60 text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <CheckSquare className="size-3" /> Select
+            </button>
+          )}
           {ffmpeg?.available && (
             <span className="hidden items-center gap-1 rounded-lg border border-emerald-500/20 bg-emerald-500/8 px-2 py-1 text-[10px] font-bold text-emerald-300 sm:flex">
               <Sparkles className="size-3" /> ffmpeg
@@ -532,6 +682,48 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
         </div>
       )}
 
+      {/* Filters */}
+      {entries.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setStarredOnly((s) => !s)}
+            className={cn(
+              "flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition-colors",
+              starredOnly ? "border-amber-500/40 bg-amber-500/10 text-amber-300" : "border-border/60 text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <Star className={cn("size-3", starredOnly && "fill-current")} /> Starred
+          </button>
+          <select
+            value={folderFilter}
+            onChange={(e) => setFolderFilter(e.target.value)}
+            className="rounded-lg border border-border/60 bg-[var(--surface)] px-2.5 py-1.5 text-[11px] font-semibold text-foreground outline-none"
+          >
+            <option value="">All folders</option>
+            {folders.map((f) => <option key={f} value={f}>{f}</option>)}
+          </select>
+          {batchMode && selectedIds.size > 0 && ffmpeg?.available && (
+            <button
+              onClick={() => {
+                const picked = entries.filter((e) => selectedIds.has(e.meta.id))
+                setBatchOptimizing(picked)
+              }}
+              className="flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-[11px] font-bold text-primary hover:bg-primary/15"
+            >
+              <Sparkles className="size-3" /> Optimise {selectedIds.size}
+            </button>
+          )}
+          {batchMode && selectedIds.size > 0 && (
+            <button
+              onClick={handleBatchDelete}
+              className="ml-auto flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[11px] font-bold text-red-300 hover:bg-red-500/20"
+            >
+              <Trash2 className="size-3" /> Delete {selectedIds.size}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Search */}
       {entries.length > 0 && (
         <div className="relative">
@@ -578,19 +770,46 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
         ) : (
           <div className="flex flex-col gap-2.5">
             {filtered.map((entry) => (
-              <RecordingCard
-                key={entry.meta.id}
-                entry={entry}
-                busy={busyId === entry.meta.id}
-                ffmpegReady={!!ffmpeg?.available}
-                validation={validations[entry.meta.id]}
-                onPlay={() => setPlaying(entry)}
-                onDelete={() => setConfirmId(entry.meta.id)}
-                onReveal={() => revealInFinder(entry.path).catch((e) => setError(String(e)))}
-                onRename={(title) => handleRename(entry.meta.id, title)}
-                onValidate={() => handleValidate(entry.meta.id)}
-                onOptimize={() => setOptimizing(entry)}
-              />
+              <div key={entry.meta.id} className="flex flex-col gap-1">
+                <RecordingCard
+                  entry={entry}
+                  busy={busyId === entry.meta.id}
+                  ffmpegReady={!!ffmpeg?.available}
+                  validation={validations[entry.meta.id]}
+                  batchMode={batchMode}
+                  selected={selectedIds.has(entry.meta.id)}
+                  onSelect={() => toggleSelect(entry.meta.id)}
+                  onPlay={() => setPlaying(entry)}
+                  onDelete={() => setConfirmId(entry.meta.id)}
+                  onReveal={() => revealInFinder(entry.path).catch((e) => setError(String(e)))}
+                  onShare={() => shareRecording(entry.meta.id).catch((e) => setError(String(e)))}
+                  onRename={(title) => handleRename(entry.meta.id, title)}
+                  onValidate={() => handleValidate(entry.meta.id)}
+                  onOptimize={() => setOptimizing(entry)}
+                  onTrim={() => setTrimming(entry)}
+                  onToggleStar={() => handleToggleStar(entry.meta.id, entry.meta.starred ?? false)}
+                />
+                {!batchMode && (
+                  <div className="flex flex-wrap items-center gap-2 px-1">
+                    <input
+                      value={tagDraft[entry.meta.id] ?? ""}
+                      onChange={(e) => setTagDraft((d) => ({ ...d, [entry.meta.id]: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleAddTag(entry.meta.id) }}
+                      placeholder="Add tag…"
+                      className="min-w-0 flex-1 rounded-lg border border-border/50 bg-[var(--surface)] px-2 py-1 text-[10px] outline-none focus:border-primary/40"
+                    />
+                    <input
+                      defaultValue={entry.meta.folder ?? ""}
+                      onBlur={(e) => {
+                        const v = e.target.value.trim()
+                        if (v !== (entry.meta.folder ?? "")) handleSetFolder(entry.meta.id, v)
+                      }}
+                      placeholder="Folder"
+                      className="w-24 rounded-lg border border-border/50 bg-[var(--surface)] px-2 py-1 text-[10px] outline-none focus:border-primary/40"
+                    />
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         )}
@@ -609,6 +828,20 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
         <OptimizeModal
           entry={optimizing}
           onClose={() => setOptimizing(null)}
+          onComplete={load}
+        />
+      )}
+      {trimming && (
+        <TrimModal
+          entry={trimming}
+          onClose={() => setTrimming(null)}
+          onComplete={load}
+        />
+      )}
+      {batchOptimizing && (
+        <BatchOptimizeModal
+          entries={batchOptimizing}
+          onClose={() => setBatchOptimizing(null)}
           onComplete={load}
         />
       )}

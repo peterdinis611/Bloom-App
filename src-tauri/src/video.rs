@@ -500,6 +500,9 @@ fn write_output_sidecar(input: &Path, output: &Path, opts: &OptimizeOptions, dur
             opts.resolution,
             opts.format.to_uppercase()
         ),
+        starred: false,
+        tags: vec![],
+        folder: String::new(),
     };
 
     if let Ok(json) = serde_json::to_string_pretty(&meta) {

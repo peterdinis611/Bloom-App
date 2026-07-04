@@ -29,10 +29,14 @@ export interface AppSettings {
     /** Last-used quick preset id (demo / meeting / tutorial). */
     activePresetId: string
     presets: RecordingPreset[]
+    /** Auto-stop after N seconds (0 = disabled). */
+    maxDurationSecs: number
+    /** Auto-stop after N seconds of no mouse/keyboard activity (0 = disabled). */
+    idleStopSecs: number
   }
 }
 
-const STORAGE_KEY = "bloom-settings-v2"
+const STORAGE_KEY = "bloom-settings-v3"
 
 const DEFAULTS: AppSettings = {
   theme: DEFAULT_THEME,
@@ -51,6 +55,8 @@ const DEFAULTS: AppSettings = {
     pipPosition: "bottom-right",
     activePresetId: "demo",
     presets: BUILTIN_PRESETS,
+    maxDurationSecs: 0,
+    idleStopSecs: 0,
   },
 }
 
