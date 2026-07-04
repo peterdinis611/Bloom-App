@@ -7,14 +7,24 @@ interface PipOverlayProps {
   rect: PipRect
   onChange: (rect: PipRect) => void
   disabled?: boolean
+  /** Live camera feed shown inside the PiP frame. */
+  cameraStream?: MediaStream | null
 }
 
 type DragMode = "move" | "resize-br" | null
 
-export function PipOverlay({ rect, onChange, disabled }: PipOverlayProps) {
+export function PipOverlay({ rect, onChange, disabled, cameraStream }: PipOverlayProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
   const [mode, setMode] = useState<DragMode>(null)
   const startRef = useRef({ mx: 0, my: 0, rect: rect })
+
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    v.srcObject = cameraStream ?? null
+    if (cameraStream) v.play().catch(() => {})
+  }, [cameraStream])
 
   const onPointerDown = useCallback((e: React.PointerEvent, m: DragMode) => {
     if (disabled) return
@@ -79,7 +89,16 @@ export function PipOverlay({ rect, onChange, disabled }: PipOverlayProps) {
         }}
         onPointerDown={(e) => onPointerDown(e, "move")}
       >
-        <div className="absolute inset-0 rounded-xl bg-black/20" />
+        {cameraStream ? (
+          <video
+            ref={videoRef}
+            muted
+            playsInline
+            className="absolute inset-0 h-full w-full rounded-[10px] object-cover"
+          />
+        ) : (
+          <div className="absolute inset-0 rounded-xl bg-black/20" />
+        )}
         {!disabled && (
           <div
             className="absolute bottom-0 right-0 size-4 cursor-se-resize rounded-br-xl bg-white/90"

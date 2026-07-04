@@ -16,7 +16,7 @@ import {
   Check,
   GripVertical,
 } from "lucide-react"
-import { getCurrentWindow } from "@tauri-apps/api/window"
+import { getSafeWebviewWindow } from "@/lib/windowControl"
 import { emit } from "@tauri-apps/api/event"
 import { ANNOTATION_COLORS, applyTheme, readStoredSettings, type AnnotationTool } from "@/hooks/useSettings"
 import { ANNOTATION_TOOL_HOTKEYS } from "@/lib/hotkeys"
@@ -207,7 +207,7 @@ export function AnnotationPage() {
 
   const closeWindow = useCallback(() => {
     emit("annotation-closed").catch(() => {})
-    getCurrentWindow().hide()
+    void getSafeWebviewWindow()?.hide()
   }, [])
 
   const saveSnapshot = useCallback(async () => {

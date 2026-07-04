@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { Pen, Highlighter, Eraser, Undo2, Trash2, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -34,70 +34,88 @@ export function LiveDrawOverlay({
 }: LiveDrawOverlayProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [, setTick] = useState(0)
+  const sizeRef = useRef({ w: 0, h: 0 })
+  const paintRaf = useRef(0)
 
   const repaint = useCallback(() => {
     const root = rootRef.current
     const canvas = canvasRef.current
     if (!root || !canvas) return
+
     const rect = root.getBoundingClientRect()
+    const cssW = Math.round(rect.width)
+    const cssH = Math.round(rect.height)
+    if (cssW <= 0 || cssH <= 0) return
+
     const dpr = window.devicePixelRatio || 1
-    canvas.width = Math.round(rect.width * dpr)
-    canvas.height = Math.round(rect.height * dpr)
-    canvas.style.width = `${rect.width}px`
-    canvas.style.height = `${rect.height}px`
+    if (sizeRef.current.w !== cssW || sizeRef.current.h !== cssH) {
+      sizeRef.current = { w: cssW, h: cssH }
+      canvas.width = Math.round(cssW * dpr)
+      canvas.height = Math.round(cssH * dpr)
+      canvas.style.width = `${cssW}px`
+      canvas.style.height = `${cssH}px`
+    }
+
     const ctx = canvas.getContext("2d")
     if (!ctx) return
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    layer.drawPreview(ctx, rect.width, rect.height)
+    layer.drawPreview(ctx, cssW, cssH)
   }, [layer])
 
-  useEffect(() => {
-    repaint()
-  }, [layer.revision, repaint])
-
-  useEffect(() => {
-    const root = rootRef.current
-    if (!root) return
-    const ro = new ResizeObserver(() => repaint())
-    ro.observe(root)
-    return () => ro.disconnect()
+  const scheduleRepaint = useCallback(() => {
+    if (paintRaf.current) return
+    paintRaf.current = requestAnimationFrame(() => {
+      paintRaf.current = 0
+      repaint()
+    })
   }, [repaint])
 
-  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  useEffect(() => {
+    scheduleRepaint()
+    const onResize = () => scheduleRepaint()
+    window.addEventListener("resize", onResize)
+    return () => {
+      window.removeEventListener("resize", onResize)
+      if (paintRaf.current) cancelAnimationFrame(paintRaf.current)
+    }
+  }, [scheduleRepaint])
+
+  const normFromEvent = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = rootRef.current?.getBoundingClientRect()
-    if (!rect) return
-    const p = clientToNorm(e.clientX, e.clientY, rect, RECORDING_ASPECT)
+    if (!rect) return null
+    return clientToNorm(e.clientX, e.clientY, rect, RECORDING_ASPECT)
+  }
+
+  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const p = normFromEvent(e)
     if (!p) return
     e.currentTarget.setPointerCapture(e.pointerId)
     layer.beginStroke(drawState, p)
-    setTick((t) => t + 1)
+    scheduleRepaint()
   }
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const rect = rootRef.current?.getBoundingClientRect()
-    if (!rect) return
-    const p = clientToNorm(e.clientX, e.clientY, rect, RECORDING_ASPECT)
+    const p = normFromEvent(e)
     if (!p) return
     layer.extendStroke(p)
-    setTick((t) => t + 1)
+    scheduleRepaint()
   }
 
   const onPointerUp = () => {
     layer.endStroke()
-    setTick((t) => t + 1)
+    scheduleRepaint()
   }
 
-  const cr = rootRef.current
-    ? contentRectContain(rootRef.current.clientWidth, rootRef.current.clientHeight, RECORDING_ASPECT)
+  const guide = sizeRef.current.w > 0
+    ? contentRectContain(sizeRef.current.w, sizeRef.current.h, RECORDING_ASPECT)
     : null
 
   return (
     <div ref={rootRef} className="absolute inset-0 z-20">
-      {cr && (
+      {guide && (
         <div
           className="pointer-events-none absolute border border-white/20"
-          style={{ left: cr.x, top: cr.y, width: cr.w, height: cr.h }}
+          style={{ left: guide.x, top: guide.y, width: guide.w, height: guide.h }}
         />
       )}
       <canvas
@@ -143,7 +161,7 @@ export function LiveDrawOverlay({
         <button
           type="button"
           title="Undo"
-          onClick={() => { layer.undo(); setTick((t) => t + 1) }}
+          onClick={() => { layer.undo(); scheduleRepaint() }}
           className="flex size-8 items-center justify-center rounded-lg text-white/60 hover:bg-white/10 hover:text-white"
         >
           <Undo2 className="size-3.5" />
@@ -151,7 +169,7 @@ export function LiveDrawOverlay({
         <button
           type="button"
           title="Clear all"
-          onClick={() => { layer.clear(); setTick((t) => t + 1) }}
+          onClick={() => { layer.clear(); scheduleRepaint() }}
           className="flex size-8 items-center justify-center rounded-lg text-white/60 hover:bg-red-400/20 hover:text-red-300"
         >
           <Trash2 className="size-3.5" />

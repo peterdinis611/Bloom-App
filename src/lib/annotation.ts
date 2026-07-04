@@ -192,6 +192,10 @@ export class AnnotationLayer {
     this.bump()
   }
 
+  isEmpty() {
+    return this.strokes.length === 0 && this.live === null
+  }
+
   /** Paint all strokes onto a pixel canvas (recording compositor or preview). */
   draw(ctx: CanvasRenderingContext2D, w: number, h: number) {
     for (const stroke of this.strokes) {

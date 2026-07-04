@@ -160,12 +160,104 @@ async function playHidden(stream: MediaStream): Promise<HTMLVideoElement> {
   v.srcObject = stream
   v.muted = true
   v.playsInline = true
+  v.setAttribute("playsinline", "true")
+  // Off-screen in DOM — WebKit often won't decode capture streams detached from the tree.
+  v.style.cssText = "position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none"
+  document.body.appendChild(v)
+
+  await new Promise<void>((resolve) => {
+    const done = () => resolve()
+    if (v.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      done()
+      return
+    }
+    v.addEventListener("loadedmetadata", done, { once: true })
+    v.addEventListener("error", done, { once: true })
+    setTimeout(done, 5000)
+  })
+
   try {
     await v.play()
   } catch {
-    /* autoplay may resolve later; the raf loop tolerates 0-dimension frames */
+    /* may start after first frame */
   }
+
+  await new Promise<void>((resolve) => {
+    if (v.videoWidth > 0 && v.videoHeight > 0) {
+      resolve()
+      return
+    }
+    const id = window.setInterval(() => {
+      if (v.videoWidth > 0 && v.videoHeight > 0) {
+        window.clearInterval(id)
+        resolve()
+      }
+    }, 50)
+    window.setTimeout(() => {
+      window.clearInterval(id)
+      resolve()
+    }, 5000)
+  })
+
   return v
+}
+
+function detachHiddenVideo(v: HTMLVideoElement) {
+  v.pause()
+  v.srcObject = null
+  v.remove()
+}
+
+/**
+ * WebKit often delivers frames to only one <video> per capture track.
+ * Compositor uses a clone so the preview element keeps the original track.
+ */
+function forkVideoStream(stream: MediaStream): { stream: MediaStream; cleanup: () => void } {
+  const tracks = stream.getVideoTracks()
+  if (tracks.length === 0) return { stream, cleanup: () => {} }
+  const cloned = tracks.map((t) => t.clone())
+  return {
+    stream: new MediaStream(cloned),
+    cleanup: () => cloned.forEach((t) => t.stop()),
+  }
+}
+
+/** Prime canvas + start throttled capture loop. */
+function startCompositorOutput(
+  canvas: HTMLCanvasElement,
+  fps: number,
+  render: () => void,
+): { stream: MediaStream; stopLoop: () => void } {
+  const ctx = canvas.getContext("2d")
+  if (!ctx) throw new Error("Canvas 2D unavailable")
+  render()
+  const stream = canvas.captureStream(fps)
+  render()
+  const stopLoop = startFrameLoop(fps, render)
+  return { stream, stopLoop }
+}
+
+/** Throttled render loop — avoids pinning the main thread at display refresh rate. */
+function startFrameLoop(fps: number, render: () => void): () => void {
+  let raf = 0
+  let last = 0
+  let running = true
+  const interval = 1000 / fps
+
+  const tick = (now: number) => {
+    if (!running) return
+    if (now - last >= interval) {
+      last = now
+      render()
+    }
+    raf = requestAnimationFrame(tick)
+  }
+
+  raf = requestAnimationFrame(tick)
+  return () => {
+    running = false
+    cancelAnimationFrame(raf)
+  }
 }
 
 function pipWidthFraction(size: PipSize): number {
@@ -178,7 +270,9 @@ function paintAnnotations(
   h: number,
   layerRef?: { current: AnnotationLayer | null },
 ) {
-  layerRef?.current?.draw(ctx, w, h)
+  const layer = layerRef?.current
+  if (!layer || layer.isEmpty()) return
+  layer.draw(ctx, w, h)
 }
 
 /** Single-video compositor (screen-only or camera-only) with optional annotations. */
@@ -189,27 +283,26 @@ async function startVideoCompositor(
 ): Promise<{ stream: MediaStream; stop: () => void }> {
   const { w, h } = DIMENSIONS[quality]
   const fps = qualityFrameRate(quality)
+  const { stream: compositorInput, cleanup: cleanupFork } = forkVideoStream(videoStream)
 
   const canvas = document.createElement("canvas")
   canvas.width = w
   canvas.height = h
   const ctx = canvas.getContext("2d")!
-  const video = await playHidden(videoStream)
+  const video = await playHidden(compositorInput)
 
-  let raf = 0
   const render = () => {
     ctx.fillStyle = "#000"
     ctx.fillRect(0, 0, w, h)
     drawCover(ctx, video, 0, 0, w, h)
     paintAnnotations(ctx, w, h, layerRef)
-    raf = requestAnimationFrame(render)
   }
-  raf = requestAnimationFrame(render)
+  const { stream, stopLoop } = startCompositorOutput(canvas, fps, render)
 
-  const stream = canvas.captureStream(fps)
   const stop = () => {
-    cancelAnimationFrame(raf)
-    video.srcObject = null
+    stopLoop()
+    detachHiddenVideo(video)
+    cleanupFork()
   }
   return { stream, stop }
 }
@@ -223,14 +316,14 @@ async function startCameraCompositor(
 ): Promise<{ stream: MediaStream; stop: () => void }> {
   const { w, h } = DIMENSIONS[quality]
   const fps = qualityFrameRate(quality)
+  const { stream: compositorInput, cleanup: cleanupFork } = forkVideoStream(camera)
 
   const canvas = document.createElement("canvas")
   canvas.width = w
   canvas.height = h
   const ctx = canvas.getContext("2d")!
-  const camVideo = await playHidden(camera)
+  const camVideo = await playHidden(compositorInput)
 
-  let raf = 0
   const render = () => {
     ctx.fillStyle = "#111"
     ctx.fillRect(0, 0, w, h)
@@ -257,15 +350,13 @@ async function startCameraCompositor(
     if (blur) ctx.restore()
 
     paintAnnotations(ctx, w, h, layerRef)
-
-    raf = requestAnimationFrame(render)
   }
-  raf = requestAnimationFrame(render)
+  const { stream, stopLoop } = startCompositorOutput(canvas, fps, render)
 
-  const stream = canvas.captureStream(fps)
   const stop = () => {
-    cancelAnimationFrame(raf)
-    camVideo.srcObject = null
+    stopLoop()
+    detachHiddenVideo(camVideo)
+    cleanupFork()
   }
   return { stream, stop }
 }
@@ -286,17 +377,22 @@ async function startCompositor(
 ): Promise<{ stream: MediaStream; stop: () => void }> {
   const { w, h } = DIMENSIONS[quality]
   const fps = qualityFrameRate(quality)
+  const screenFork = forkVideoStream(screen)
+  const cameraFork = forkVideoStream(camera)
 
   const canvas = document.createElement("canvas")
   canvas.width = w
   canvas.height = h
   const ctx = canvas.getContext("2d")!
 
-  const [screenVideo, camVideo] = await Promise.all([playHidden(screen), playHidden(camera)])
+  const [screenVideo, camVideo] = await Promise.all([
+    playHidden(screenFork.stream),
+    playHidden(cameraFork.stream),
+  ])
 
   const fallback = defaultPipRect(pipSize, pipPosition)
 
-  let raf = 0
+  let stopLoop = () => {}
   const render = () => {
     ctx.fillStyle = "#000"
     ctx.fillRect(0, 0, w, h)
@@ -332,16 +428,17 @@ async function startCompositor(
     ctx.restore()
 
     paintAnnotations(ctx, w, h, layerRef)
-
-    raf = requestAnimationFrame(render)
   }
-  raf = requestAnimationFrame(render)
+  const out = startCompositorOutput(canvas, fps, render)
+  stopLoop = out.stopLoop
 
-  const stream = canvas.captureStream(fps)
+  const stream = out.stream
   const stop = () => {
-    cancelAnimationFrame(raf)
-    screenVideo.srcObject = null
-    camVideo.srcObject = null
+    stopLoop()
+    detachHiddenVideo(screenVideo)
+    detachHiddenVideo(camVideo)
+    screenFork.cleanup()
+    cameraFork.cleanup()
   }
   return { stream, stop }
 }
@@ -382,17 +479,26 @@ export async function startCapture(config: CaptureConfig): Promise<CaptureHandle
       const recordStream = new MediaStream([...compositor.stream.getVideoTracks(), ...micTracks])
       return {
         recordStream,
-        previewStream: compositor.stream,
+        previewStream: camera,
         stop: () => cleanups.forEach((fn) => fn()),
       }
     }
 
-    const compositor = await startVideoCompositor(camera, quality, layerRef)
-    cleanups.push(compositor.stop)
-    const recordStream = new MediaStream([...compositor.stream.getVideoTracks(), ...micTracks])
+    if (layerRef) {
+      const compositor = await startVideoCompositor(camera, quality, layerRef)
+      cleanups.push(compositor.stop)
+      const recordStream = new MediaStream([...compositor.stream.getVideoTracks(), ...micTracks])
+      return {
+        recordStream,
+        previewStream: camera,
+        stop: () => cleanups.forEach((fn) => fn()),
+      }
+    }
+
+    const recordStream = new MediaStream([...camera.getVideoTracks(), ...micTracks])
     return {
       recordStream,
-      previewStream: compositor.stream,
+      previewStream: recordStream,
       stop: () => cleanups.forEach((fn) => fn()),
     }
   }
@@ -409,6 +515,20 @@ export async function startCapture(config: CaptureConfig): Promise<CaptureHandle
   const micTracks = await attachMic()
 
   if (source === "screen") {
+    const needsCompositor = !!layerRef
+    if (!needsCompositor) {
+      const recordStream = new MediaStream([
+        ...screen.getVideoTracks(),
+        ...systemAudioTracks,
+        ...micTracks,
+      ])
+      return {
+        recordStream,
+        previewStream: screen,
+        stop: () => cleanups.forEach((fn) => fn()),
+      }
+    }
+
     const compositor = await startVideoCompositor(screen, quality, layerRef)
     cleanups.push(compositor.stop)
     const recordStream = new MediaStream([
@@ -418,7 +538,7 @@ export async function startCapture(config: CaptureConfig): Promise<CaptureHandle
     ])
     return {
       recordStream,
-      previewStream: compositor.stream,
+      previewStream: screen,
       stop: () => cleanups.forEach((fn) => fn()),
     }
   }
@@ -440,7 +560,7 @@ export async function startCapture(config: CaptureConfig): Promise<CaptureHandle
   ])
   return {
     recordStream,
-    previewStream: compositor.stream,
+    previewStream: screen,
     pipLayoutRef: config.pipLayoutRef,
     stop: () => cleanups.forEach((fn) => fn()),
   }

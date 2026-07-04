@@ -1,7 +1,13 @@
-import { getCurrentWindow } from "@tauri-apps/api/window"
+import { useEffect, useState } from "react"
+import type { WebviewWindow } from "@tauri-apps/api/webviewWindow"
+import { getSafeWebviewWindow } from "@/lib/windowControl"
 
 export function TitleBar() {
-  const win = getCurrentWindow()
+  const [win, setWin] = useState<WebviewWindow | null>(null)
+
+  useEffect(() => {
+    setWin(getSafeWebviewWindow())
+  }, [])
 
   return (
     <div
@@ -13,19 +19,19 @@ export function TitleBar() {
           <button
             type="button"
             aria-label="Close"
-            onClick={() => win.close()}
+            onClick={() => void win?.close()}
             className="mac-traffic mac-traffic-close"
           />
           <button
             type="button"
             aria-label="Minimize"
-            onClick={() => win.minimize()}
+            onClick={() => void win?.minimize()}
             className="mac-traffic mac-traffic-minimize"
           />
           <button
             type="button"
             aria-label="Zoom"
-            onClick={() => win.toggleMaximize()}
+            onClick={() => void win?.toggleMaximize()}
             className="mac-traffic mac-traffic-maximize"
           />
         </div>

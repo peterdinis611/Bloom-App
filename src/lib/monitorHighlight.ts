@@ -4,6 +4,18 @@ import type { MonitorInfo } from "@/types"
 let highlightWin: WebviewWindow | null = null
 let hideTimer: ReturnType<typeof setTimeout> | null = null
 
+/** Dismiss any active monitor identify overlay. */
+export async function dismissMonitorHighlight(): Promise<void> {
+  if (hideTimer) {
+    clearTimeout(hideTimer)
+    hideTimer = null
+  }
+  if (highlightWin) {
+    await highlightWin.close().catch(() => {})
+    highlightWin = null
+  }
+}
+
 /** Flash an orange border overlay on the given physical display. */
 export async function highlightMonitor(m: MonitorInfo): Promise<void> {
   try {
@@ -36,9 +48,7 @@ export async function highlightMonitor(m: MonitorInfo): Promise<void> {
     })
 
     hideTimer = setTimeout(() => {
-      highlightWin?.close().catch(() => {})
-      highlightWin = null
-      hideTimer = null
+      void dismissMonitorHighlight()
     }, 2800)
   } catch {
     highlightWin = null

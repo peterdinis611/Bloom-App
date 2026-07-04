@@ -1,8 +1,6 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import {
-  MonitorDot,
   Camera,
-  Layers,
   Mic,
   MicOff,
   Volume2,
@@ -52,8 +50,14 @@ import {
 import { useMediaDevices } from "@/hooks/useMediaDevices"
 import { useSettings } from "@/hooks/useSettings"
 import { startCapture, openCameraStream, type CaptureHandle } from "@/lib/capture"
-import { highlightMonitor } from "@/lib/monitorHighlight"
+import { highlightMonitor, dismissMonitorHighlight } from "@/lib/monitorHighlight"
 import { MonitorPicker } from "@/components/record/MonitorPicker"
+import { PreviewFaultPanel } from "@/components/record/PreviewFaultPanel"
+import {
+  buildPreviewFault,
+  collectPreviewTechDetails,
+  expectsPreviewStream,
+} from "@/lib/previewDiagnostics"
 
 function captureErrorMessage(err: unknown): string {
   const name = (err as { name?: string })?.name ?? ""
@@ -270,81 +274,118 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
   const isPaused    = status === "paused"
   const isActive    = isRecording || isPaused
   const videoRef    = useRef<HTMLVideoElement>(null)
+  const [playError, setPlayError] = useState("")
+  const [poll, setPoll] = useState(0)
+  const [streamReady, setStreamReady] = useState(false)
+
+  useEffect(() => {
+    setStreamReady(false)
+    if (!stream) return
+    const t = window.setTimeout(() => setStreamReady(true), 900)
+    return () => window.clearTimeout(t)
+  }, [stream, status])
+
+  useEffect(() => {
+    if (!expectsPreviewStream(source, status) && !(status === "idle" && source === "screen")) return
+    const id = window.setInterval(() => setPoll((n) => n + 1), 400)
+    return () => window.clearInterval(id)
+  }, [source, status, stream])
 
   useEffect(() => {
     const v = videoRef.current
     if (!v) return
+    setPlayError("")
     v.srcObject = stream
-    if (stream) v.play().catch(() => {})
+    const tryPlay = () => {
+      v.play().catch((e: unknown) => {
+        setPlayError(e instanceof Error ? e.message : String(e))
+      })
+    }
+    tryPlay()
+    v.addEventListener("loadeddata", tryPlay)
+    v.addEventListener("canplay", tryPlay)
+    return () => {
+      v.removeEventListener("loadeddata", tryPlay)
+      v.removeEventListener("canplay", tryPlay)
+    }
   }, [stream])
 
-  const showVideo = !!stream
+  void poll
+  const details = collectPreviewTechDetails(source, status, stream, videoRef.current, playError)
+  const fault = buildPreviewFault(source, status, details)
+  const hasFrames = details.videoElementSize !== "0×0" && !details.videoElementSize.startsWith("0×")
+  const showFault = fault != null && (
+    fault.kind === "idle_screen"
+    || fault.kind === "camera_missing"
+    || fault.kind === "no_stream"
+    || fault.kind === "track_ended"
+    || (streamReady && (fault.kind === "no_frames" || fault.kind === "play_blocked"))
+  ) && !(hasFrames && fault.kind === "no_frames")
+
+  const showVideo = !!stream && hasFrames
 
   return (
     <div className={cn(
       "relative flex aspect-video w-full shrink-0 items-center justify-center overflow-hidden rounded-lg bg-black/90",
       isRecording && "ring-1 ring-[var(--rec-indicator)]/50",
     )}>
+      <div className="absolute inset-0 z-0 bg-black" />
       <video
         ref={videoRef}
+        autoPlay
         muted
         playsInline
-        className={cn("absolute inset-0 h-full w-full object-contain", showVideo ? "opacity-100" : "opacity-0")}
+        className={cn("absolute inset-0 z-[1] h-full w-full object-contain bg-black", showVideo ? "opacity-100" : "opacity-0")}
       />
 
-      {!showVideo && status === "idle" && (
-        <div className="flex flex-col items-center gap-2 text-muted-foreground">
-          {source === "screen" && <MonitorDot className="size-8 opacity-40" />}
-          {source === "camera" && <Camera className="size-8 opacity-40" />}
-          {source === "both" && <Layers className="size-8 opacity-40" />}
-          <p className="text-[12px]">Ready to record</p>
-        </div>
-      )}
+      {showFault && fault && <PreviewFaultPanel fault={fault} details={details} />}
 
-      {status === "preparing" && (
-        <div className="flex flex-col items-center gap-2">
+      {status === "preparing" && !showFault && (
+        <div className="relative z-[2] flex flex-col items-center gap-2">
           <div className="size-8 animate-spin rounded-full border-2 border-transparent border-t-[var(--accent)]" />
           <p className="text-[12px] text-muted-foreground">Preparing…</p>
         </div>
       )}
 
       {status === "countdown" && (
-        <div className="flex flex-col items-center gap-2">
-          <span className="text-5xl font-semibold tabular-nums text-foreground">{countdown}</span>
-          <p className="text-[12px] text-muted-foreground">Starting…</p>
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/40">
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-5xl font-semibold tabular-nums text-white">{countdown}</span>
+            <p className="text-[12px] text-white/80">Starting…</p>
+          </div>
         </div>
       )}
 
       {isActive && (
-        <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center">
-          <div className="font-mono text-4xl font-medium tabular-nums text-white">{formatDuration(elapsed)}</div>
-          {isPaused && <span className="text-[11px] text-muted-foreground">Paused</span>}
+        <div className="pointer-events-none absolute bottom-3 left-3 z-30 rounded-lg bg-black/55 px-2.5 py-1.5">
+          <div className="font-mono text-lg font-medium tabular-nums text-white">{formatDuration(elapsed)}</div>
+          {isPaused && <span className="text-[10px] text-white/70">Paused</span>}
         </div>
       )}
 
       {status === "processing" && (
-        <div className="flex flex-col items-center gap-2">
+        <div className="relative z-[2] flex flex-col items-center gap-2">
           <div className="size-8 animate-spin rounded-full border-2 border-transparent border-t-[var(--accent)]" />
           <p className="text-[12px] text-muted-foreground">Saving…</p>
         </div>
       )}
 
       {status === "done" && (
-        <div className="flex flex-col items-center gap-2">
+        <div className="relative z-[2] flex flex-col items-center gap-2">
           <CheckCircle2 className="size-8 text-[var(--status-success-fg)]" />
           <p className="text-[13px] font-medium text-[var(--status-success-fg)]">Saved</p>
         </div>
       )}
 
       {isRecording && (
-        <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-md bg-black/50 px-2 py-1">
+        <div className="absolute left-3 top-3 z-30 flex items-center gap-1.5 rounded-md bg-black/50 px-2 py-1">
           <span className="rec-dot size-2 rounded-full" />
           <span className="text-[10px] font-medium text-white/90">REC</span>
         </div>
       )}
 
-      {status === "idle" && summary && (
-        <div className="absolute bottom-2 left-2 rounded-md bg-black/50 px-2 py-1 text-[10px] text-white/70">
+      {status === "idle" && summary && !showFault && (
+        <div className="absolute bottom-2 left-2 z-[2] rounded-md bg-black/50 px-2 py-1 text-[10px] text-white/70">
           {summary}
         </div>
       )}
@@ -406,6 +447,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   })
 
   const pipLayoutRef = useRef<PipRect>(defaultPipRect(appSettings.recording.pipSize, appSettings.recording.pipPosition))
+  const annotationLayerRef = useRef<AnnotationLayer>(new AnnotationLayer())
   const [pipRect, setPipRectState] = useState<PipRect>(() => pipLayoutRef.current)
   const setPipRect = useCallback((r: PipRect) => {
     pipLayoutRef.current = r
@@ -420,7 +462,6 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     }))
   }, [appSettings.annotation.defaultTool, appSettings.annotation.defaultColor, appSettings.annotation.defaultWidth])
 
-  const annotationLayer = useMemo(() => annotationLayerRef.current, [])
   const [armHighlight, setArmHighlight] = useState(false)
 
   const [micLevel, setMicLevel] = useState(0)
@@ -434,7 +475,6 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   const [countdown,  setCountdown]  = useState(0)
   const [bloomDir,   setBloomDir]   = useState<string | null>(null)
   const [showBanner, setShowBanner] = useState(false)
-  const annotationLayerRef = useRef<AnnotationLayer>(new AnnotationLayer())
   const [drawingMode, setDrawingMode] = useState(false)
   const [drawState, setDrawState] = useState<DrawState>(() => ({
     tool: appSettings.annotation.defaultTool,
@@ -445,6 +485,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   const [diskWarn,   setDiskWarn]   = useState<string | null>(null)
   const [savedMeta,  setSavedMeta]  = useState<{ title: string; size: string } | null>(null)
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null)
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null)
 
   const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null)
   const cdTimerRef     = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -545,6 +586,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     function stopLive() {
       liveCamRef.current?.getTracks().forEach((t) => t.stop())
       liveCamRef.current = null
+      setCameraStream(null)
     }
     async function run() {
       if (status !== "idle") return  // keep the stream alive through recording
@@ -554,6 +596,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
           const s = await openCameraStream(settings.cameraDeviceId || undefined, settings.quality)
           if (cancelled) { s.getTracks().forEach((t) => t.stop()); return }
           liveCamRef.current = s
+          setCameraStream(s)
           setPreviewStream(s)
         } catch {
           if (!cancelled) setPreviewStream(null)
@@ -662,6 +705,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   async function prepareCaptureFlow(): Promise<boolean> {
     annotationLayerRef.current.clear()
     setDrawingMode(false)
+    await dismissMonitorHighlight()
     let handle: CaptureHandle
     try {
       handle = await startCapture({
@@ -785,14 +829,14 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
 
   // ── State machine ─────────────────────────────────────────────────────────────
   async function startCountdown() {
-    // No setState before getDisplayMedia – must stay inside the click user-gesture window.
+    setStatus("preparing")
+    setError(null)
 
     const prepared = await prepareCaptureFlow()
     if (!prepared) {
       setStatus("idle")
       return
     }
-    setError(null)
 
     await hideForRecording()
 
@@ -949,7 +993,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
           drawOverlay={
             drawingMode && isActive ? (
               <LiveDrawOverlay
-                layer={annotationLayer}
+                layer={annotationLayerRef.current}
                 drawState={drawState}
                 onToolChange={(tool) => setDrawState((s) => ({ ...s, tool }))}
                 onColorChange={(color) => setDrawState((s) => ({ ...s, color, tool: s.tool === "eraser" ? "pen" : s.tool }))}
@@ -959,7 +1003,12 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
           }
         />
         {settings.source === "both" && isActive && (
-          <PipOverlay rect={pipRect} onChange={setPipRect} disabled={status === "paused"} />
+          <PipOverlay
+            rect={pipRect}
+            onChange={setPipRect}
+            disabled={status === "paused"}
+            cameraStream={cameraStream}
+          />
         )}
       </div>
 
