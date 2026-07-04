@@ -108,14 +108,62 @@ fn candidate_dirs() -> Vec<PathBuf> {
         dirs.extend(std::env::split_paths(&path));
     }
     #[cfg(target_os = "macos")]
-    for extra in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/opt/local/bin"] {
+    for extra in [
+        "/opt/homebrew/bin",
+        "/opt/homebrew/opt/ffmpeg/bin",
+        "/usr/local/bin",
+        "/usr/local/opt/ffmpeg/bin",
+        "/usr/bin",
+        "/opt/local/bin",
+    ] {
         dirs.push(PathBuf::from(extra));
     }
     #[cfg(target_os = "linux")]
     for extra in ["/usr/bin", "/usr/local/bin", "/snap/bin", "/var/lib/flatpak/exports/bin"] {
         dirs.push(PathBuf::from(extra));
     }
+    if let Ok(home) = std::env::var("HOME") {
+        for sub in ["bin", ".local/bin"] {
+            dirs.push(PathBuf::from(&home).join(sub));
+        }
+    }
     dirs
+}
+
+fn is_executable(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        path.metadata()
+            .map(|m| m.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
+/// Resolve a binary via the user's login shell (picks up Homebrew/nvm paths that
+/// GUI apps launched from Finder/Dock don't inherit in `PATH`).
+fn find_via_shell(stem: &str) -> Option<PathBuf> {
+    let script = format!("command -v {stem}");
+    let out = std::process::Command::new("/bin/sh")
+        .args(["-l", "-c", &script])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if path.is_empty() {
+        return None;
+    }
+    let p = PathBuf::from(&path);
+    if p.is_file() { Some(p) } else { None }
 }
 
 fn find_binary(stem: &str) -> Option<PathBuf> {
@@ -123,12 +171,12 @@ fn find_binary(stem: &str) -> Option<PathBuf> {
     for dir in candidate_dirs() {
         for name in names {
             let cand = dir.join(name);
-            if cand.is_file() {
+            if is_executable(&cand) {
                 return Some(cand);
             }
         }
     }
-    None
+    find_via_shell(stem)
 }
 
 fn find_ffmpeg() -> Option<PathBuf> {

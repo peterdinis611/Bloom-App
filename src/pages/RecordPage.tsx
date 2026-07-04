@@ -264,8 +264,9 @@ function OptionGroup<T extends string>({ label, options, value, onChange }: {
 }
 
 // ── Preview canvas ─────────────────────────────────────────────────────────────
-function PreviewCanvas({ source, status, elapsed, countdown, stream }: {
-  source: RecordingSource; status: RecordingStatus; elapsed: number; countdown: number; stream: MediaStream | null
+function PreviewCanvas({ source, status, elapsed, countdown, stream, summary }: {
+  source: RecordingSource; status: RecordingStatus; elapsed: number; countdown: number
+  stream: MediaStream | null; summary?: string
 }) {
   const isRecording = status === "recording"
   const isPaused    = status === "paused"
@@ -283,7 +284,7 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream }: {
 
   return (
     <div className={cn(
-      "relative flex flex-1 items-center justify-center overflow-hidden rounded-2xl transition-all duration-500",
+      "relative flex aspect-video w-full shrink-0 items-center justify-center overflow-hidden rounded-2xl transition-all duration-500",
       isRecording ? "border-2 border-red-500/70 glow-red" : "border border-border/50 glow-orange",
     )}>
       {/* Live video layer */}
@@ -383,7 +384,60 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream }: {
           <span className="text-[11px] font-bold uppercase tracking-widest text-white">Rec</span>
         </div>
       )}
+
+      {/* Config summary chip (idle only) */}
+      {status === "idle" && summary && (
+        <div className="absolute bottom-3 left-3 flex items-center gap-2 rounded-lg border border-white/10 bg-black/50 px-2.5 py-1.5 text-[11px] font-semibold text-white/75 backdrop-blur-md">
+          {summary}
+        </div>
+      )}
     </div>
+  )
+}
+
+// ── Section label ──────────────────────────────────────────────────────────────
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="px-0.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground/50">
+      {children}
+    </span>
+  )
+}
+
+// ── Source selector card ─────────────────────────────────────────────────────────
+const SOURCES: { id: RecordingSource; title: string; desc: string; icon: React.FC<{ className?: string }> }[] = [
+  { id: "screen", title: "Screen", desc: "Display or window", icon: Monitor },
+  { id: "camera", title: "Camera", desc: "Webcam only",       icon: Camera  },
+  { id: "both",   title: "Both",   desc: "Screen + camera",    icon: Layers  },
+]
+
+function SourceCard({ active, title, desc, icon: Icon, onClick }: {
+  active: boolean; title: string; desc: string; icon: React.FC<{ className?: string }>; onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "group relative flex flex-col items-center gap-2 overflow-hidden rounded-xl border px-2 py-3.5 text-center transition-all active:scale-[0.98]",
+        active
+          ? "border-orange-500/60 bg-orange-500/10 shadow-lg shadow-orange-500/10"
+          : "border-border/60 bg-[var(--surface)] hover:border-border hover:bg-[var(--surface-hover)]",
+      )}
+    >
+      <div className={cn(
+        "flex size-9 items-center justify-center rounded-lg transition-all",
+        active
+          ? "bg-orange-500 text-white shadow-md shadow-orange-500/30"
+          : "bg-secondary text-muted-foreground group-hover:text-foreground",
+      )}>
+        <Icon className="size-5" />
+      </div>
+      <div className="min-w-0">
+        <p className={cn("truncate text-xs font-bold", active ? "text-orange-200" : "text-foreground")}>{title}</p>
+        <p className="mt-0.5 truncate text-[10px] leading-tight text-muted-foreground/70">{desc}</p>
+      </div>
+      {active && <span className="absolute right-2 top-2 size-1.5 rounded-full bg-orange-400" />}
+    </button>
   )
 }
 
@@ -776,8 +830,15 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
   const cameraOptions: SelectOption[] = cameras.map((c) => ({ id: c.deviceId, label: c.label, icon: Camera }))
   const micOptions: SelectOption[]    = microphones.map((m) => ({ id: m.deviceId, label: m.label, icon: Mic }))
 
+  const previewSummary = [
+    settings.quality,
+    settings.microphone ? "Mic" : null,
+    settings.systemAudio ? "System audio" : null,
+  ].filter(Boolean).join("  ·  ")
+
   return (
-    <div className="flex h-full flex-col gap-4 p-5">
+    <div className="flex h-full flex-col">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
 
       {showBanner && bloomDir && (
         <SaveBanner path={bloomDir} onDismiss={() => setShowBanner(false)} />
@@ -824,110 +885,109 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
       )}
 
       {/* Preview */}
-      <PreviewCanvas source={settings.source} status={status} elapsed={elapsed} countdown={countdown} stream={previewStream} />
+      <PreviewCanvas source={settings.source} status={status} elapsed={elapsed} countdown={countdown} stream={previewStream} summary={previewSummary} />
 
       {/* Config panel (idle only) */}
       {showConfig && (
-        <div className="fade-up flex flex-col gap-3">
-          {/* Source tabs */}
-          <div className="flex gap-1 rounded-xl border border-border/50 bg-[var(--surface)] p-1">
-            {([
-              { id: "screen" as RecordingSource, label: "Screen",       icon: Monitor },
-              { id: "camera" as RecordingSource, label: "Camera",       icon: Camera  },
-              { id: "both"   as RecordingSource, label: "Screen + Cam", icon: Layers  },
-            ]).map((src) => {
-              const active = settings.source === src.id
-              return (
-                <button
+        <div className="fade-up flex flex-col gap-5">
+          {/* Source */}
+          <section className="flex flex-col gap-2.5">
+            <SectionLabel>Source</SectionLabel>
+            <div className="grid grid-cols-3 gap-2">
+              {SOURCES.map((src) => (
+                <SourceCard
                   key={src.id}
+                  active={settings.source === src.id}
+                  title={src.title}
+                  desc={src.desc}
+                  icon={src.icon}
                   onClick={() => setSettings((p) => ({ ...p, source: src.id }))}
-                  className={cn(
-                    "flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-bold transition-all",
-                    active ? "bg-orange-500 text-white shadow-lg shadow-orange-500/30" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <src.icon className="size-3.5" />
-                  {src.label}
-                </button>
-              )
-            })}
-          </div>
-
-          {/* Camera permission prompt */}
-          {needsCamera && !hasLabels && (
-            <button
-              onClick={requestPermission}
-              className="flex items-center gap-2 rounded-xl border border-orange-500/30 bg-orange-500/8 px-3.5 py-2.5 text-xs font-semibold text-orange-300 transition-colors hover:bg-orange-500/15"
-            >
-              <Info className="size-4 shrink-0" />
-              Allow camera &amp; microphone access to list your devices
-            </button>
-          )}
-
-          {/* Display picker */}
-          {needsScreen && (
-            <div className="flex flex-col gap-1.5">
-              <Dropdown
-                value={settings.screenTarget.id}
-                options={monitorOptions}
-                icon={Monitor}
-                emptyLabel="No displays found"
-                onRefresh={refresh}
-                onChange={(id) => {
-                  const idx = monitors.findIndex((m) => m.id === id)
-                  if (idx >= 0) setSettings((p) => ({ ...p, screenTarget: monitorToTarget(monitors[idx], idx) }))
-                }}
-              />
-              <p className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground/60">
-                <Info className="size-3 shrink-0" />
-                Your system will confirm the exact screen or window when recording starts.
-              </p>
+                />
+              ))}
             </div>
-          )}
+          </section>
 
-          {/* Camera picker */}
-          {needsCamera && (
-            <Dropdown
-              value={settings.cameraDeviceId}
-              options={cameraOptions}
-              icon={Camera}
-              emptyLabel={hasLabels ? "No cameras found" : "Grant access to list cameras"}
-              onRefresh={refresh}
-              onChange={(id) => setSettings((p) => ({ ...p, cameraDeviceId: id }))}
-            />
-          )}
+          {/* Devices */}
+          <section className="flex flex-col gap-2.5">
+            <SectionLabel>Devices</SectionLabel>
+
+            {needsCamera && !hasLabels && (
+              <button
+                onClick={requestPermission}
+                className="flex items-center gap-2 rounded-xl border border-orange-500/30 bg-orange-500/8 px-3.5 py-2.5 text-xs font-semibold text-orange-300 transition-colors hover:bg-orange-500/15"
+              >
+                <Info className="size-4 shrink-0" />
+                Allow camera &amp; microphone access to list your devices
+              </button>
+            )}
+
+            {needsScreen && (
+              <div className="flex flex-col gap-1.5">
+                <Dropdown
+                  value={settings.screenTarget.id}
+                  options={monitorOptions}
+                  icon={Monitor}
+                  emptyLabel="No displays found"
+                  onRefresh={refresh}
+                  onChange={(id) => {
+                    const idx = monitors.findIndex((m) => m.id === id)
+                    if (idx >= 0) setSettings((p) => ({ ...p, screenTarget: monitorToTarget(monitors[idx], idx) }))
+                  }}
+                />
+                <p className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground/60">
+                  <Info className="size-3 shrink-0" />
+                  Your system will confirm the exact screen or window when recording starts.
+                </p>
+              </div>
+            )}
+
+            {needsCamera && (
+              <Dropdown
+                value={settings.cameraDeviceId}
+                options={cameraOptions}
+                icon={Camera}
+                emptyLabel={hasLabels ? "No cameras found" : "Grant access to list cameras"}
+                onRefresh={refresh}
+                onChange={(id) => setSettings((p) => ({ ...p, cameraDeviceId: id }))}
+              />
+            )}
+          </section>
 
           {/* Audio */}
-          <div className="flex gap-2">
-            <AudioToggle active={settings.microphone} onIcon={Mic} offIcon={MicOff} label="Microphone"
-              onChange={() => setSettings((p) => ({ ...p, microphone: !p.microphone }))} />
-            <AudioToggle active={settings.systemAudio} onIcon={Volume2} offIcon={VolumeX} label="System audio"
-              onChange={() => setSettings((p) => ({ ...p, systemAudio: !p.systemAudio }))} />
-          </div>
+          <section className="flex flex-col gap-2.5">
+            <SectionLabel>Audio</SectionLabel>
+            <div className="flex gap-2">
+              <AudioToggle active={settings.microphone} onIcon={Mic} offIcon={MicOff} label="Microphone"
+                onChange={() => setSettings((p) => ({ ...p, microphone: !p.microphone }))} />
+              <AudioToggle active={settings.systemAudio} onIcon={Volume2} offIcon={VolumeX} label="System audio"
+                onChange={() => setSettings((p) => ({ ...p, systemAudio: !p.systemAudio }))} />
+            </div>
+            {settings.microphone && micOptions.length > 0 && (
+              <Dropdown
+                value={settings.micDeviceId}
+                options={micOptions}
+                icon={Mic}
+                emptyLabel="No microphones found"
+                onRefresh={refresh}
+                onChange={(id) => setSettings((p) => ({ ...p, micDeviceId: id }))}
+              />
+            )}
+          </section>
 
-          {/* Microphone picker */}
-          {settings.microphone && micOptions.length > 0 && (
-            <Dropdown
-              value={settings.micDeviceId}
-              options={micOptions}
-              icon={Mic}
-              emptyLabel="No microphones found"
-              onRefresh={refresh}
-              onChange={(id) => setSettings((p) => ({ ...p, micDeviceId: id }))}
-            />
-          )}
-
-          {/* Quality + countdown */}
-          <div className="flex gap-3">
-            <OptionGroup label="Quality" value={settings.quality}
-              options={[{ v: "720p", label: "720p" }, { v: "1080p", label: "1080p" }]}
-              onChange={(v) => setSettings((p) => ({ ...p, quality: v }))}
-            />
-            <OptionGroup label="Countdown" value={String(settings.countdown) as "0" | "3" | "5"}
-              options={[{ v: "0", label: "Off" }, { v: "3", label: "3 s" }, { v: "5", label: "5 s" }]}
-              onChange={(v) => setSettings((p) => ({ ...p, countdown: Number(v) as 0 | 3 | 5 }))}
-            />
-          </div>
+          {/* Output */}
+          <section className="flex flex-col gap-2.5">
+            <SectionLabel>Output</SectionLabel>
+            <div className="flex gap-3">
+              <OptionGroup label="Quality" value={settings.quality}
+                options={[{ v: "720p", label: "720p" }, { v: "1080p", label: "1080p" }]}
+                onChange={(v) => setSettings((p) => ({ ...p, quality: v }))}
+              />
+              <OptionGroup label="Countdown" value={String(settings.countdown) as "0" | "3" | "5"}
+                options={[{ v: "0", label: "Off" }, { v: "3", label: "3 s" }, { v: "5", label: "5 s" }]}
+                onChange={(v) => setSettings((p) => ({ ...p, countdown: Number(v) as 0 | 3 | 5 }))}
+              />
+            </div>
+          </section>
         </div>
       )}
 
@@ -961,8 +1021,11 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
         </div>
       )}
 
-      {/* Action buttons */}
-      <div className="flex gap-2">
+      </div>
+
+      {/* Action buttons (pinned to bottom) */}
+      <div className="shrink-0 border-t border-border/50 bg-background/60 px-5 py-4">
+        <div className="flex gap-2">
         {status === "idle" && (
           <button onClick={startCountdown}
             className="group flex flex-1 items-center justify-center gap-2 rounded-xl bg-orange-500 py-4 text-sm font-bold text-white shadow-lg shadow-orange-500/25 transition-all hover:bg-orange-400 hover:shadow-orange-500/35 active:scale-[0.98]"
@@ -1033,6 +1096,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
             )}
           </div>
         )}
+        </div>
       </div>
     </div>
   )

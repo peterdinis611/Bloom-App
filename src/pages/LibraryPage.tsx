@@ -61,6 +61,84 @@ const SOURCE_META: Record<string, { icon: React.FC<{ className?: string }>; labe
   both: { icon: Layers, label: "Screen + Cam", tint: "text-sky-400 bg-sky-500/12" },
 }
 
+// ── Empty library hero ───────────────────────────────────────────────────────
+function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, checkingFfmpeg }: {
+  onStartRecording?: () => void
+  ffmpeg: FfmpegStatus | null
+  onRecheckFfmpeg: () => void
+  checkingFfmpeg: boolean
+}) {
+  const hints = [
+    { icon: Monitor, label: "Screen capture", tint: "text-orange-400 bg-orange-500/12 border-orange-500/20" },
+    { icon: Camera, label: "Webcam", tint: "text-emerald-400 bg-emerald-500/12 border-emerald-500/20" },
+    { icon: Sparkles, label: "Optimise & trim", tint: "text-sky-400 bg-sky-500/12 border-sky-500/20" },
+  ]
+
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-6 py-10 text-center">
+      <div className="relative mb-6">
+        <div className="absolute inset-0 scale-150 rounded-full bg-orange-500/10 blur-3xl" />
+        <div className="relative flex size-20 items-center justify-center rounded-3xl border border-orange-500/25 bg-gradient-to-br from-orange-500/15 to-[var(--surface)] shadow-xl shadow-orange-500/10">
+          <Film className="size-9 text-orange-400/80" />
+        </div>
+      </div>
+
+      <h2 className="text-lg font-black tracking-tight text-foreground">Your library is empty</h2>
+      <p className="mt-2 max-w-[260px] text-sm leading-relaxed text-muted-foreground">
+        Record your screen, camera, or both — clips show up here automatically.
+      </p>
+
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+        {hints.map((h) => (
+          <span key={h.label} className={cn("flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold", h.tint)}>
+            <h.icon className="size-3.5" /> {h.label}
+          </span>
+        ))}
+      </div>
+
+      <button
+        onClick={onStartRecording}
+        className="group mt-8 flex items-center gap-2.5 rounded-2xl bg-orange-500 px-6 py-3.5 text-sm font-bold text-white shadow-xl shadow-orange-500/25 transition-all hover:bg-orange-400 hover:shadow-orange-500/35 active:scale-[0.98]"
+      >
+        <Video className="size-4 transition-transform group-hover:scale-110" />
+        Start your first recording
+      </button>
+
+      {/* ffmpeg status – compact, not a big warning banner */}
+      {ffmpeg && (
+        <div className="mt-8 w-full max-w-sm">
+          {ffmpeg.available ? (
+            <div className="flex items-center justify-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/8 px-3 py-2 text-[11px] font-semibold text-emerald-300">
+              <Check className="size-3.5" />
+              ffmpeg ready · optimise &amp; thumbnails enabled
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border/60 bg-[var(--surface)] px-3.5 py-3 text-left">
+              <p className="text-[11px] font-bold text-muted-foreground">Optional: install ffmpeg</p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground/70">
+                Needed for video optimisation and thumbnails.
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded-md bg-black/40 px-2 py-1 font-mono text-[10px] text-foreground/70">
+                  brew install ffmpeg
+                </code>
+                <button
+                  onClick={onRecheckFfmpeg}
+                  disabled={checkingFfmpeg}
+                  className="flex shrink-0 items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-[10px] font-semibold text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+                >
+                  <RefreshCw className={cn("size-3", checkingFfmpeg && "animate-spin")} />
+                  Recheck
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Stat pill ────────────────────────────────────────────────────────────────
 function StatPill({ icon: Icon, label, value }: {
   icon: React.FC<{ className?: string }>; label: string; value: string
@@ -299,8 +377,21 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
   const [validations, setValidations] = useState<Record<string, ValidationResult>>({})
   const [busyId, setBusyId] = useState<string | null>(null)
   const [ffmpeg, setFfmpeg] = useState<FfmpegStatus | null>(null)
+  const [checkingFfmpeg, setCheckingFfmpeg] = useState(false)
   const [optimizing, setOptimizing] = useState<RecordingEntry | null>(null)
   const [copied, setCopied] = useState(false)
+
+  const recheckFfmpeg = useCallback(async () => {
+    setCheckingFfmpeg(true)
+    try {
+      const status = await checkFfmpeg()
+      setFfmpeg(status)
+    } catch {
+      /* keep previous status */
+    } finally {
+      setCheckingFfmpeg(false)
+    }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -317,7 +408,7 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
   }, [])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => { checkFfmpeg().then(setFfmpeg).catch(() => {}) }, [])
+  useEffect(() => { recheckFfmpeg() }, [recheckFfmpeg])
 
   const copyInstall = useCallback(() => {
     const cmd = ffmpeg?.install_hint.split(/:\s+/).pop() ?? "brew install ffmpeg"
@@ -369,24 +460,36 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
   const confirmEntry = entries.find((e) => e.meta.id === confirmId)
 
   return (
-    <div className="flex h-full flex-col gap-3 p-5">
+    <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex shrink-0 items-center justify-between border-b border-border/40 px-5 py-4">
         <div>
-          <h1 className="text-lg font-black text-foreground">Library</h1>
+          <h1 className="text-lg font-black tracking-tight text-foreground">Library</h1>
           <p className="text-xs text-muted-foreground">
-            {stats ? `${stats.total_recordings} recording${stats.total_recordings === 1 ? "" : "s"}` : "Loading…"}
+            {loading
+              ? "Loading…"
+              : stats
+                ? `${stats.total_recordings} recording${stats.total_recordings === 1 ? "" : "s"}`
+                : "Your recordings"}
           </p>
         </div>
-        <button
-          onClick={load}
-          className="flex size-9 items-center justify-center rounded-xl border border-border/60 bg-[var(--surface)] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-          title="Refresh"
-        >
-          <RefreshCw className={cn("size-4", loading && "animate-spin")} />
-        </button>
+        <div className="flex items-center gap-2">
+          {ffmpeg?.available && (
+            <span className="hidden items-center gap-1 rounded-lg border border-emerald-500/20 bg-emerald-500/8 px-2 py-1 text-[10px] font-bold text-emerald-300 sm:flex">
+              <Sparkles className="size-3" /> ffmpeg
+            </span>
+          )}
+          <button
+            onClick={load}
+            className="flex size-9 items-center justify-center rounded-xl border border-border/60 bg-[var(--surface)] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            title="Refresh"
+          >
+            <RefreshCw className={cn("size-4", loading && "animate-spin")} />
+          </button>
+        </div>
       </div>
 
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-5 pt-4">
       {/* Stats */}
       {stats && stats.total_recordings > 0 && (
         <div className="flex gap-2">
@@ -396,26 +499,33 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
         </div>
       )}
 
-      {/* ffmpeg missing → optimisation disabled */}
-      {ffmpeg && !ffmpeg.available && (
-        <div className="flex items-start gap-3 rounded-xl border border-amber-500/25 bg-amber-500/8 px-3.5 py-3">
-          <Sparkles className="mt-0.5 size-4 shrink-0 text-amber-400" />
+      {/* ffmpeg missing – only when library has clips (empty state handles its own) */}
+      {ffmpeg && !ffmpeg.available && entries.length > 0 && (
+        <div className="flex items-start gap-3 rounded-xl border border-border/60 bg-[var(--surface)] px-3.5 py-3">
+          <Sparkles className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold text-amber-300">Install ffmpeg to optimise videos</p>
+            <p className="text-xs font-bold text-foreground">Install ffmpeg to optimise videos</p>
             <p className="mt-0.5 text-[11px] text-muted-foreground">
-              Resizing, compression and format conversion need ffmpeg on your system.
+              Resizing, compression and thumbnails need ffmpeg on your system.
             </p>
             <div className="mt-2 flex items-center gap-2">
-              <code className="flex items-center gap-1.5 rounded-md bg-black/40 px-2 py-1 font-mono text-[11px] text-foreground/80">
-                <Terminal className="size-3 text-muted-foreground" />
+              <code className="flex min-w-0 flex-1 items-center gap-1.5 truncate rounded-md bg-black/40 px-2 py-1 font-mono text-[11px] text-foreground/80">
+                <Terminal className="size-3 shrink-0 text-muted-foreground" />
                 {ffmpeg.install_hint.split(/:\s+/).pop()}
               </code>
               <button
                 onClick={copyInstall}
-                className="flex items-center gap-1 rounded-md border border-border/60 bg-[var(--surface)] px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+                className="flex shrink-0 items-center gap-1 rounded-md border border-border/60 bg-[var(--surface)] px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
               >
                 {copied ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
                 {copied ? "Copied" : "Copy"}
+              </button>
+              <button
+                onClick={recheckFfmpeg}
+                disabled={checkingFfmpeg}
+                className="flex shrink-0 items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+              >
+                <RefreshCw className={cn("size-3", checkingFfmpeg && "animate-spin")} />
               </button>
             </div>
           </div>
@@ -454,21 +564,12 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
             <p className="text-sm">Loading library…</p>
           </div>
         ) : entries.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
-            <div className="flex size-16 items-center justify-center rounded-2xl border border-border/50 bg-[var(--surface)]">
-              <Film className="size-7 text-muted-foreground/40" />
-            </div>
-            <div>
-              <p className="text-sm font-bold text-foreground">No recordings yet</p>
-              <p className="mt-1 text-xs text-muted-foreground">Your captured videos will appear here.</p>
-            </div>
-            <button
-              onClick={onStartRecording}
-              className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-orange-500/25 transition-colors hover:bg-orange-400"
-            >
-              <Video className="size-4" /> Start Recording
-            </button>
-          </div>
+          <EmptyLibrary
+            onStartRecording={onStartRecording}
+            ffmpeg={ffmpeg}
+            onRecheckFfmpeg={recheckFfmpeg}
+            checkingFfmpeg={checkingFfmpeg}
+          />
         ) : filtered.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-muted-foreground">
             <Search className="size-6 opacity-40" />
@@ -493,6 +594,7 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
             ))}
           </div>
         )}
+      </div>
       </div>
 
       {playing && <PlayerModal entry={playing} onClose={() => setPlaying(null)} />}
