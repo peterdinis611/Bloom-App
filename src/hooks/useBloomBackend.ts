@@ -135,6 +135,11 @@ export async function batchDeleteRecordings(ids: string[]): Promise<number> {
   return invoke<number>("batch_delete_recordings", { ids })
 }
 
+/** Permanently delete every recording in the library. Returns count removed. */
+export async function deleteAllRecordings(): Promise<number> {
+  return invoke<number>("delete_all_recordings")
+}
+
 /** Reveal recording in Finder for sharing (AirDrop, Mail, …). */
 export async function shareRecording(id: string): Promise<string> {
   return invoke<string>("share_recording", { id })

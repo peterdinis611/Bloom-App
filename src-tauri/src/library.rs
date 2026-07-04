@@ -139,6 +139,21 @@ pub(crate) fn batch_delete_recordings(app: tauri::AppHandle, ids: Vec<String>) -
     Ok(deleted)
 }
 
+/// Permanently delete every recording in the Bloom library directory.
+#[tauri::command]
+pub(crate) fn delete_all_recordings(app: tauri::AppHandle) -> Result<u32, String> {
+    let dir = bloom_dir(&app)?;
+    let recordings = load_all_recordings(&dir);
+    let mut deleted = 0u32;
+    for entry in recordings {
+        if fs::remove_file(&entry.path).is_ok() {
+            let _ = fs::remove_file(&entry.meta_path);
+            deleted += 1;
+        }
+    }
+    Ok(deleted)
+}
+
 #[tauri::command]
 pub(crate) fn share_recording(app: tauri::AppHandle, id: String) -> Result<String, String> {
     let dir = bloom_dir(&app)?;

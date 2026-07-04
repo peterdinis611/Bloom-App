@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from "react"
+import { useHotkey, useHotkeys, formatForDisplay } from "@tanstack/react-hotkeys"
 import { cn } from "@/lib/utils"
 import {
   Pen,
@@ -18,6 +19,7 @@ import {
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import { emit } from "@tauri-apps/api/event"
 import { ANNOTATION_COLORS, applyTheme, readStoredSettings, type AnnotationTool } from "@/hooks/useSettings"
+import { ANNOTATION_TOOL_HOTKEYS } from "@/lib/hotkeys"
 
 type Tool = AnnotationTool
 
@@ -203,7 +205,10 @@ export function AnnotationPage() {
     canvas.getContext("2d")!.clearRect(0, 0, canvas.width, canvas.height)
   }, [])
 
-  const closeWindow = () => getCurrentWindow().hide()
+  const closeWindow = useCallback(() => {
+    emit("annotation-closed").catch(() => {})
+    getCurrentWindow().hide()
+  }, [])
 
   const saveSnapshot = useCallback(async () => {
     const canvas = canvasRef.current
@@ -219,21 +224,38 @@ export function AnnotationPage() {
     setDrawState((s) => ({ ...s, tool }))
   }, [])
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") closeWindow()
-      if ((e.metaKey || e.ctrlKey) && e.key === "z") { e.preventDefault(); undo() }
-      if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); saveSnapshot() }
-      if (e.target instanceof HTMLInputElement) return
-      const map: Record<string, Tool> = { p: "pen", h: "highlighter", l: "line", a: "arrow", r: "rect", c: "circle", e: "eraser" }
-      const t = map[e.key.toLowerCase()]
-      if (t && !e.metaKey && !e.ctrlKey) pickTool(t)
-      if (e.key === "[") setDrawState((s) => ({ ...s, width: Math.max(1, s.width - 1) }))
-      if (e.key === "]") setDrawState((s) => ({ ...s, width: Math.min(16, s.width + 1) }))
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [undo, saveSnapshot, pickTool])
+  useHotkey("Escape", closeWindow, {
+    meta: { name: "Close", description: "Close annotation overlay" },
+  })
+
+  useHotkey("Mod+Z", undo, {
+    meta: { name: "Undo", description: "Undo last stroke" },
+  })
+
+  useHotkey("Mod+S", () => { void saveSnapshot() }, {
+    meta: { name: "Save", description: "Save annotated snapshot" },
+  })
+
+  useHotkeys(
+    ANNOTATION_TOOL_HOTKEYS.map(({ hotkey, tool }) => ({
+      hotkey,
+      callback: () => pickTool(tool),
+      options: {
+        meta: { name: TOOLS.find((t) => t.id === tool)?.label ?? tool },
+      },
+    })),
+  )
+
+  useHotkey("[", () => {
+    setDrawState((s) => ({ ...s, width: Math.max(1, s.width - 1) }))
+  }, { meta: { name: "Decrease width" } })
+
+  useHotkey("]", () => {
+    setDrawState((s) => ({ ...s, width: Math.min(16, s.width + 1) }))
+  }, { meta: { name: "Increase width" } })
+
+  const saveLabel = formatForDisplay("Mod+S")
+  const undoLabel = formatForDisplay("Mod+Z")
 
   return (
     <div
@@ -274,7 +296,7 @@ export function AnnotationPage() {
 
         <div className="my-1 h-px bg-border/60" />
 
-        <button onClick={undo} title="Späť (⌘Z)" className="flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-all hover:bg-secondary hover:text-foreground">
+        <button onClick={undo} title={`Späť (${undoLabel})`} className="flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-all hover:bg-secondary hover:text-foreground">
           <Undo2 className="size-4" />
         </button>
         <button onClick={clearAll} title="Vymazať všetko" className="flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-all hover:bg-red-500/15 hover:text-red-400">
@@ -282,7 +304,7 @@ export function AnnotationPage() {
         </button>
         <button
           onClick={saveSnapshot}
-          title="Uložiť snímku (⌘S)"
+          title={`Uložiť snímku (${saveLabel})`}
           className={cn(
             "flex size-10 items-center justify-center rounded-xl transition-all",
             saved ? "bg-emerald-500/20 text-emerald-400" : "text-muted-foreground hover:bg-primary/15 hover:text-primary",
@@ -348,7 +370,7 @@ export function AnnotationPage() {
             </div>
 
             <p className="text-center text-[10px] text-muted-foreground/50">
-              ⌘Z späť · ⌘S uložiť · P H L A R C E skratky · [ ] hrúbka
+              {undoLabel} späť · {saveLabel} uložiť · P H L A R C E skratky · [ ] hrúbka
             </p>
           </div>
         )}

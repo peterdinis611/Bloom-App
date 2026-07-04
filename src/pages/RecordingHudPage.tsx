@@ -48,7 +48,7 @@ export function RecordingHudPage() {
           </>
         ) : (
           <>
-            <span className={cn("rec-dot size-2 shrink-0 rounded-full", phase === "paused" ? "bg-amber-400" : "bg-red-500")} />
+            <span className={cn("rec-dot size-2 shrink-0 rounded-full", phase === "paused" ? "bg-[var(--status-warning-fg)]" : "")} />
             <span className="font-mono text-sm font-bold tabular-nums text-foreground">
               {formatDuration(elapsed)}
             </span>
@@ -71,7 +71,7 @@ export function RecordingHudPage() {
             )}
             <button
               onClick={() => emit("hud-stop")}
-              className="flex size-8 items-center justify-center rounded-lg bg-red-600 text-white transition-colors hover:bg-red-500"
+              className="btn-destructive flex size-8 items-center justify-center rounded-lg transition-colors"
               title="Stop & save"
             >
               <Square className="size-3 fill-current" />

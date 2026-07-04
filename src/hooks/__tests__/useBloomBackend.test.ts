@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import type { DiskInfo } from "@/types"
 
-// The hook module imports from the Tauri API at load time; stub those so the
-// module can be imported in a plain jsdom environment (we only test the pure
-// formatting/derivation helpers here, which never touch the IPC layer).
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
   convertFileSrc: (p: string) => `asset://localhost/${p}`,

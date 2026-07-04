@@ -1,5 +1,6 @@
 import React from "react"
 import ReactDOM from "react-dom/client"
+import { TanStackRoot } from "./components/TanStackRoot"
 import "./index.css"
 
 const root = document.getElementById("root") as HTMLElement
@@ -13,7 +14,9 @@ if (window.location.hash === "#annotate") {
   import("./pages/AnnotationPage").then(({ AnnotationPage }) => {
     ReactDOM.createRoot(root).render(
       <React.StrictMode>
-        <AnnotationPage />
+        <TanStackRoot>
+          <AnnotationPage />
+        </TanStackRoot>
       </React.StrictMode>
     )
   })

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { useCloseOnEscape } from "@/hooks/useCloseOnEscape"
 import {
   X,
   Zap,
@@ -133,12 +134,7 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Esc to close (only when not running).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && phase !== "running") onClose() }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [phase, onClose])
+  useCloseOnEscape(onClose, phase !== "running")
 
   const start = useCallback(async () => {
     setErrorMsg(null)

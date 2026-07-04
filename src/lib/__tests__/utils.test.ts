@@ -47,9 +47,7 @@ describe("formatDate", () => {
   afterEach(() => vi.useRealTimers())
 
   it("labels today / yesterday / this week", () => {
-    vi.useFakeTimers()
-    const now = new Date("2024-06-15T12:00:00Z")
-    vi.setSystemTime(now)
+    vi.useFakeTimers({ now: new Date("2024-06-15T12:00:00Z") })
 
     expect(formatDate(new Date("2024-06-15T09:00:00Z"))).toBe("Today")
     expect(formatDate(new Date("2024-06-14T09:00:00Z"))).toBe("Yesterday")
@@ -57,9 +55,7 @@ describe("formatDate", () => {
   })
 
   it("falls back to a short date for older entries", () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date("2024-06-15T12:00:00Z"))
-    // 2 weeks earlier → localised "Jun 1" style string, not a relative label.
+    vi.useFakeTimers({ now: new Date("2024-06-15T12:00:00Z") })
     const label = formatDate(new Date("2024-06-01T12:00:00Z"))
     expect(label).not.toMatch(/ago|Today|Yesterday/)
   })

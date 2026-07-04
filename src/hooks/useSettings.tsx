@@ -1,10 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { useDebouncedCallback } from "@tanstack/react-pacer"
 import {
   ANNOTATION_COLORS,
   DEFAULT_ANNOTATION_COLOR,
   DEFAULT_THEME,
   type ThemeId,
 } from "@/lib/themes"
+import { PACER } from "@/lib/pacer"
 import type { PipPosition, PipSize } from "@/lib/capture"
 import { BUILTIN_PRESETS, type RecordingPreset } from "@/lib/presets"
 
@@ -77,7 +79,11 @@ function loadSettings(): AppSettings {
 }
 
 export function applyTheme(theme: ThemeId) {
-  document.documentElement.setAttribute("data-theme", theme)
+  if (theme === "mac") {
+    document.documentElement.removeAttribute("data-theme")
+  } else {
+    document.documentElement.setAttribute("data-theme", theme)
+  }
 }
 
 /** Load persisted settings (usable outside React – e.g. annotation overlay window). */
@@ -101,8 +107,15 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     applyTheme(settings.theme)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
-  }, [settings])
+  }, [settings.theme])
+
+  const persistSettings = useDebouncedCallback((next: AppSettings) => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+  }, { wait: PACER.persist })
+
+  useEffect(() => {
+    persistSettings(settings)
+  }, [settings, persistSettings])
 
   const setTheme = useCallback((theme: ThemeId) => {
     setSettings((s) => ({ ...s, theme }))

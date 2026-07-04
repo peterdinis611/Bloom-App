@@ -43,6 +43,7 @@ pub fn run() {
             library::rename_recording,
             library::update_recording_meta,
             library::batch_delete_recordings,
+            library::delete_all_recordings,
             library::share_recording,
             library::validate_recording,
             library::reveal_in_finder,

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react"
+import { formatForDisplay } from "@tanstack/react-hotkeys"
 import {
-  Monitor,
   MonitorDot,
   Camera,
   Layers,
@@ -15,7 +15,6 @@ import {
   ChevronDown,
   CheckCircle2,
   CheckCircle2 as CheckIcon,
-  ChevronRight,
   Pencil,
   FolderOpen,
   X,
@@ -35,6 +34,7 @@ import { findPreset } from "@/lib/presets"
 import { defaultPipRect, type PipRect, type PipPosition, type PipSize } from "@/lib/capture"
 import { createAudioMeter } from "@/lib/audioMeter"
 import { AudioMeterBar } from "@/components/record/AudioMeterBar"
+import { MacButton, MacGroup, MacGroupHeader, MacPageHeader, MacSegmented } from "@/components/mac/MacUIKit"
 import { PipOverlay } from "@/components/record/PipOverlay"
 import { emit, listen } from "@tauri-apps/api/event"
 import { cn, formatDuration } from "@/lib/utils"
@@ -282,122 +282,69 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary }: 
 
   return (
     <div className={cn(
-      "relative flex aspect-video w-full shrink-0 items-center justify-center overflow-hidden rounded-2xl transition-all duration-500",
-      isRecording ? "border-2 border-red-500/70 glow-red" : "border border-border/50 glow-accent",
+      "relative flex aspect-video w-full shrink-0 items-center justify-center overflow-hidden rounded-lg bg-black/90",
+      isRecording && "ring-1 ring-[var(--rec-indicator)]/50",
     )}>
-      {/* Live video layer */}
       <video
         ref={videoRef}
         muted
         playsInline
-        className={cn("absolute inset-0 h-full w-full bg-black object-contain transition-opacity duration-300", showVideo ? "opacity-100" : "opacity-0")}
+        className={cn("absolute inset-0 h-full w-full object-contain", showVideo ? "opacity-100" : "opacity-0")}
       />
 
-      {/* Decorative background (only without live video) */}
-      {!showVideo && (
-        <div className="absolute inset-0">
-          <div className="absolute inset-0" style={{
-            background: source === "camera"
-              ? "radial-gradient(ellipse 120% 100% at 30% 80%, rgba(16,185,129,0.10) 0%, transparent 60%)"
-              : "radial-gradient(ellipse 120% 100% at 30% 80%, rgba(234,88,12,0.10) 0%, transparent 60%), radial-gradient(ellipse 80% 80% at 80% 20%, rgba(249,115,22,0.07) 0%, transparent 60%)",
-          }} />
-          <div className="absolute inset-0 opacity-[0.04]" style={{
-            backgroundImage: "radial-gradient(circle, rgba(249,115,22,0.9) 1px, transparent 1px)",
-            backgroundSize: "24px 24px",
-          }} />
-          {status === "idle" && <div className="absolute inset-0 shimmer" />}
+      {!showVideo && status === "idle" && (
+        <div className="flex flex-col items-center gap-2 text-muted-foreground">
+          {source === "screen" && <MonitorDot className="size-8 opacity-40" />}
+          {source === "camera" && <Camera className="size-8 opacity-40" />}
+          {source === "both" && <Layers className="size-8 opacity-40" />}
+          <p className="text-[12px]">Ready to record</p>
         </div>
       )}
 
       {status === "preparing" && (
-        <div className="relative flex flex-col items-center gap-4 rounded-2xl bg-black/40 px-6 py-4 backdrop-blur-md">
-          <div className="size-10 animate-spin rounded-full border-2 border-transparent border-t-primary" />
-          <p className="text-sm font-medium text-muted-foreground">Pripravujem zachytenie…</p>
-          <p className="max-w-xs text-center text-[11px] text-muted-foreground/70">
-            {source === "camera"
-              ? "Povoľ prístup ku kamere."
-              : "Vyber displej alebo okno v systémovom dialógu."}
-          </p>
-        </div>
-      )}
-
-      {status === "idle" && !showVideo && (
-        <div className="relative flex flex-col items-center gap-4">
-          <div className={cn(
-            "flex size-20 items-center justify-center rounded-2xl border",
-            source === "camera" ? "border-emerald-500/20 bg-emerald-500/10" : "border-primary/20 bg-primary/10",
-          )}>
-            {source === "screen" && <MonitorDot className="size-10 text-accent/60" />}
-            {source === "camera" && <Camera     className="size-10 text-emerald-400/60" />}
-            {source === "both"   && <Layers     className="size-10 text-accent/60" />}
-          </div>
-          <p className="text-sm font-medium text-muted-foreground/50">
-            {source === "screen" ? "Screen capture ready" : source === "camera" ? "Starting camera…" : "Screen + camera"}
-          </p>
+        <div className="flex flex-col items-center gap-2">
+          <div className="size-8 animate-spin rounded-full border-2 border-transparent border-t-[var(--accent)]" />
+          <p className="text-[12px] text-muted-foreground">Preparing…</p>
         </div>
       )}
 
       {status === "countdown" && (
-        <div className="relative flex flex-col items-center gap-4">
-          <div key={countdown} className="count-pop flex size-24 items-center justify-center rounded-full border-2 border-primary/40 bg-primary/10 shadow-xl shadow-primary/15 backdrop-blur-sm">
-            <span className="text-6xl font-black tabular-nums text-primary">{countdown}</span>
-          </div>
-          <p className="text-sm font-medium text-muted-foreground">Starting soon…</p>
+        <div className="flex flex-col items-center gap-2">
+          <span className="text-5xl font-semibold tabular-nums text-foreground">{countdown}</span>
+          <p className="text-[12px] text-muted-foreground">Starting…</p>
         </div>
       )}
 
       {isActive && (
-        <div className="relative flex flex-col items-center gap-3 rounded-2xl bg-black/45 px-6 py-4 backdrop-blur-md">
-          <div className={cn(
-            "font-mono text-5xl font-black tabular-nums tracking-tight",
-            isPaused ? "text-amber-300 opacity-70" : "text-white",
-          )}>
-            {formatDuration(elapsed)}
-          </div>
-          {isPaused && <span className="text-xs font-bold uppercase tracking-[0.2em] text-amber-400">Paused</span>}
-          {isRecording && (
-            <div className="flex h-7 items-end gap-0.5">
-              {[3,5,9,6,4,8,5,3,7,4,6,3].map((h, i) => (
-                <div key={i} className="w-0.5 rounded-full bg-red-400/80" style={{
-                  height: `${h * 2.5}px`,
-                  animation: `rec-pulse ${0.5 + i * 0.08}s ease-in-out infinite alternate`,
-                  animationDelay: `${i * 55}ms`,
-                }} />
-              ))}
-            </div>
-          )}
+        <div className="flex flex-col items-center gap-1">
+          <div className="font-mono text-4xl font-medium tabular-nums text-white">{formatDuration(elapsed)}</div>
+          {isPaused && <span className="text-[11px] text-muted-foreground">Paused</span>}
         </div>
       )}
 
       {status === "processing" && (
-        <div className="relative flex flex-col items-center gap-4 rounded-2xl bg-black/40 px-6 py-4 backdrop-blur-md">
-          <div className="relative flex size-16 items-center justify-center">
-            <div className="absolute size-16 animate-spin rounded-full border-2 border-transparent border-t-primary" />
-            <div className="size-10 rounded-full border border-border/60 bg-[var(--surface)]" />
-          </div>
-          <p className="text-sm font-medium text-muted-foreground">Saving to ~/Movies/Bloom…</p>
+        <div className="flex flex-col items-center gap-2">
+          <div className="size-8 animate-spin rounded-full border-2 border-transparent border-t-[var(--accent)]" />
+          <p className="text-[12px] text-muted-foreground">Saving…</p>
         </div>
       )}
 
       {status === "done" && (
-        <div className="fade-up relative flex flex-col items-center gap-3 rounded-2xl bg-black/40 px-6 py-4 backdrop-blur-md">
-          <div className="flex size-16 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15 shadow-lg shadow-emerald-500/10">
-            <CheckCircle2 className="size-8 text-emerald-400" />
-          </div>
-          <p className="text-sm font-semibold text-emerald-300">Saved!</p>
+        <div className="flex flex-col items-center gap-2">
+          <CheckCircle2 className="size-8 text-[var(--status-success-fg)]" />
+          <p className="text-[13px] font-medium text-[var(--status-success-fg)]">Saved</p>
         </div>
       )}
 
       {isRecording && (
-        <div className="absolute left-4 top-4 flex items-center gap-2 rounded-lg bg-black/60 px-3 py-1.5 backdrop-blur-md">
-          <span className="rec-dot size-2.5 rounded-full bg-red-500" />
-          <span className="text-[11px] font-bold uppercase tracking-widest text-white">Rec</span>
+        <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-md bg-black/50 px-2 py-1">
+          <span className="rec-dot size-2 rounded-full" />
+          <span className="text-[10px] font-medium text-white/90">REC</span>
         </div>
       )}
 
-      {/* Config summary chip (idle only) */}
       {status === "idle" && summary && (
-        <div className="absolute bottom-3 left-3 flex items-center gap-2 rounded-lg border border-white/10 bg-black/50 px-2.5 py-1.5 text-[11px] font-semibold text-white/75 backdrop-blur-md">
+        <div className="absolute bottom-2 left-2 rounded-md bg-black/50 px-2 py-1 text-[10px] text-white/70">
           {summary}
         </div>
       )}
@@ -407,57 +354,22 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary }: 
 
 // ── Section label ──────────────────────────────────────────────────────────────
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="px-0.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground/50">
-      {children}
-    </span>
-  )
+  return <p className="mac-group-header !px-0">{children}</p>
 }
 
-// ── Source selector card ─────────────────────────────────────────────────────────
-const SOURCES: { id: RecordingSource; title: string; desc: string; icon: React.FC<{ className?: string }> }[] = [
-  { id: "screen", title: "Screen", desc: "Display or window", icon: Monitor },
-  { id: "camera", title: "Camera", desc: "Webcam only",       icon: Camera  },
-  { id: "both",   title: "Both",   desc: "Screen + camera",    icon: Layers  },
+const SOURCES: { id: RecordingSource; label: string }[] = [
+  { id: "screen", label: "Screen" },
+  { id: "camera", label: "Camera" },
+  { id: "both", label: "Both" },
 ]
-
-function SourceCard({ active, title, desc, icon: Icon, onClick }: {
-  active: boolean; title: string; desc: string; icon: React.FC<{ className?: string }>; onClick: () => void
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "group relative flex flex-col items-center gap-2 overflow-hidden rounded-xl border px-2 py-3.5 text-center transition-all active:scale-[0.98]",
-        active
-          ? "border-primary/60 bg-primary/10 shadow-lg shadow-primary/10"
-          : "border-border/60 bg-[var(--surface)] hover:border-border hover:bg-[var(--surface-hover)]",
-      )}
-    >
-      <div className={cn(
-        "flex size-9 items-center justify-center rounded-lg transition-all",
-        active
-          ? "bg-primary text-white shadow-md shadow-primary/30"
-          : "bg-secondary text-muted-foreground group-hover:text-foreground",
-      )}>
-        <Icon className="size-5" />
-      </div>
-      <div className="min-w-0">
-        <p className={cn("truncate text-xs font-bold", active ? "text-primary" : "text-foreground")}>{title}</p>
-        <p className="mt-0.5 truncate text-[10px] leading-tight text-muted-foreground/70">{desc}</p>
-      </div>
-      {active && <span className="absolute right-2 top-2 size-1.5 rounded-full bg-accent" />}
-    </button>
-  )
-}
 
 // ── Save location banner ───────────────────────────────────────────────────────
 function SaveBanner({ path, onDismiss }: { path: string; onDismiss: () => void }) {
   return (
-    <div className="fade-up flex items-center gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-3.5 py-3">
-      <FolderOpen className="size-4 shrink-0 text-emerald-400" />
+    <div className="fade-up banner-success flex items-center gap-3 rounded-xl px-3.5 py-3">
+      <FolderOpen className="size-4 shrink-0 opacity-80" />
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-semibold text-emerald-300">Recordings saved to</p>
+        <p className="text-xs font-semibold">Recordings saved to</p>
         <p className="truncate font-mono text-[11px] text-muted-foreground">{path}</p>
       </div>
       <button onClick={onDismiss} className="text-muted-foreground hover:text-foreground">
@@ -497,7 +409,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     pipLayoutRef.current = r
     setPipRectState({ ...r })
   }, [])
-  const [armHighlight, setArmHighlight] = useState(false)
+  const [armHighlight, setArmHighlight] = useState(false) // used by rec-arm shortcut pulse
 
   const [micLevel, setMicLevel] = useState(0)
   const [sysLevel, setSysLevel] = useState(0)
@@ -715,12 +627,20 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     }
   }, [])
 
-  // Listen for save requests coming from the annotation overlay window.
+  // Listen for save / close from the annotation overlay window.
   useEffect(() => {
-    let unlisten: (() => void) | undefined
+    let unlistenSave: (() => void) | undefined
+    let unlistenClose: (() => void) | undefined
     listen<{ png: string }>("annotation-save", (e) => { compositeAndSave(e.payload.png) })
-      .then((fn) => { unlisten = fn })
-    return () => { unlisten?.() }
+      .then((fn) => { unlistenSave = fn })
+    listen("annotation-closed", () => {
+      setAnnotating(false)
+      closeAnnotateWindow().catch(() => {})
+    }).then((fn) => { unlistenClose = fn })
+    return () => {
+      unlistenSave?.()
+      unlistenClose?.()
+    }
   }, [compositeAndSave])
 
   // Floating HUD + tray / global shortcut controls.
@@ -1056,16 +976,18 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
+      <MacPageHeader title="Record" subtitle="Capture your screen, camera, or both" />
+
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-6 pb-4">
 
       {showBanner && bloomDir && (
         <SaveBanner path={bloomDir} onDismiss={() => setShowBanner(false)} />
       )}
 
       {diskWarn && (
-        <div className="fade-up flex items-center gap-3 rounded-xl border border-amber-500/25 bg-amber-500/8 px-3.5 py-2.5">
-          <AlertCircle className="size-4 shrink-0 text-amber-400" />
-          <p className="flex-1 text-xs font-medium text-amber-300">{diskWarn}</p>
+        <div className="fade-up banner-warning flex items-center gap-3 rounded-xl px-3.5 py-2.5">
+          <AlertCircle className="size-4 shrink-0 opacity-80" />
+          <p className="flex-1 text-xs font-medium">{diskWarn}</p>
           <button onClick={() => setDiskWarn(null)} className="text-muted-foreground hover:text-foreground">
             <X className="size-3.5" />
           </button>
@@ -1073,9 +995,9 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
       )}
 
       {error && (
-        <div className="fade-up flex items-start gap-3 rounded-xl border border-red-500/25 bg-red-500/8 px-3.5 py-3">
-          <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-400" />
-          <p className="flex-1 text-xs font-medium leading-relaxed text-red-300">{error}</p>
+        <div className="fade-up banner-error flex items-start gap-3 rounded-xl px-3.5 py-3">
+          <AlertCircle className="mt-0.5 size-4 shrink-0 opacity-80" />
+          <p className="flex-1 text-xs font-medium leading-relaxed">{error}</p>
           <button onClick={() => setError(null)} className="text-muted-foreground hover:text-foreground">
             <X className="size-3.5" />
           </button>
@@ -1084,15 +1006,15 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
 
       {/* Snapshot saved */}
       {snapshot && (
-        <div className="fade-up flex items-center gap-3 rounded-xl border border-sky-500/25 bg-sky-500/8 px-3.5 py-3">
-          <ImageIcon className="size-4 shrink-0 text-sky-400" />
+        <div className="fade-up banner-info flex items-center gap-3 rounded-xl px-3.5 py-3">
+          <ImageIcon className="size-4 shrink-0 opacity-80" />
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold text-sky-300">Snímka uložená</p>
+            <p className="text-xs font-semibold">Snímka uložená</p>
             <p className="truncate font-mono text-[11px] text-muted-foreground">{snapshot.path}</p>
           </div>
           <button
             onClick={() => revealInFinder(snapshot.path).catch(() => {})}
-            className="flex items-center gap-1.5 rounded-lg border border-sky-500/20 bg-sky-500/10 px-2.5 py-1.5 text-xs font-semibold text-sky-300 transition-all hover:bg-sky-500/20"
+            className="flex items-center gap-1.5 rounded-lg border border-border/40 bg-[var(--surface)] px-2.5 py-1.5 text-xs font-semibold transition-all hover:bg-[var(--surface-hover)]"
           >
             <FolderOpen className="size-3.5" /> Zobraziť
           </button>
@@ -1153,66 +1075,63 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
           </section>
 
           {/* Source */}
-          <section className="flex flex-col gap-2.5">
-            <SectionLabel>Source</SectionLabel>
-            <div className="grid grid-cols-3 gap-2">
-              {SOURCES.map((src) => (
-                <SourceCard
-                  key={src.id}
-                  active={settings.source === src.id}
-                  title={src.title}
-                  desc={src.desc}
-                  icon={src.icon}
-                  onClick={() => setSettings((p) => ({ ...p, source: src.id }))}
+          <section>
+            <MacGroupHeader>Source</MacGroupHeader>
+            <MacGroup>
+              <div className="p-3">
+                <MacSegmented
+                  options={SOURCES.map((s) => ({ value: s.id, label: s.label }))}
+                  value={settings.source}
+                  onChange={(v) => setSettings((p) => ({ ...p, source: v }))}
                 />
-              ))}
-            </div>
+              </div>
+            </MacGroup>
           </section>
 
           {/* Devices */}
-          <section className="flex flex-col gap-2.5">
-            <SectionLabel>Devices</SectionLabel>
+          <section>
+            <MacGroupHeader>Display</MacGroupHeader>
+            {needsScreen && (
+              <>
+                <MonitorPicker
+                  monitors={monitors}
+                  selectedId={settings.screenTarget.id}
+                  onChange={(id, index) => {
+                    const idx = monitors.findIndex((m) => m.id === id)
+                    if (idx >= 0) setSettings((p) => ({ ...p, screenTarget: monitorToTarget(monitors[idx], idx) }))
+                    else if (index >= 0 && monitors[index]) {
+                      setSettings((p) => ({ ...p, screenTarget: monitorToTarget(monitors[index], index) }))
+                    }
+                  }}
+                  onHighlight={(m) => highlightMonitor(m).catch(() => {})}
+                />
+                <p className="mt-1.5 px-1 text-[11px] text-muted-foreground">
+                  Choose a display, then confirm in the system picker when recording starts.
+                </p>
+              </>
+            )}
 
             {needsCamera && !hasLabels && (
               <button
                 onClick={requestPermission}
-                className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/8 px-3.5 py-2.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/15"
+                className="mac-btn mac-btn-ghost mt-2 w-full justify-start text-[12px] text-muted-foreground"
               >
-                <Info className="size-4 shrink-0" />
-                Allow camera &amp; microphone access to list your devices
+                <Info className="size-3.5" />
+                Allow camera &amp; microphone access
               </button>
             )}
 
-          {needsScreen && (
-            <div className="flex flex-col gap-1.5">
-              <MonitorPicker
-                monitors={monitors}
-                selectedId={settings.screenTarget.id}
-                onChange={(id, index) => {
-                  const idx = monitors.findIndex((m) => m.id === id)
-                  if (idx >= 0) setSettings((p) => ({ ...p, screenTarget: monitorToTarget(monitors[idx], idx) }))
-                  else if (index >= 0 && monitors[index]) {
-                    setSettings((p) => ({ ...p, screenTarget: monitorToTarget(monitors[index], index) }))
-                  }
-                }}
-                onHighlight={(m) => highlightMonitor(m).catch(() => {})}
-              />
-              <p className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground/60">
-                <Info className="size-3 shrink-0" />
-                Klikni na displej v mape alebo „Ukázať“ — pri nahrávaní potvrdíš výber v systémovom dialógu.
-              </p>
-            </div>
-          )}
-
             {needsCamera && (
-              <Dropdown
-                value={settings.cameraDeviceId}
-                options={cameraOptions}
-                icon={Camera}
-                emptyLabel={hasLabels ? "No cameras found" : "Grant access to list cameras"}
-                onRefresh={refresh}
-                onChange={(id) => setSettings((p) => ({ ...p, cameraDeviceId: id }))}
-              />
+              <div className="mt-2">
+                <Dropdown
+                  value={settings.cameraDeviceId}
+                  options={cameraOptions}
+                  icon={Camera}
+                  emptyLabel={hasLabels ? "No cameras found" : "Grant access to list cameras"}
+                  onRefresh={refresh}
+                  onChange={(id) => setSettings((p) => ({ ...p, cameraDeviceId: id }))}
+                />
+              </div>
             )}
           </section>
 
@@ -1349,7 +1268,9 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
               {annotating ? "Kreslenie aktívne" : "Anotácia"}
             </p>
             <p className="text-[10px] text-muted-foreground">
-              {annotating ? "⌘S uloží snímku · Esc zavrie panel" : "Kresli priamo na obrazovku"}
+              {annotating
+                ? `${formatForDisplay("Mod+S")} uloží snímku · Esc zavrie panel`
+                : "Kresli priamo na obrazovku"}
             </p>
           </div>
           {status === "recording" && (
@@ -1377,79 +1298,47 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
 
       </div>
 
-      {/* Action buttons (pinned to bottom) */}
-      <div className="shrink-0 border-t border-border/50 bg-background/60 px-5 py-4">
-        <div className="flex gap-2">
+      {/* Action buttons */}
+      <div className="shrink-0 border-t border-border px-6 py-3">
+        <div className="flex justify-end gap-2">
         {status === "idle" && (
-          <button onClick={startCountdown}
-            className={cn(
-              "group flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-4 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-accent hover:shadow-primary/35 active:scale-[0.98]",
-              armHighlight && "ring-2 ring-accent ring-offset-2 ring-offset-background animate-pulse",
-            )}
-          >
-            <Video className="size-4 transition-transform group-hover:scale-110" />
-            Start Recording
-            <ChevronRight className="size-4 opacity-60" />
-          </button>
+          <MacButton variant="primary" onClick={startCountdown} className={cn("min-w-[140px] py-2", armHighlight && "ring-2 ring-[var(--accent)]")}>
+            <Video className="size-4" /> Record
+          </MacButton>
         )}
 
         {(status === "countdown" || status === "preparing") && (
-          <button onClick={cancelCountdown}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border/60 bg-[var(--surface)] py-4 text-sm font-bold text-muted-foreground transition-all hover:border-border hover:text-foreground"
-          >
-            Cancel
-          </button>
+          <MacButton onClick={cancelCountdown} className="min-w-[100px]">Cancel</MacButton>
         )}
 
         {isActive && (
           <>
             {status === "recording" ? (
-              <button onClick={pauseRecording}
-                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border/60 bg-[var(--surface)] py-4 text-sm font-bold text-foreground transition-all hover:bg-secondary active:scale-[0.98]"
-              >
-                <Pause className="size-4" /> Pause
-              </button>
+              <MacButton onClick={pauseRecording}><Pause className="size-4" /> Pause</MacButton>
             ) : (
-              <button onClick={resumeRecording}
-                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 py-4 text-sm font-bold text-amber-300 transition-all hover:bg-amber-500/15 active:scale-[0.98]"
-              >
-                <Play className="size-4" /> Resume
-              </button>
+              <MacButton onClick={resumeRecording}><Play className="size-4" /> Resume</MacButton>
             )}
-            <button onClick={stopRecording}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-600 py-4 text-sm font-bold text-white shadow-lg shadow-red-500/20 transition-all hover:bg-red-500 active:scale-[0.98]"
-            >
-              <Square className="size-4 fill-current" /> Stop & Save
-            </button>
+            <MacButton variant="destructive" onClick={stopRecording}>
+              <Square className="size-3.5 fill-current" /> Stop
+            </MacButton>
           </>
         )}
 
         {status === "processing" && (
-          <div className="flex flex-1 items-center justify-center gap-2.5 rounded-xl border border-border/50 bg-[var(--surface)] py-4 text-sm font-semibold text-muted-foreground">
-            <div className="size-4 animate-spin rounded-full border-2 border-muted-foreground border-t-foreground" />
+          <MacButton disabled className="opacity-60">
+            <div className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
             Saving…
-          </div>
+          </MacButton>
         )}
 
         {status === "done" && (
-          <div className="flex flex-1 items-center gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-3">
-            <CheckCircle2 className="size-5 shrink-0 text-emerald-400" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-emerald-300">Saved!</p>
-              {savedMeta && (
-                <p className="truncate font-mono text-[11px] text-muted-foreground">
-                  {savedMeta.title} · {savedMeta.size}
-                </p>
-              )}
-            </div>
+          <div className="banner-success flex flex-1 items-center gap-2 rounded-lg px-3 py-2">
+            <CheckCircle2 className="size-4 opacity-80" />
+            <span className="text-[13px] font-medium">Saved{savedMeta ? ` · ${savedMeta.size}` : ""}</span>
             {bloomDir && (
-              <button
-                onClick={() => revealInFinder(bloomDir)}
-                className="flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-semibold text-emerald-400 transition-all hover:bg-emerald-500/20"
-              >
-                <FolderOpen className="size-3.5" />
-                Show
-              </button>
+              <MacButton variant="ghost" className="ml-auto !py-1" onClick={() => revealInFinder(bloomDir)}>
+                <FolderOpen className="size-3.5" /> Show
+              </MacButton>
             )}
           </div>
         )}

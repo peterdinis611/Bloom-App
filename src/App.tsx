@@ -1,8 +1,9 @@
 import { useState } from "react"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { SettingsProvider } from "@/hooks/useSettings"
+import { TanStackRoot } from "@/components/TanStackRoot"
 import { TitleBar } from "@/components/layout/TitleBar"
-import { NavBar, type AppView } from "@/components/layout/NavBar"
+import { Sidebar, type AppView } from "@/components/layout/Sidebar"
 import { RecordPage } from "@/pages/RecordPage"
 import { LibraryPage } from "@/pages/LibraryPage"
 import { SettingsPage } from "@/pages/SettingsPage"
@@ -12,23 +13,32 @@ function App() {
   const [view, setView] = useState<AppView>("record")
 
   return (
-    <SettingsProvider>
-      <TooltipProvider delayDuration={200}>
+    <TanStackRoot>
+      <SettingsProvider>
+        <TooltipProvider delayDuration={300}>
         <div className="flex h-screen w-screen flex-col overflow-hidden bg-background">
-          <TitleBar recording={recording} />
-          <NavBar view={view} onChange={setView} locked={recording} />
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <div className={view === "record" ? "h-full" : "hidden"}>
-              <RecordPage onRecordingChange={setRecording} />
-            </div>
-            {view === "library" && (
-              <LibraryPage onStartRecording={() => setView("record")} />
-            )}
-            {view === "settings" && <SettingsPage />}
+          <TitleBar />
+          <div className="flex min-h-0 flex-1">
+            <Sidebar
+              view={view}
+              onChange={setView}
+              locked={recording}
+              recording={recording}
+            />
+            <main className="mac-main min-w-0 flex-1 overflow-hidden">
+              <div className={view === "record" ? "h-full" : "hidden"}>
+                <RecordPage onRecordingChange={setRecording} />
+              </div>
+              {view === "library" && (
+                <LibraryPage onStartRecording={() => setView("record")} />
+              )}
+              {view === "settings" && <SettingsPage />}
+            </main>
           </div>
         </div>
-      </TooltipProvider>
-    </SettingsProvider>
+        </TooltipProvider>
+      </SettingsProvider>
+    </TanStackRoot>
   )
 }
 

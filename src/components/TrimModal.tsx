@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { X, Scissors, Play, Pause, Zap, Check, CircleAlert, FolderOpen, LoaderCircle } from "lucide-react"
+import { useCloseOnEscape } from "@/hooks/useCloseOnEscape"
 import type { RecordingEntry } from "@/types"
 import {
   fileSrc,
@@ -127,11 +128,7 @@ export function TrimModal({ entry, onClose, onComplete }: TrimModalProps) {
     return () => v.removeEventListener("timeupdate", tick)
   }, [])
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && phase !== "running") onClose() }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [phase, onClose])
+  useCloseOnEscape(onClose, phase !== "running")
 
   const seek = useCallback((t: number) => {
     const v = videoRef.current

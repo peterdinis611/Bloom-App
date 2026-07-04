@@ -16,7 +16,7 @@ export function AudioMeterBar({ label, level, active }: {
         <div
           className={cn(
             "h-full rounded-full transition-[width] duration-75",
-            pct > 85 ? "bg-red-500" : pct > 60 ? "bg-amber-400" : "bg-emerald-400",
+            pct > 85 ? "bg-[var(--destructive)]" : pct > 60 ? "bg-[var(--status-warning-fg)]" : "bg-[var(--status-success-fg)]",
           )}
           style={{ width: `${pct}%` }}
         />
