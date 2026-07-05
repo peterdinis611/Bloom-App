@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { ToastProvider } from "@/hooks/useToast"
 import { SettingsProvider } from "@/hooks/useSettings"
 import { TanStackRoot } from "@/components/TanStackRoot"
 import { TitleBar } from "@/components/layout/TitleBar"
@@ -14,6 +15,7 @@ function App() {
 
   return (
     <TanStackRoot>
+      <ToastProvider>
       <SettingsProvider>
         <TooltipProvider delayDuration={300}>
         <div className="flex h-screen w-screen flex-col overflow-hidden bg-background">
@@ -38,6 +40,7 @@ function App() {
         </div>
         </TooltipProvider>
       </SettingsProvider>
+      </ToastProvider>
     </TanStackRoot>
   )
 }

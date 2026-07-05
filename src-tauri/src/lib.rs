@@ -48,6 +48,7 @@ pub fn run() {
             library::validate_recording,
             library::reveal_in_finder,
             video::check_ffmpeg,
+            video::install_ffmpeg,
             video::get_video_info,
             video::get_thumbnail,
             video::optimize_video,

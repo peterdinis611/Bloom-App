@@ -32,6 +32,7 @@ import {
   Square,
   Folder,
   Scissors,
+  Download,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { FfmpegStatus, LibraryStats, RecordingEntry, ValidationResult } from "@/types"
@@ -47,6 +48,7 @@ import {
   revealInFinder,
   validateRecording,
   checkFfmpeg,
+  installFfmpeg,
   getThumbnail,
   fileSrc,
   formatBytes,
@@ -56,6 +58,7 @@ import { OptimizeModal } from "@/components/OptimizeModal"
 import { TrimModal } from "@/components/TrimModal"
 import { BatchOptimizeModal } from "@/components/BatchOptimizeModal"
 import { ConfirmDeleteAll } from "@/components/library/ConfirmDeleteAll"
+import { useToast } from "@/hooks/useToast"
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function relativeDate(iso: string): string {
@@ -79,11 +82,13 @@ const SOURCE_META: Record<string, { icon: React.FC<{ className?: string }>; labe
 }
 
 // ── Empty library hero ───────────────────────────────────────────────────────
-function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, checkingFfmpeg }: {
+function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, onInstallFfmpeg, checkingFfmpeg, installingFfmpeg }: {
   onStartRecording?: () => void
   ffmpeg: FfmpegStatus | null
   onRecheckFfmpeg: () => void
+  onInstallFfmpeg: () => void
   checkingFfmpeg: boolean
+  installingFfmpeg: boolean
 }) {
   const hints = [
     { icon: Monitor, label: "Screen capture", tint: "text-accent bg-primary/12 border-primary/20" },
@@ -135,13 +140,25 @@ function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, checkingFfmpe
               <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground/70">
                 Needed for video optimisation and thumbnails.
               </p>
-              <div className="mt-2 flex items-center gap-2">
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 <code className="min-w-0 flex-1 truncate rounded-md bg-black/40 px-2 py-1 font-mono text-[10px] text-foreground/70">
-                  brew install ffmpeg
+                  {ffmpeg.install_hint.split(/:\s+/).pop()}
                 </code>
+                {ffmpeg.can_auto_install && (
+                  <button
+                    type="button"
+                    onClick={() => void onInstallFfmpeg()}
+                    disabled={installingFfmpeg || checkingFfmpeg}
+                    className="flex shrink-0 items-center gap-1 rounded-md border border-primary/40 bg-primary/15 px-2 py-1 text-[10px] font-semibold text-primary transition-colors hover:bg-primary/25 disabled:opacity-40"
+                  >
+                    <Download className={cn("size-3", installingFfmpeg && "animate-pulse")} />
+                    {installingFfmpeg ? "Installing…" : "Install"}
+                  </button>
+                )}
                 <button
-                  onClick={onRecheckFfmpeg}
-                  disabled={checkingFfmpeg}
+                  type="button"
+                  onClick={() => void onRecheckFfmpeg()}
+                  disabled={checkingFfmpeg || installingFfmpeg}
                   className="flex shrink-0 items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-[10px] font-semibold text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
                 >
                   <RefreshCw className={cn("size-3", checkingFfmpeg && "animate-spin")} />
@@ -427,6 +444,7 @@ interface LibraryPageProps {
 }
 
 export function LibraryPage({ onStartRecording }: LibraryPageProps) {
+  const { success: toastSuccess, error: toastError, toast: toastInfo } = useToast()
   const [entries, setEntries] = useState<RecordingEntry[]>([])
   const [stats, setStats] = useState<LibraryStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -446,6 +464,7 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [ffmpeg, setFfmpeg] = useState<FfmpegStatus | null>(null)
   const [checkingFfmpeg, setCheckingFfmpeg] = useState(false)
+  const [installingFfmpeg, setInstallingFfmpeg] = useState(false)
   const [optimizing, setOptimizing] = useState<RecordingEntry | null>(null)
   const [trimming, setTrimming] = useState<RecordingEntry | null>(null)
   const [batchOptimizing, setBatchOptimizing] = useState<RecordingEntry[] | null>(null)
@@ -456,17 +475,65 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [tagDraft, setTagDraft] = useState<Record<string, string>>({})
 
-  const recheckFfmpeg = useCallback(async () => {
+  const recheckFfmpeg = useCallback(async (showToast = false) => {
     setCheckingFfmpeg(true)
     try {
       const status = await checkFfmpeg()
       setFfmpeg(status)
-    } catch {
-      /* keep previous status */
+      if (showToast) {
+        if (status.available) {
+          toastSuccess({
+            title: "ffmpeg installed",
+            description: status.version ?? "Video optimisation and thumbnails are ready.",
+          })
+        } else {
+          toastError({
+            title: "ffmpeg not found",
+            description: "Install ffmpeg, then tap Recheck again.",
+          })
+        }
+      }
+    } catch (e) {
+      if (showToast) {
+        toastError({
+          title: "Could not check ffmpeg",
+          description: String(e),
+        })
+      }
     } finally {
       setCheckingFfmpeg(false)
     }
-  }, [])
+  }, [toastSuccess, toastError])
+
+  const runInstallFfmpeg = useCallback(async () => {
+    setInstallingFfmpeg(true)
+    toastInfo({
+      title: "Installing ffmpeg…",
+      description: "This can take a few minutes. Please keep Bloom open.",
+    })
+    try {
+      const result = await installFfmpeg()
+      setFfmpeg(result.status)
+      if (result.success) {
+        toastSuccess({
+          title: "ffmpeg installed",
+          description: result.message,
+        })
+      } else {
+        toastError({
+          title: "Install failed",
+          description: result.message,
+        })
+      }
+    } catch (e) {
+      toastError({
+        title: "Install failed",
+        description: String(e),
+      })
+    } finally {
+      setInstallingFfmpeg(false)
+    }
+  }, [toastSuccess, toastError, toastInfo])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -698,12 +765,24 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
             <p className="mt-0.5 text-[11px] text-muted-foreground">
               Resizing, compression and thumbnails need ffmpeg on your system.
             </p>
-            <div className="mt-2 flex items-center gap-2">
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               <code className="flex min-w-0 flex-1 items-center gap-1.5 truncate rounded-md bg-black/40 px-2 py-1 font-mono text-[11px] text-foreground/80">
                 <Terminal className="size-3 shrink-0 text-muted-foreground" />
                 {ffmpeg.install_hint.split(/:\s+/).pop()}
               </code>
+              {ffmpeg.can_auto_install && (
+                <button
+                  type="button"
+                  onClick={() => void runInstallFfmpeg()}
+                  disabled={installingFfmpeg || checkingFfmpeg}
+                  className="flex shrink-0 items-center gap-1 rounded-md border border-primary/40 bg-primary/15 px-2 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/25 disabled:opacity-40"
+                >
+                  <Download className={cn("size-3", installingFfmpeg && "animate-pulse")} />
+                  {installingFfmpeg ? "Installing…" : "Install"}
+                </button>
+              )}
               <button
+                type="button"
                 onClick={copyInstall}
                 className="flex shrink-0 items-center gap-1 rounded-md border border-border/60 bg-[var(--surface)] px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
               >
@@ -711,11 +790,14 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
                 {copied ? "Copied" : "Copy"}
               </button>
               <button
-                onClick={recheckFfmpeg}
-                disabled={checkingFfmpeg}
+                type="button"
+                onClick={() => void recheckFfmpeg(true)}
+                disabled={checkingFfmpeg || installingFfmpeg}
+                title="Recheck ffmpeg"
                 className="flex shrink-0 items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
               >
                 <RefreshCw className={cn("size-3", checkingFfmpeg && "animate-spin")} />
+                Recheck
               </button>
             </div>
           </div>
@@ -802,8 +884,10 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
           <EmptyLibrary
             onStartRecording={onStartRecording}
             ffmpeg={ffmpeg}
-            onRecheckFfmpeg={recheckFfmpeg}
+            onRecheckFfmpeg={() => void recheckFfmpeg(true)}
+            onInstallFfmpeg={() => void runInstallFfmpeg()}
             checkingFfmpeg={checkingFfmpeg}
+            installingFfmpeg={installingFfmpeg}
           />
         ) : filtered.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-muted-foreground">

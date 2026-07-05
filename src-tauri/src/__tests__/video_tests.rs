@@ -113,3 +113,42 @@ fn build_output_path_avoids_clobbering() {
 
     fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn tail_lines_keeps_last_non_empty_lines() {
+    let text = "line1\n\nline2\nline3\nline4";
+    assert_eq!(tail_lines(text, 2), "line3\nline4");
+}
+
+#[test]
+fn shell_path_prefix_includes_homebrew_on_macos() {
+    let prefix = shell_path_prefix();
+    #[cfg(target_os = "macos")]
+    {
+        assert!(prefix.contains("/opt/homebrew/bin"));
+        assert!(prefix.contains("/usr/local/bin"));
+    }
+}
+
+#[test]
+fn ffprobe_prefers_sibling_next_to_ffmpeg() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = std::env::temp_dir().join(format!("bloom-ffprobe-{}", uuid::Uuid::new_v4()));
+    fs::create_dir_all(&dir).unwrap();
+
+    let ffmpeg = dir.join("ffmpeg");
+    let ffprobe = dir.join("ffprobe");
+    fs::write(&ffmpeg, b"#!/bin/sh\necho ffmpeg\n").unwrap();
+    fs::write(&ffprobe, b"#!/bin/sh\necho ffprobe\n").unwrap();
+    for path in [&ffmpeg, &ffprobe] {
+        let mut perms = fs::metadata(path).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(path, perms).unwrap();
+    }
+
+    let found = find_ffprobe(Some(&ffmpeg));
+    assert_eq!(found.as_deref(), Some(ffprobe.as_path()));
+
+    fs::remove_dir_all(&dir).ok();
+}

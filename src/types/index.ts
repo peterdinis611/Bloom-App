@@ -115,6 +115,14 @@ export interface FfmpegStatus {
   ffprobe_path: string | null
   version: string | null
   install_hint: string
+  can_auto_install: boolean
+}
+
+/** Result of an automatic ffmpeg install attempt. */
+export interface FfmpegInstallResult {
+  success: boolean
+  message: string
+  status: FfmpegStatus
 }
 
 /** Mirrors VideoInfo in Rust. */

@@ -12,6 +12,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import type {
   DiskInfo,
   FfmpegStatus,
+  FfmpegInstallResult,
   LibraryStats,
   MonitorInfo,
   OptimizeOptions,
@@ -166,6 +167,11 @@ export async function revealInFinder(path: string): Promise<void> {
 /** Detect a system ffmpeg/ffprobe install. */
 export async function checkFfmpeg(): Promise<FfmpegStatus> {
   return invoke<FfmpegStatus>("check_ffmpeg")
+}
+
+/** Install ffmpeg via Homebrew / winget / pkexec (platform-dependent). */
+export async function installFfmpeg(): Promise<FfmpegInstallResult> {
+  return invoke<FfmpegInstallResult>("install_ffmpeg")
 }
 
 /** Probe a video file for resolution, fps, codec, bitrate and duration. */
