@@ -12,8 +12,11 @@ import {
   CircleAlert,
   FolderOpen,
   LoaderCircle,
+  FastForward,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { sk, type OptimizeSpeed } from "@/lib/i18n/sk"
+import { OPTIMIZE_SPEEDS, speedToNumber } from "@/lib/videoOptions"
 import type {
   OptimizeFormat,
   OptimizePreset,
@@ -34,21 +37,25 @@ import {
 type Phase = "config" | "running" | "done" | "error"
 
 const PRESETS: { v: OptimizePreset; label: string; hint: string }[] = [
-  { v: "small", label: "Small", hint: "Smallest file" },
-  { v: "medium", label: "Medium", hint: "Balanced" },
-  { v: "high", label: "High", hint: "Best quality" },
+  { v: "small", label: sk.optimize.presets.small.label, hint: sk.optimize.presets.small.hint },
+  { v: "medium", label: sk.optimize.presets.medium.label, hint: sk.optimize.presets.medium.hint },
+  { v: "high", label: sk.optimize.presets.high.label, hint: sk.optimize.presets.high.hint },
 ]
 const RESOLUTIONS: { v: OptimizeResolution; label: string }[] = [
-  { v: "480p", label: "480p" },
-  { v: "720p", label: "720p" },
-  { v: "1080p", label: "1080p" },
-  { v: "original", label: "Original" },
+  { v: "480p", label: sk.optimize.resolutions["480p"] },
+  { v: "720p", label: sk.optimize.resolutions["720p"] },
+  { v: "1080p", label: sk.optimize.resolutions["1080p"] },
+  { v: "original", label: sk.optimize.resolutions.original },
 ]
 const FORMATS: { v: OptimizeFormat; label: string }[] = [
   { v: "mp4", label: "MP4" },
   { v: "webm", label: "WebM" },
   { v: "gif", label: "GIF" },
 ]
+const SPEEDS: { v: OptimizeSpeed; label: string }[] = OPTIMIZE_SPEEDS.map((v) => ({
+  v,
+  label: sk.optimize.speeds[v],
+}))
 
 function Segmented<T extends string>({ icon: Icon, label, options, value, onChange, render }: {
   icon: React.FC<{ className?: string }>
@@ -94,6 +101,7 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
   const [preset, setPreset] = useState<OptimizePreset>("medium")
   const [resolution, setResolution] = useState<OptimizeResolution>("720p")
   const [format, setFormat] = useState<OptimizeFormat>("mp4")
+  const [speed, setSpeed] = useState<OptimizeSpeed>("1")
   const [trimOn, setTrimOn] = useState(false)
   const [trimStart, setTrimStart] = useState(0)
   const [trimEnd, setTrimEnd] = useState(0)
@@ -107,7 +115,6 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
 
   const duration = info?.duration_secs ?? entry.meta.duration_secs
 
-  // Load source info + subscribe to progress once.
   useEffect(() => {
     getVideoInfo(entry.path)
       .then((i) => { setInfo(i); setTrimEnd(i.duration_secs) })
@@ -146,6 +153,7 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
         preset,
         resolution,
         format,
+        speed: speedToNumber(speed),
         trim_start: trimOn ? Math.max(0, Math.min(trimStart, trimEnd)) : null,
         trim_end: trimOn ? trimEnd : null,
         add_to_library: true,
@@ -155,7 +163,7 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
       setErrorMsg(String(e))
       setPhase("error")
     }
-  }, [entry.path, preset, resolution, format, trimOn, trimStart, trimEnd])
+  }, [entry.path, preset, resolution, format, speed, trimOn, trimStart, trimEnd])
 
   const cancel = useCallback(() => {
     if (jobIdRef.current) cancelOptimize(jobIdRef.current).catch(() => {})
@@ -166,16 +174,19 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
       ? Math.round((1 - result.size / entry.meta.file_size_bytes) * 100)
       : null
 
+  const outputDuration = trimOn
+    ? Math.max(0, trimEnd - trimStart) / speedToNumber(speed)
+    : duration / speedToNumber(speed)
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-5 fade-up" onClick={() => phase !== "running" && onClose()}>
       <div className="flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
         <div className="flex items-center gap-3 border-b border-border/60 px-4 py-3">
           <div className="flex size-9 items-center justify-center rounded-xl bg-primary/15">
             <Sparkles className="size-4 text-accent" />
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-sm font-bold text-foreground">Optimise video</h3>
+            <h3 className="truncate text-sm font-bold text-foreground">{sk.optimize.title}</h3>
             <p className="truncate text-[11px] text-muted-foreground">{entry.meta.title}</p>
           </div>
           <button
@@ -188,7 +199,6 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
         </div>
 
         <div className="flex flex-col gap-4 p-4">
-          {/* Source info */}
           <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border/50 bg-[var(--surface)] px-3 py-2.5 text-[11px] font-semibold text-muted-foreground">
             <FileVideo className="size-3.5 text-muted-foreground/70" />
             {info ? (
@@ -200,23 +210,23 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
                 <span>· {formatBytes(info.size_bytes)}</span>
               </>
             ) : (
-              <span>Reading source…</span>
+              <span>{sk.optimize.readingSource}</span>
             )}
           </div>
 
           {phase === "config" && (
             <>
-              <Segmented icon={Gauge} label="Quality preset" options={PRESETS} value={preset} onChange={setPreset} />
-              <Segmented icon={Maximize2} label="Resolution" options={RESOLUTIONS} value={resolution} onChange={setResolution} />
-              <Segmented icon={FileVideo} label="Format" options={FORMATS} value={format} onChange={setFormat} />
+              <Segmented icon={Gauge} label={sk.optimize.qualityPreset} options={PRESETS} value={preset} onChange={setPreset} />
+              <Segmented icon={Maximize2} label={sk.optimize.resolution} options={RESOLUTIONS} value={resolution} onChange={setResolution} />
+              <Segmented icon={FastForward} label={sk.optimize.speed} options={SPEEDS} value={speed} onChange={setSpeed} />
+              <Segmented icon={FileVideo} label={sk.optimize.format} options={FORMATS} value={format} onChange={setFormat} />
 
-              {/* Trim */}
               <div className="flex flex-col gap-2">
                 <button
                   onClick={() => setTrimOn((v) => !v)}
                   className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground/60 transition-colors hover:text-foreground"
                 >
-                  <Scissors className="size-3" /> Trim
+                  <Scissors className="size-3" /> {sk.optimize.trim}
                   <div className={cn("ml-1 flex h-4 w-7 items-center rounded-full p-0.5 transition-colors", trimOn ? "bg-primary" : "bg-secondary")}>
                     <div className={cn("size-3 rounded-full bg-white transition-transform", trimOn ? "translate-x-3" : "translate-x-0")} />
                   </div>
@@ -224,7 +234,7 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
                 {trimOn && duration > 0 && (
                   <div className="flex flex-col gap-2 rounded-xl border border-border/50 bg-[var(--surface)] p-3">
                     <label className="flex items-center justify-between text-[11px] font-semibold text-muted-foreground">
-                      <span>Start</span>
+                      <span>{sk.optimize.start}</span>
                       <span className="font-mono tabular-nums text-foreground">{formatDurationSecs(trimStart)}</span>
                     </label>
                     <input
@@ -233,7 +243,7 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
                       className="accent-primary"
                     />
                     <label className="flex items-center justify-between text-[11px] font-semibold text-muted-foreground">
-                      <span>End</span>
+                      <span>{sk.optimize.end}</span>
                       <span className="font-mono tabular-nums text-foreground">{formatDurationSecs(trimEnd)}</span>
                     </label>
                     <input
@@ -242,7 +252,16 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
                       className="accent-primary"
                     />
                     <p className="text-[11px] text-muted-foreground">
-                      Clip length: <span className="font-mono text-foreground">{formatDurationSecs(Math.max(0, trimEnd - trimStart))}</span>
+                      {sk.optimize.clipLength}:{" "}
+                      <span className="font-mono text-foreground">{formatDurationSecs(Math.max(0, trimEnd - trimStart))}</span>
+                      {speed !== "1" && (
+                        <>
+                          {" → "}
+                          <span className="font-mono text-foreground">{formatDurationSecs(outputDuration)}</span>
+                          {" "}
+                          <span className="text-muted-foreground/80">({sk.optimize.speed.toLowerCase()} {sk.optimize.speeds[speed]})</span>
+                        </>
+                      )}
                     </p>
                   </div>
                 )}
@@ -252,7 +271,7 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
                 onClick={start}
                 className="flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-accent active:scale-[0.98]"
               >
-                <Zap className="size-4" /> Optimise
+                <Zap className="size-4" /> {sk.optimize.optimize}
               </button>
             </>
           )}
@@ -261,7 +280,7 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
             <div className="flex flex-col items-center gap-4 py-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <LoaderCircle className="size-4 animate-spin text-accent" />
-                Transcoding…
+                {sk.optimize.transcoding}
               </div>
               <div className="h-2.5 w-full overflow-hidden rounded-full bg-secondary">
                 <div
@@ -270,13 +289,13 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
                 />
               </div>
               <p className="font-mono text-xs tabular-nums text-muted-foreground">
-                {percent >= 0 ? `${percent.toFixed(0)}%` : "Working…"}
+                {percent >= 0 ? `${percent.toFixed(0)}%` : sk.optimize.working}
               </p>
               <button
                 onClick={cancel}
                 className="rounded-xl border border-border/60 bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-muted-foreground transition-colors hover:border-red-500/40 hover:text-red-400"
               >
-                Cancel
+                {sk.optimize.cancel}
               </button>
             </div>
           )}
@@ -287,12 +306,12 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
                 <Check className="size-7 text-emerald-400" />
               </div>
               <div>
-                <p className="text-sm font-bold text-emerald-300">Done!</p>
+                <p className="text-sm font-bold text-emerald-300">{sk.optimize.done}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {formatBytes(result?.size ?? 0)}
                   {reduction !== null && (
                     <span className={cn("ml-1 font-semibold", reduction >= 0 ? "text-emerald-400" : "text-amber-400")}>
-                      ({reduction >= 0 ? `${reduction}% smaller` : `${-reduction}% larger`})
+                      ({reduction >= 0 ? sk.optimize.smaller(reduction) : sk.optimize.larger(-reduction)})
                     </span>
                   )}
                 </p>
@@ -302,13 +321,13 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
                   onClick={() => result?.path && revealInFinder(result.path).catch(() => {})}
                   className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-border/60 bg-[var(--surface)] py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-secondary"
                 >
-                  <FolderOpen className="size-4" /> Reveal
+                  <FolderOpen className="size-4" /> {sk.optimize.reveal}
                 </button>
                 <button
                   onClick={() => { onComplete(); onClose() }}
                   className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-primary py-2.5 text-sm font-bold text-white transition-colors hover:bg-accent"
                 >
-                  Done
+                  {sk.optimize.done.replace("!", "")}
                 </button>
               </div>
             </div>
@@ -320,14 +339,14 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
                 <CircleAlert className="size-7 text-red-400" />
               </div>
               <div>
-                <p className="text-sm font-bold text-red-300">Optimisation failed</p>
+                <p className="text-sm font-bold text-red-300">{sk.optimize.failed}</p>
                 <p className="mt-1 max-h-24 overflow-y-auto text-xs text-muted-foreground">{errorMsg}</p>
               </div>
               <button
                 onClick={() => setPhase("config")}
                 className="rounded-xl border border-border/60 bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-secondary"
               >
-                Try again
+                {sk.optimize.tryAgain}
               </button>
             </div>
           )}

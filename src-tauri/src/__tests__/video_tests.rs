@@ -9,6 +9,7 @@ fn opts(preset: &str, resolution: &str, format: &str) -> OptimizeOptions {
         format: format.to_string(),
         trim_start: None,
         trim_end: None,
+        speed: 1.0,
         output_name: None,
         add_to_library: true,
     }
@@ -86,6 +87,15 @@ fn build_args_no_audio_uses_an() {
     let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mp4", false);
     assert!(args.iter().any(|a| a == "-an"));
     assert!(!args.iter().any(|a| a.starts_with("scale=")));
+}
+
+#[test]
+fn build_args_speed_applies_setpts_and_atempo() {
+    let mut o = opts("medium", "720p", "mp4");
+    o.speed = 2.0;
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mp4", true);
+    assert!(args.iter().any(|a| a.contains("setpts=PTS/2")));
+    assert!(args.windows(2).any(|w| w == ["-af", "atempo=2.0000"]));
 }
 
 #[test]

@@ -1,12 +1,14 @@
+import { Button } from "@/components/ui/button"
+import { Card } from "@/components/ui/card"
+import { Label } from "@/components/ui/label"
+import { Separator } from "@/components/ui/separator"
+import { Switch } from "@/components/ui/switch"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 
 /** macOS-style inset grouped section */
 export function MacGroup({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={cn("mac-group overflow-hidden", className)}>
-      {children}
-    </div>
-  )
+  return <Card className={className}>{children}</Card>
 }
 
 export function MacGroupHeader({ children }: { children: React.ReactNode }) {
@@ -31,15 +33,19 @@ export function MacRow({
     <Tag
       type={onClick ? "button" : undefined}
       onClick={onClick}
-      className={cn("mac-row", border && "mac-row-border", onClick && "mac-row-clickable")}
+      className={cn("mac-row", onClick && "mac-row-clickable", !border && "border-none")}
     >
       <div className="min-w-0 flex-1 text-left">
-        <p className="text-[13px] text-foreground">{label}</p>
+        <Label className="cursor-[inherit]">{label}</Label>
         {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
       </div>
       {children && <div className="shrink-0">{children}</div>}
     </Tag>
   )
+}
+
+export function MacRowSeparator() {
+  return <Separator className="bg-border" />
 }
 
 export function MacSegmented<T extends string>({
@@ -54,22 +60,24 @@ export function MacSegmented<T extends string>({
   className?: string
 }) {
   return (
-    <div className={cn("mac-segmented", className)} role="tablist">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          role="tab"
-          aria-selected={o.value === value}
-          onClick={() => onChange(o.value)}
-          className={cn("mac-segment", o.value === value && "mac-segment-active")}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
+    <Tabs value={value} onValueChange={(v) => onChange(v as T)} className={className}>
+      <TabsList className="w-full">
+        {options.map((o) => (
+          <TabsTrigger key={o.value} value={o.value}>
+            {o.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
   )
 }
+
+const MAC_BTN_VARIANT = {
+  default: "outline",
+  primary: "default",
+  destructive: "destructive",
+  ghost: "ghost",
+} as const
 
 export function MacButton({
   children,
@@ -77,44 +85,42 @@ export function MacButton({
   className,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "default" | "primary" | "destructive" | "ghost"
+  variant?: keyof typeof MAC_BTN_VARIANT
 }) {
   return (
-    <button
-      type="button"
-      className={cn(
-        "mac-btn",
-        variant === "primary" && "mac-btn-primary",
-        variant === "destructive" && "mac-btn-destructive",
-        variant === "ghost" && "mac-btn-ghost",
-        className,
-      )}
+    <Button
+      variant={MAC_BTN_VARIANT[variant]}
+      size="sm"
+      className={cn(variant === "primary" && "shadow-md shadow-primary/20", className)}
       {...props}
     >
       {children}
-    </button>
+    </Button>
   )
 }
 
 export function MacToggle({ on, onChange }: { on: boolean; onChange: () => void }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      onClick={onChange}
-      className={cn("mac-toggle", on && "mac-toggle-on")}
-    >
-      <span className="mac-toggle-knob" />
-    </button>
-  )
+  return <Switch checked={on} onCheckedChange={onChange} />
 }
 
-export function MacPageHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+export function MacPageHeader({
+  title,
+  subtitle,
+  actions,
+}: {
+  title: string
+  subtitle?: string
+  actions?: React.ReactNode
+}) {
   return (
-    <header className="mac-page-header">
-      <h1 className="text-[22px] font-semibold tracking-tight text-foreground">{title}</h1>
-      {subtitle && <p className="mt-0.5 text-[13px] text-muted-foreground">{subtitle}</p>}
+    <header className="mac-page-header shrink-0">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-[24px] font-semibold tracking-tight text-foreground">{title}</h1>
+          {subtitle && <p className="mt-1 text-[13px] text-muted-foreground">{subtitle}</p>}
+        </div>
+        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      </div>
     </header>
   )
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import type { WebviewWindow } from "@tauri-apps/api/webviewWindow"
+import { Video } from "lucide-react"
 import { getSafeWebviewWindow } from "@/lib/windowControl"
 
 export function TitleBar() {
@@ -12,7 +13,7 @@ export function TitleBar() {
   return (
     <div
       data-tauri-drag-region
-      className="mac-titlebar flex h-[38px] w-full shrink-0 items-center select-none"
+      className="mac-titlebar flex h-[40px] w-full shrink-0 items-center select-none"
     >
       <div className="flex items-center gap-2 pl-3" data-tauri-drag-region>
         <div className="flex items-center gap-2">
@@ -36,7 +37,8 @@ export function TitleBar() {
           />
         </div>
       </div>
-      <div className="pointer-events-none flex-1 text-center" data-tauri-drag-region>
+      <div className="pointer-events-none flex flex-1 items-center justify-center gap-1.5" data-tauri-drag-region>
+        <Video className="size-3.5 text-accent/70" />
         <span className="text-[13px] font-medium text-muted-foreground">Bloom</span>
       </div>
       <div className="w-[68px]" />

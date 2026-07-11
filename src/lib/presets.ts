@@ -1,12 +1,13 @@
 import type { RecordingSource } from "@/types"
 import type { PipPosition, PipSize } from "@/lib/capture"
+import type { RecordingQuality } from "@/lib/videoOptions"
 
 export interface RecordingPreset {
   id: string
   name: string
   description: string
   source: RecordingSource
-  quality: "720p" | "1080p"
+  quality: RecordingQuality
   countdown: 0 | 3 | 5
   microphone: boolean
   systemAudio: boolean

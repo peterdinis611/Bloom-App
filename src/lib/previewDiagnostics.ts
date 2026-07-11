@@ -57,7 +57,7 @@ export function buildPreviewFault(
       kind: "idle_screen",
       title: "Náhľad sa spustí pri nahrávaní",
       body: "macOS neumožňuje ukázať obrazovku skôr, než potvrdíš zdieľanie v systémovom dialógu.",
-      steps: ["Klikni Record a vyber monitor v macOS okne."],
+      steps: ["Klikni Nahrať a vyber monitor v systémovom okne macOS."],
       recordingMayWork: false,
     }
   }
@@ -69,11 +69,11 @@ export function buildPreviewFault(
       return {
         kind: "camera_missing",
         title: "Kamera nie je dostupná",
-        body: "Preview nemá prístup ku kamere.",
+        body: "Náhľad nemá prístup ku kamere.",
         steps: [
           "Povoľ prístup ku kamere v Systémové nastavenia → Súkromie → Kamera.",
           "Skontroluj, či nie je kamera používaná inou aplikáciou.",
-          "Klikni Allow camera & microphone v Record stránke.",
+          "Klikni „Povoliť prístup ku kamere a mikrofónu“ na stránke Nahrávanie.",
         ],
         recordingMayWork: false,
       }
@@ -81,7 +81,7 @@ export function buildPreviewFault(
     return {
       kind: "no_stream",
       title: "Video stream chýba",
-      body: "Capture sa spustil, ale preview nedostalo žiadny video track.",
+      body: "Zachytenie sa spustilo, ale náhľad nedostal žiadnu video stopu.",
       steps: [
         "Skús nahrávanie znova.",
         "Reštartuj Bloom ak problém pretrváva.",
@@ -121,8 +121,8 @@ export function buildPreviewFault(
         : "Stream beží, ale prehliadač nezobrazuje snímky z kamery.",
       steps: screenLike
         ? [
-            "V macOS pickeri vyber iný monitor (nie ten, kde je Bloom).",
-            "Zapni Minimize on record v Nastaveniach — Bloom sa skryje pred nahrávaním.",
+            "V systémovom výbere vyber iný monitor (nie ten, kde beží Bloom).",
+            "Zapni „Skryť okno pri nahrávaní“ v Nastaveniach — Bloom sa skryje pred nahrávaním.",
             "Presuň Bloom na druhý monitor a nahrávaj ten prvý.",
           ]
         : [

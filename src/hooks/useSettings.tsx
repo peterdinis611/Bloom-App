@@ -9,6 +9,7 @@ import {
 import { PACER } from "@/lib/pacer"
 import type { PipPosition, PipSize } from "@/lib/capture"
 import { BUILTIN_PRESETS, type RecordingPreset } from "@/lib/presets"
+import type { RecordingQuality } from "@/lib/videoOptions"
 
 export type AnnotationTool = "pen" | "highlighter" | "rect" | "circle" | "line" | "arrow" | "eraser"
 
@@ -20,7 +21,7 @@ export interface AppSettings {
     defaultWidth: number
   }
   recording: {
-    defaultQuality: "720p" | "1080p"
+    defaultQuality: RecordingQuality
     defaultCountdown: 0 | 3 | 5
     /** Minimize main window once capture starts so Bloom is not in the recording. */
     minimizeOnRecord: boolean

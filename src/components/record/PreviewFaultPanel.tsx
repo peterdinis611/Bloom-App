@@ -71,7 +71,7 @@ export function PreviewFaultPanel({ fault, details, compact }: PreviewFaultPanel
           <div className="flex items-start gap-2 border-b border-white/8 px-4 py-2.5">
             <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-400/90" />
             <p className="text-[11px] leading-relaxed text-emerald-200/80">
-              Nahrávanie môže stále fungovať — skontroluj súbor v Library po ukončení.
+              Nahrávanie môže stále fungovať — skontroluj súbor v Knižnici po ukončení.
             </p>
           </div>
         )}
@@ -91,15 +91,15 @@ export function PreviewFaultPanel({ fault, details, compact }: PreviewFaultPanel
                 <DetailRow label="Stav" value={details.status} />
                 <DetailRow label="Zdroj" value={details.source} />
                 <DetailRow label="Stream" value={details.hasStream ? `áno (${details.streamId}…)` : "nie"} />
-                <DetailRow label="Video tracks" value={String(details.videoTracks)} />
-                <DetailRow label="Track" value={details.trackLabel} />
-                <DetailRow label="Track state" value={details.trackState} />
-                <DetailRow label="Track muted" value={details.trackMuted ? "áno" : "nie"} />
-                <DetailRow label="Display surface" value={details.displaySurface} />
-                <DetailRow label="Track size" value={details.trackSize} />
-                <DetailRow label="Video element" value={details.videoElementSize} />
-                <DetailRow label="readyState" value={details.readyState} />
-                {details.playError && <DetailRow label="Play error" value={details.playError} />}
+                <DetailRow label="Video stopy" value={String(details.videoTracks)} />
+                <DetailRow label="Stopa" value={details.trackLabel} />
+                <DetailRow label="Stav stopy" value={details.trackState} />
+                <DetailRow label="Stlmená" value={details.trackMuted ? "áno" : "nie"} />
+                <DetailRow label="Plocha displeja" value={details.displaySurface} />
+                <DetailRow label="Veľkosť stopy" value={details.trackSize} />
+                <DetailRow label="Video prvok" value={details.videoElementSize} />
+                <DetailRow label="Stav prehrávania" value={details.readyState} />
+                {details.playError && <DetailRow label="Chyba prehrávania" value={details.playError} />}
               </div>
             )}
           </div>

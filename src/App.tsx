@@ -27,14 +27,14 @@ function App() {
               locked={recording}
               recording={recording}
             />
-            <main className="mac-main min-w-0 flex-1 overflow-hidden">
-              <div className={view === "record" ? "h-full" : "hidden"}>
-                <RecordPage onRecordingChange={setRecording} />
+            <main className="mac-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+              <div className={view === "record" ? "flex h-full min-h-0 flex-1 flex-col" : "hidden"}>
+                <RecordPage active={view === "record"} onRecordingChange={setRecording} />
               </div>
               {view === "library" && (
-                <LibraryPage onStartRecording={() => setView("record")} />
+                <LibraryPage active onStartRecording={() => setView("record")} />
               )}
-              {view === "settings" && <SettingsPage />}
+              {view === "settings" && <SettingsPage active />}
             </main>
           </div>
         </div>

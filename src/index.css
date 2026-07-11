@@ -3,8 +3,8 @@
 @theme inline {
   --radius-sm: 4px;
   --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 10px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -19,34 +19,37 @@
   --color-ring: var(--ring);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
 }
 
+/* ── Base tokens (mac / dark) ─────────────────────────────────────────────── */
 :root {
-  --radius: 8px;
-  --background: #1c1c1e;
-  --foreground: #f5f5f7;
-  --card: #2c2c2e;
-  --card-foreground: #f5f5f7;
+  --radius: 10px;
+  --background: #161618;
+  --foreground: #f4f4f5;
+  --card: #242426;
+  --card-foreground: #f4f4f5;
   --primary: #0a84ff;
   --primary-foreground: #ffffff;
-  --secondary: #3a3a3c;
-  --secondary-foreground: #ebebf5;
-  --muted: #2c2c2e;
+  --secondary: #343436;
+  --secondary-foreground: #e8e8ed;
+  --muted: #242426;
   --muted-foreground: #98989d;
-  --border: rgba(255, 255, 255, 0.08);
+  --border: rgba(255, 255, 255, 0.07);
   --ring: #0a84ff;
   --accent: #0a84ff;
   --accent-foreground: #ffffff;
-  --surface: #2c2c2e;
-  --surface-hover: #3a3a3c;
-  --sidebar: #252527;
-  --sidebar-hover: rgba(255, 255, 255, 0.06);
-  --sidebar-active: rgba(255, 255, 255, 0.1);
-  --titlebar: #252527;
-  --group-bg: #2c2c2e;
+  --surface: #1e1e20;
+  --surface-hover: #2a2a2c;
+  --sidebar: #1a1a1c;
+  --sidebar-hover: rgba(255, 255, 255, 0.05);
+  --sidebar-active: rgba(255, 255, 255, 0.09);
+  --titlebar: #1a1a1c;
+  --group-bg: #1e1e20;
   --destructive: #ff453a;
   --destructive-hover: #ff6961;
   --rec-indicator: #ff453a;
+  --glow: rgba(10, 132, 255, 0.15);
   --status-error-bg: rgba(255, 69, 58, 0.12);
   --status-error-border: rgba(255, 69, 58, 0.2);
   --status-error-fg: #ff9f9a;
@@ -59,32 +62,37 @@
   --status-info-bg: rgba(10, 132, 255, 0.12);
   --status-info-border: rgba(10, 132, 255, 0.2);
   --status-info-fg: #64b5ff;
-  --scrollbar-thumb: rgba(255, 255, 255, 0.15);
-  --scrollbar-hover: rgba(255, 255, 255, 0.25);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.14);
+  --scrollbar-hover: rgba(255, 255, 255, 0.24);
 }
 
+/* ── Light ─────────────────────────────────────────────────────────────────── */
 [data-theme="daylight"] {
-  --background: #f5f5f7;
+  --background: #f2f2f7;
   --foreground: #1d1d1f;
   --card: #ffffff;
   --card-foreground: #1d1d1f;
   --primary: #007aff;
-  --secondary: #e8e8ed;
+  --primary-foreground: #ffffff;
+  --secondary: #e5e5ea;
   --secondary-foreground: #3a3a3c;
   --muted: #f2f2f7;
   --muted-foreground: #6e6e73;
-  --border: rgba(0, 0, 0, 0.08);
+  --border: rgba(0, 0, 0, 0.07);
+  --ring: #007aff;
   --accent: #007aff;
+  --accent-foreground: #ffffff;
   --surface: #ffffff;
   --surface-hover: #f2f2f7;
-  --sidebar: #ececee;
+  --sidebar: #ebebed;
   --sidebar-hover: rgba(0, 0, 0, 0.04);
   --sidebar-active: rgba(0, 0, 0, 0.07);
-  --titlebar: #ececee;
+  --titlebar: #ebebed;
   --group-bg: #ffffff;
   --destructive: #ff3b30;
   --destructive-hover: #ff6259;
   --rec-indicator: #ff3b30;
+  --glow: rgba(0, 122, 255, 0.12);
   --status-error-bg: rgba(255, 59, 48, 0.08);
   --status-error-border: rgba(255, 59, 48, 0.15);
   --status-error-fg: #d70015;
@@ -97,8 +105,124 @@
   --status-info-bg: rgba(0, 122, 255, 0.08);
   --status-info-border: rgba(0, 122, 255, 0.15);
   --status-info-fg: #0040dd;
-  --scrollbar-thumb: rgba(0, 0, 0, 0.15);
-  --scrollbar-hover: rgba(0, 0, 0, 0.25);
+  --scrollbar-thumb: rgba(0, 0, 0, 0.14);
+  --scrollbar-hover: rgba(0, 0, 0, 0.24);
+}
+
+/* ── Accent themes (dark) ─────────────────────────────────────────────────── */
+[data-theme="ember"] {
+  --background: #1a1210;
+  --foreground: #f5ebe6;
+  --card: #241a16;
+  --primary: #d4846a;
+  --accent: #d4846a;
+  --ring: #d4846a;
+  --secondary: #2e221c;
+  --muted: #241a16;
+  --muted-foreground: #a89080;
+  --surface: #201612;
+  --surface-hover: #2c201a;
+  --sidebar: #18100e;
+  --sidebar-hover: rgba(212, 132, 106, 0.06);
+  --sidebar-active: rgba(212, 132, 106, 0.12);
+  --titlebar: #18100e;
+  --group-bg: #201612;
+  --glow: rgba(212, 132, 106, 0.18);
+  --status-info-bg: rgba(212, 132, 106, 0.12);
+  --status-info-border: rgba(212, 132, 106, 0.2);
+  --status-info-fg: #e8b09a;
+}
+
+[data-theme="aurora"] {
+  --background: #0a1418;
+  --foreground: #e8f4f2;
+  --card: #0f1e22;
+  --primary: #4db8a8;
+  --accent: #4db8a8;
+  --ring: #4db8a8;
+  --secondary: #142a30;
+  --muted: #0f1e22;
+  --muted-foreground: #7aa8a0;
+  --surface: #0c181c;
+  --surface-hover: #122428;
+  --sidebar: #081014;
+  --sidebar-hover: rgba(77, 184, 168, 0.06);
+  --sidebar-active: rgba(77, 184, 168, 0.12);
+  --titlebar: #081014;
+  --group-bg: #0c181c;
+  --glow: rgba(77, 184, 168, 0.18);
+  --status-info-bg: rgba(77, 184, 168, 0.12);
+  --status-info-border: rgba(77, 184, 168, 0.2);
+  --status-info-fg: #7ed4c8;
+}
+
+[data-theme="violet"] {
+  --background: #12101a;
+  --foreground: #ece8f4;
+  --card: #1a1624;
+  --primary: #9a88c8;
+  --accent: #9a88c8;
+  --ring: #9a88c8;
+  --secondary: #221e30;
+  --muted: #1a1624;
+  --muted-foreground: #9080b0;
+  --surface: #161220;
+  --surface-hover: #1e1a2a;
+  --sidebar: #100e16;
+  --sidebar-hover: rgba(154, 136, 200, 0.06);
+  --sidebar-active: rgba(154, 136, 200, 0.12);
+  --titlebar: #100e16;
+  --group-bg: #161220;
+  --glow: rgba(154, 136, 200, 0.18);
+  --status-info-bg: rgba(154, 136, 200, 0.12);
+  --status-info-border: rgba(154, 136, 200, 0.2);
+  --status-info-fg: #b8a8dc;
+}
+
+[data-theme="rose"] {
+  --background: #160e12;
+  --foreground: #f5e8ec;
+  --card: #20141a;
+  --primary: #d88898;
+  --accent: #d88898;
+  --ring: #d88898;
+  --secondary: #2c1c24;
+  --muted: #20141a;
+  --muted-foreground: #a88090;
+  --surface: #1c1218;
+  --surface-hover: #281820;
+  --sidebar: #140c10;
+  --sidebar-hover: rgba(216, 136, 152, 0.06);
+  --sidebar-active: rgba(216, 136, 152, 0.12);
+  --titlebar: #140c10;
+  --group-bg: #1c1218;
+  --glow: rgba(216, 136, 152, 0.18);
+  --status-info-bg: rgba(216, 136, 152, 0.12);
+  --status-info-border: rgba(216, 136, 152, 0.2);
+  --status-info-fg: #e8a8b8;
+}
+
+[data-theme="ocean"] {
+  --background: #0a1018;
+  --foreground: #e8eef4;
+  --card: #101820;
+  --primary: #6898c8;
+  --accent: #6898c8;
+  --ring: #6898c8;
+  --secondary: #142030;
+  --muted: #101820;
+  --muted-foreground: #7898b8;
+  --surface: #0c141c;
+  --surface-hover: #121c28;
+  --sidebar: #080e14;
+  --sidebar-hover: rgba(104, 152, 200, 0.06);
+  --sidebar-active: rgba(104, 152, 200, 0.12);
+  --titlebar: #080e14;
+  --group-bg: #0c141c;
+  --glow: rgba(104, 152, 200, 0.18);
+  --status-info-bg: rgba(104, 152, 200, 0.12);
+  --status-info-border: rgba(104, 152, 200, 0.2);
+  --status-info-fg: #98b8dc;
 }
 
 @layer base {
@@ -110,7 +234,7 @@
     user-select: none;
     -webkit-user-select: none;
   }
-  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar { width: 7px; height: 7px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb {
     background: var(--scrollbar-thumb);
@@ -125,9 +249,11 @@
 [data-tauri-drag-region] button,
 [data-tauri-drag-region] a { -webkit-app-region: no-drag; }
 
+/* ── Shell ─────────────────────────────────────────────────────────────────── */
 .mac-titlebar {
   background: var(--titlebar);
   border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(12px);
 }
 .mac-traffic {
   width: 12px;
@@ -135,7 +261,9 @@
   border-radius: 50%;
   border: none;
   cursor: default;
+  transition: filter 0.12s;
 }
+.mac-traffic:hover { filter: brightness(1.08); }
 .mac-traffic-close { background: #ff5f57; }
 .mac-traffic-minimize { background: #febc2e; }
 .mac-traffic-maximize { background: #28c840; }
@@ -144,28 +272,33 @@
   background: var(--sidebar);
   border-right: 1px solid var(--border);
 }
-.mac-main { background: var(--background); }
+.mac-main {
+  background: var(--background);
+  background-image: radial-gradient(ellipse 80% 50% at 50% -10%, var(--glow), transparent);
+}
 
-.mac-page-header { padding: 20px 24px 12px; }
+/* ── Page layout ───────────────────────────────────────────────────────────── */
+.mac-page-header { padding: 22px 24px 14px; }
 .mac-group-header {
   padding: 0 24px 6px;
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--muted-foreground);
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
 }
 .mac-group {
-  margin: 0 24px 16px;
+  margin: 0 24px 18px;
   background: var(--group-bg);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 .mac-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 14px;
+  padding: 11px 16px;
   min-height: 44px;
   width: 100%;
   background: transparent;
@@ -176,29 +309,31 @@
 .mac-row-clickable { cursor: pointer; transition: background 0.12s; }
 .mac-row-clickable:hover { background: var(--sidebar-hover); }
 
+/* ── Controls ──────────────────────────────────────────────────────────────── */
 .mac-segmented {
   display: inline-flex;
-  padding: 2px;
+  padding: 3px;
   background: var(--secondary);
-  border-radius: 8px;
+  border-radius: 9px;
   border: 1px solid var(--border);
   width: 100%;
 }
 .mac-segment {
   flex: 1;
-  padding: 5px 10px;
+  padding: 6px 10px;
   font-size: 12px;
   font-weight: 500;
   color: var(--muted-foreground);
-  border-radius: 6px;
+  border-radius: 7px;
   border: none;
   background: transparent;
   transition: all 0.15s;
+  cursor: pointer;
 }
 .mac-segment-active {
   background: var(--surface);
   color: var(--foreground);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
 }
 [data-theme="daylight"] .mac-segment-active { background: #ffffff; }
 
@@ -207,20 +342,22 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 7px 16px;
+  padding: 8px 18px;
   font-size: 13px;
   font-weight: 500;
-  border-radius: 6px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--foreground);
-  transition: background 0.12s;
+  transition: background 0.12s, box-shadow 0.12s;
+  cursor: pointer;
 }
 .mac-btn:hover { background: var(--surface-hover); }
 .mac-btn-primary {
   background: var(--primary);
   border-color: transparent;
   color: #fff;
+  box-shadow: 0 2px 8px var(--glow);
 }
 .mac-btn-primary:hover { filter: brightness(1.06); }
 .mac-btn-destructive {
@@ -233,9 +370,9 @@
 .mac-btn-ghost:hover { background: var(--sidebar-hover); }
 
 .mac-toggle {
-  width: 38px;
-  height: 22px;
-  border-radius: 11px;
+  width: 40px;
+  height: 24px;
+  border-radius: 12px;
   border: none;
   background: var(--secondary);
   padding: 2px;
@@ -245,8 +382,8 @@
 .mac-toggle-on { background: var(--primary); }
 .mac-toggle-knob {
   display: block;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
@@ -254,8 +391,22 @@
 }
 .mac-toggle-on .mac-toggle-knob { transform: translateX(16px); }
 
+/* ── Cards & panels ────────────────────────────────────────────────────────── */
+.bloom-card {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  transition: border-color 0.15s, background 0.15s;
+}
+.bloom-card:hover { border-color: color-mix(in srgb, var(--border) 50%, var(--accent)); }
+.bloom-card-active {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+/* ── Banners ───────────────────────────────────────────────────────────────── */
 .banner-error, .banner-warning, .banner-success, .banner-info {
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   font-size: 12px;
 }
 .banner-error { background: var(--status-error-bg); border: 1px solid var(--status-error-border); color: var(--status-error-fg); }
@@ -266,10 +417,11 @@
   background: var(--destructive);
   color: #fff;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
 }
 .btn-destructive:hover { background: var(--destructive-hover); }
 
+/* ── Recording indicator ───────────────────────────────────────────────────── */
 .rec-dot {
   background: var(--rec-indicator);
   animation: rec-blink 1.4s ease-in-out infinite;

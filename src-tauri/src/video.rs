@@ -84,6 +84,9 @@ pub struct OptimizeOptions {
     pub format: String,
     pub trim_start: Option<f64>,
     pub trim_end: Option<f64>,
+    /// Playback speed multiplier (1.0 = normal, 2.0 = 2× faster).
+    #[serde(default = "default_speed")]
+    pub speed: f64,
     /// Optional custom output file name (without directory).
     pub output_name: Option<String>,
     /// Add the result to the Bloom library (write a .bloom.json sidecar).
@@ -93,6 +96,10 @@ pub struct OptimizeOptions {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_speed() -> f64 {
+    1.0
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -323,14 +330,12 @@ fn install_hint() -> String {
     return "Install ffmpeg with your package manager, e.g.  sudo apt install ffmpeg".to_string();
 }
 
+#[cfg(target_os = "linux")]
 fn apply_path_env(cmd: &mut Command) {
-    #[cfg(unix)]
-    {
-        let prefix = shell_path_prefix();
-        if !prefix.is_empty() {
-            let path = std::env::var("PATH").unwrap_or_default();
-            cmd.env("PATH", format!("{prefix}:{path}"));
-        }
+    let prefix = shell_path_prefix();
+    if !prefix.is_empty() {
+        let path = std::env::var("PATH").unwrap_or_default();
+        cmd.env("PATH", format!("{prefix}:{path}"));
     }
 }
 
@@ -348,11 +353,6 @@ fn find_brew() -> Option<PathBuf> {
 #[cfg(target_os = "windows")]
 fn find_winget() -> Option<PathBuf> {
     find_binary("winget")
-}
-
-#[cfg(not(target_os = "windows"))]
-fn find_winget() -> Option<PathBuf> {
-    None
 }
 
 /// argv for an automatic ffmpeg install on this OS (program path + args).
@@ -756,6 +756,28 @@ fn ext_for_format(format: &str) -> &'static str {
     }
 }
 
+fn effective_speed(speed: f64) -> f64 {
+    if speed.is_finite() && speed > 0.05 && (speed - 1.0).abs() > 0.001 {
+        speed
+    } else {
+        1.0
+    }
+}
+
+/// Build an atempo chain for ffmpeg (each filter accepts 0.5–2.0).
+fn build_atempo_chain(speed: f64) -> String {
+    let mut filters: Vec<String> = Vec::new();
+    let mut remaining = speed;
+    while remaining > 2.001 {
+        filters.push("atempo=2.0".into());
+        remaining /= 2.0;
+    }
+    if remaining > 1.001 {
+        filters.push(format!("atempo={remaining:.4}"));
+    }
+    filters.join(",")
+}
+
 fn build_args(
     opts: &OptimizeOptions,
     input: &str,
@@ -783,6 +805,7 @@ fn build_args(
     let height = resolution_height(&opts.resolution);
     let pv = preset_values(&opts.preset);
     let format = opts.format.as_str();
+    let speed = effective_speed(opts.speed);
 
     // Video filters
     let mut vf: Vec<String> = Vec::new();
@@ -792,9 +815,21 @@ fn build_args(
     } else if let Some(h) = height {
         vf.push(format!("scale=-2:{h}"));
     }
+    if speed != 1.0 {
+        vf.push(format!("setpts=PTS/{speed}"));
+    }
     if !vf.is_empty() {
         a.push("-vf".into());
         a.push(vf.join(","));
+    }
+
+    // Audio tempo (skip for GIF).
+    if has_audio && speed != 1.0 && format != "gif" {
+        let af = build_atempo_chain(speed);
+        if !af.is_empty() {
+            a.push("-af".into());
+            a.push(af);
+        }
     }
 
     // Codecs per container
@@ -1163,7 +1198,8 @@ pub fn optimize_video(
     // Determine total duration for progress (trimmed window or full clip).
     let info = probe(&ffprobe, &options.input_path)?;
     let has_audio = info.has_audio;
-    let total_secs = trim_duration(&options).unwrap_or(info.duration_secs);
+    let total_secs = trim_duration(&options).unwrap_or(info.duration_secs)
+        / effective_speed(options.speed);
 
     let output = build_output_path(&options, &input);
     let args = build_args(&options, &options.input_path, &output.to_string_lossy(), has_audio);

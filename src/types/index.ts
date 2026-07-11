@@ -1,4 +1,5 @@
 import type { PipPosition, PipSize } from "@/lib/capture"
+import type { RecordingQuality } from "@/lib/videoOptions"
 
 // ── App state ──────────────────────────────────────────────────────────────
 export type RecordingStatus = "idle" | "preparing" | "countdown" | "recording" | "paused" | "processing" | "done"
@@ -18,7 +19,7 @@ export interface RecordingSettings {
   screenTarget: ScreenTarget
   microphone: boolean
   systemAudio: boolean
-  quality: "720p" | "1080p"
+  quality: RecordingQuality
   countdown: 0 | 3 | 5
   /** Selected camera deviceId (empty = system default). */
   cameraDeviceId: string
@@ -149,6 +150,8 @@ export interface OptimizeOptions {
   format: OptimizeFormat
   trim_start?: number | null
   trim_end?: number | null
+  /** Playback speed multiplier (1 = normal, 2 = 2× faster). */
+  speed?: number
   output_name?: string | null
   add_to_library?: boolean
 }

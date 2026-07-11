@@ -32,6 +32,17 @@ import { defaultPipRect, type PipRect, type PipPosition, type PipSize } from "@/
 import { createAudioMeter } from "@/lib/audioMeter"
 import { AudioMeterBar } from "@/components/record/AudioMeterBar"
 import { MacButton, MacGroup, MacGroupHeader, MacPageHeader, MacSegmented } from "@/components/mac/MacUIKit"
+import { PageScrollArea } from "@/components/layout/PageScrollArea"
+import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { PipOverlay } from "@/components/record/PipOverlay"
 import { emit, listen } from "@tauri-apps/api/event"
 import { cn, formatDuration } from "@/lib/utils"
@@ -58,20 +69,22 @@ import {
   collectPreviewTechDetails,
   expectsPreviewStream,
 } from "@/lib/previewDiagnostics"
+import { sk } from "@/lib/i18n/sk"
+import { RECORDING_QUALITIES } from "@/lib/videoOptions"
 
 function captureErrorMessage(err: unknown): string {
   const name = (err as { name?: string })?.name ?? ""
   const msg = (err as { message?: string })?.message ?? String(err)
   if (name === "NotAllowedError" || name === "AbortError") {
-    return "Prístup bol zamietnutý. Povoľ Screen Recording a kameru v Systémové nastavenia → Súkromie a zabezpečenie."
+    return sk.record.errors.permission
   }
   if (name === "NotFoundError") {
-    return "Zariadenie sa nenašlo. Skontroluj pripojenie kamery / mikrofónu."
+    return sk.record.errors.notFound
   }
   if (name === "NotSupportedError" || msg.includes("MediaRecorder")) {
-    return "Formát nahrávania nie je podporovaný v tomto prehliadači. Skús zmeniť kvalitu alebo reštartovať app."
+    return sk.record.errors.notSupported
   }
-  return `Nahrávanie sa nepodarilo spustiť: ${msg}`
+  return sk.record.errors.failed(msg)
 }
 /**
  * Tauri on macOS uses WKWebView (WebKit) – no video/webm support.
@@ -106,14 +119,14 @@ async function blobToU8(blob: Blob): Promise<Uint8Array> {
 function monitorToTarget(m: MonitorInfo, index: number): ScreenTarget {
   return {
     id: m.id,
-    label: `${m.name}${m.is_primary ? " (Primary)" : ""}`,
+    label: `${m.name}${m.is_primary ? sk.record.primarySuffix : ""}`,
     type: "screen",
     index: index + 1,
     appName: `${m.width}×${m.height}`,
   }
 }
 
-const DEFAULT_TARGET: ScreenTarget = { id: "default", label: "Primary Display", type: "screen", index: 1 }
+const DEFAULT_TARGET: ScreenTarget = { id: "default", label: sk.record.primaryDisplay, type: "screen", index: 1 }
 
 // ── Generic dropdown select ────────────────────────────────────────────────────
 interface SelectOption {
@@ -131,66 +144,48 @@ function Dropdown({ value, options, onChange, icon: HeaderIcon, emptyLabel, onRe
   emptyLabel: string
   onRefresh?: () => void
 }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
   const selected = options.find((o) => o.id === value) ?? options[0]
 
-  useEffect(() => {
-    const close = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    if (open) document.addEventListener("mousedown", close)
-    return () => document.removeEventListener("mousedown", close)
-  }, [open])
-
   return (
-    <div ref={ref} className="relative w-full">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className={cn(
-          "flex w-full items-center justify-between gap-2 rounded-xl border px-3.5 py-3 text-left text-sm transition-all",
-          open
-            ? "border-primary/50 bg-primary/5 ring-1 ring-primary/20"
-            : "border-border bg-[var(--surface)] hover:border-border/80 hover:bg-[var(--surface-hover)]",
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          className="h-auto w-full justify-between gap-2 rounded-xl px-3.5 py-3 text-left"
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/15">
+              {(() => { const I = selected?.icon ?? HeaderIcon; return <I className="size-4 text-accent" /> })()}
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-foreground">{selected?.label ?? emptyLabel}</p>
+              {selected?.sub && <p className="truncate text-xs text-muted-foreground">{selected.sub}</p>}
+            </div>
+          </div>
+          <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
+        {onRefresh && (
+          <>
+            <DropdownMenuItem onClick={onRefresh}>
+              <RefreshCw className="size-3" /> {sk.record.refreshDevices}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
         )}
-      >
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/15">
-            {(() => { const I = selected?.icon ?? HeaderIcon; return <I className="size-4 text-accent" /> })()}
-          </div>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-foreground">{selected?.label ?? emptyLabel}</p>
-            {selected?.sub && <p className="truncate text-xs text-muted-foreground">{selected.sub}</p>}
-          </div>
-        </div>
-        <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-200", open && "rotate-180")} />
-      </button>
-
-      {open && (
-        <div className="fade-up absolute bottom-full left-0 right-0 z-50 mb-2 overflow-hidden rounded-xl border border-border bg-card shadow-2xl shadow-black/70">
-          {onRefresh && (
-            <button
-              onClick={() => { onRefresh(); }}
-              className="flex w-full items-center gap-2 border-b border-border/60 px-3.5 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-            >
-              <RefreshCw className="size-3" /> Refresh devices
-            </button>
-          )}
-          <div className="max-h-48 overflow-y-auto py-1">
-            {options.length === 0 && (
-              <p className="px-3.5 py-3 text-xs text-muted-foreground">{emptyLabel}</p>
-            )}
+        {options.length === 0 ? (
+          <DropdownMenuLabel className="py-3 font-normal">{emptyLabel}</DropdownMenuLabel>
+        ) : (
+          <ScrollArea className="max-h-48">
             {options.map((opt) => {
               const active = opt.id === value
               const I = opt.icon ?? HeaderIcon
               return (
-                <button
+                <DropdownMenuItem
                   key={opt.id}
-                  onClick={() => { onChange(opt.id); setOpen(false) }}
-                  className={cn(
-                    "flex w-full items-center gap-3 px-3.5 py-2.5 text-sm transition-colors hover:bg-secondary",
-                    active && "bg-primary/8",
-                  )}
+                  onClick={() => onChange(opt.id)}
+                  className="gap-3 py-2.5"
                 >
                   <div className={cn(
                     "flex size-8 shrink-0 items-center justify-center rounded-lg border",
@@ -203,13 +198,13 @@ function Dropdown({ value, options, onChange, icon: HeaderIcon, emptyLabel, onRe
                     {opt.sub && <p className="truncate text-xs text-muted-foreground">{opt.sub}</p>}
                   </div>
                   {active && <CheckIcon className="size-4 shrink-0 text-accent" />}
-                </button>
+                </DropdownMenuItem>
               )
             })}
-          </div>
-        </div>
-      )}
-    </div>
+          </ScrollArea>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -343,7 +338,7 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
       {status === "preparing" && !showFault && (
         <div className="relative z-[2] flex flex-col items-center gap-2">
           <div className="size-8 animate-spin rounded-full border-2 border-transparent border-t-[var(--accent)]" />
-          <p className="text-[12px] text-muted-foreground">Preparing…</p>
+          <p className="text-[12px] text-muted-foreground">{sk.record.preparing}</p>
         </div>
       )}
 
@@ -351,7 +346,7 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/40">
           <div className="flex flex-col items-center gap-2">
             <span className="text-5xl font-semibold tabular-nums text-white">{countdown}</span>
-            <p className="text-[12px] text-white/80">Starting…</p>
+            <p className="text-[12px] text-white/80">{sk.record.starting}</p>
           </div>
         </div>
       )}
@@ -359,21 +354,21 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
       {isActive && (
         <div className="pointer-events-none absolute bottom-3 left-3 z-30 rounded-lg bg-black/55 px-2.5 py-1.5">
           <div className="font-mono text-lg font-medium tabular-nums text-white">{formatDuration(elapsed)}</div>
-          {isPaused && <span className="text-[10px] text-white/70">Paused</span>}
+          {isPaused && <span className="text-[10px] text-white/70">{sk.record.paused}</span>}
         </div>
       )}
 
       {status === "processing" && (
         <div className="relative z-[2] flex flex-col items-center gap-2">
           <div className="size-8 animate-spin rounded-full border-2 border-transparent border-t-[var(--accent)]" />
-          <p className="text-[12px] text-muted-foreground">Saving…</p>
+          <p className="text-[12px] text-muted-foreground">{sk.record.saving}</p>
         </div>
       )}
 
       {status === "done" && (
         <div className="relative z-[2] flex flex-col items-center gap-2">
           <CheckCircle2 className="size-8 text-[var(--status-success-fg)]" />
-          <p className="text-[13px] font-medium text-[var(--status-success-fg)]">Saved</p>
+          <p className="text-[13px] font-medium text-[var(--status-success-fg)]">{sk.record.saved}</p>
         </div>
       )}
 
@@ -401,9 +396,9 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 const SOURCES: { id: RecordingSource; label: string }[] = [
-  { id: "screen", label: "Screen" },
-  { id: "camera", label: "Camera" },
-  { id: "both", label: "Both" },
+  { id: "screen", label: sk.record.sources.screen },
+  { id: "camera", label: sk.record.sources.camera },
+  { id: "both", label: sk.record.sources.both },
 ]
 
 // ── Save location banner ───────────────────────────────────────────────────────
@@ -412,7 +407,7 @@ function SaveBanner({ path, onDismiss }: { path: string; onDismiss: () => void }
     <div className="fade-up banner-success flex items-center gap-3 rounded-xl px-3.5 py-3">
       <FolderOpen className="size-4 shrink-0 opacity-80" />
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-semibold">Recordings saved to</p>
+        <p className="text-xs font-semibold">{sk.record.savedTo}</p>
         <p className="truncate font-mono text-[11px] text-muted-foreground">{path}</p>
       </div>
       <button onClick={onDismiss} className="text-muted-foreground hover:text-foreground">
@@ -424,10 +419,11 @@ function SaveBanner({ path, onDismiss }: { path: string; onDismiss: () => void }
 
 // ── Main component ─────────────────────────────────────────────────────────────
 interface RecordPageProps {
+  active?: boolean
   onRecordingChange?: (active: boolean) => void
 }
 
-export function RecordPage({ onRecordingChange }: RecordPageProps) {
+export function RecordPage({ active = true, onRecordingChange }: RecordPageProps) {
   const { cameras, microphones, monitors, hasLabels, requestPermission, refresh } = useMediaDevices()
   const { settings: appSettings, updateRecording } = useSettings()
 
@@ -548,7 +544,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
     getDiskSpace()
       .then((info) => {
         if (isLowDiskSpace(info, 500)) {
-          setDiskWarn(`Low disk space: only ${formatBytes(info.available_bytes)} available`)
+          setDiskWarn(sk.record.lowDisk(formatBytes(info.available_bytes)))
         }
       })
       .catch(() => {})
@@ -754,7 +750,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
       })
       sessionIdRef.current = id
     } catch (e) {
-      setError(`Could not open recording file: ${e}`)
+      setError(sk.record.errors.openFile(e))
       handle.stop()
       captureRef.current = null
       return false
@@ -765,7 +761,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
       const recorder = new MediaRecorder(handle.recordStream, opts)
 
       recorder.onerror = () => {
-        setError("MediaRecorder zlyhal. Skús znova alebo zmeň kvalitu.")
+        setError(sk.record.errors.mediaRecorder)
         stopRecording()
       }
 
@@ -946,15 +942,16 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
 
   const previewSummary = [
     settings.quality,
-    settings.microphone ? "Mic" : null,
-    settings.systemAudio ? "System audio" : null,
+    settings.microphone ? sk.record.microphone : null,
+    settings.systemAudio ? sk.record.systemAudio : null,
   ].filter(Boolean).join("  ·  ")
 
   return (
     <div className="flex h-full flex-col">
-      <MacPageHeader title="Record" subtitle="Capture your screen, camera, or both" />
+      <MacPageHeader title={sk.record.title} subtitle={sk.record.subtitle} />
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-6 pb-4">
+      <PageScrollArea active={active}>
+      <div className="flex flex-col gap-3 px-6 pb-4">
 
       {showBanner && bloomDir && (
         <SaveBanner path={bloomDir} onDismiss={() => setShowBanner(false)} />
@@ -1015,8 +1012,8 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
       {/* Audio meters */}
       {isActive && (settings.microphone || settings.systemAudio) && (
         <div className="flex gap-3 rounded-xl border border-border/50 bg-[var(--surface)] px-3.5 py-2.5">
-          {settings.microphone && <AudioMeterBar label="Microphone" level={micLevel} active={settings.microphone} />}
-          {settings.systemAudio && <AudioMeterBar label="System audio" level={sysLevel} active={settings.systemAudio} />}
+          {settings.microphone && <AudioMeterBar label={sk.record.microphone} level={micLevel} active={settings.microphone} />}
+          {settings.systemAudio && <AudioMeterBar label={sk.record.systemAudio} level={sysLevel} active={settings.systemAudio} />}
         </div>
       )}
 
@@ -1025,17 +1022,15 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
         <div className="fade-up flex flex-col gap-5">
           {/* Quick presets */}
           <section className="flex flex-col gap-2.5">
-            <SectionLabel>Quick start</SectionLabel>
+            <SectionLabel>{sk.record.quickStart}</SectionLabel>
             <div className="flex flex-wrap gap-2">
               {presets.map((p) => (
                 <button
                   key={p.id}
                   onClick={() => applyPreset(p)}
                   className={cn(
-                    "flex flex-1 min-w-[100px] flex-col items-start gap-0.5 rounded-xl border px-3 py-2.5 text-left transition-all active:scale-[0.98]",
-                    appSettings.recording.activePresetId === p.id
-                      ? "border-primary/50 bg-primary/10"
-                      : "border-border/60 bg-[var(--surface)] hover:border-border",
+                    "bloom-card flex flex-1 min-w-[100px] flex-col items-start gap-0.5 px-3 py-2.5 text-left active:scale-[0.98]",
+                    appSettings.recording.activePresetId === p.id && "bloom-card-active",
                   )}
                 >
                   <span className="flex items-center gap-1.5 text-xs font-bold text-foreground">
@@ -1050,13 +1045,13 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
               className="flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/8 py-2.5 text-xs font-bold text-primary transition-all hover:bg-primary/15"
             >
               <Zap className="size-3.5" />
-              Record with {findPreset(appSettings.recording.activePresetId, appSettings.recording.presets)?.name ?? "preset"}
+              {sk.record.recordWithPreset(findPreset(appSettings.recording.activePresetId, appSettings.recording.presets)?.name ?? "predvoľba")}
             </button>
           </section>
 
           {/* Source */}
           <section>
-            <MacGroupHeader>Source</MacGroupHeader>
+            <MacGroupHeader>{sk.record.source}</MacGroupHeader>
             <MacGroup>
               <div className="p-3">
                 <MacSegmented
@@ -1070,7 +1065,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
 
           {/* Devices */}
           <section>
-            <MacGroupHeader>Display</MacGroupHeader>
+            <MacGroupHeader>{sk.record.display}</MacGroupHeader>
             {needsScreen && (
               <>
                 <MonitorPicker
@@ -1086,7 +1081,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
                   onHighlight={(m) => highlightMonitor(m).catch(() => {})}
                 />
                 <p className="mt-1.5 px-1 text-[11px] text-muted-foreground">
-                  Choose a display, then confirm in the system picker when recording starts.
+                  {sk.record.displayHint}
                 </p>
               </>
             )}
@@ -1097,7 +1092,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
                 className="mac-btn mac-btn-ghost mt-2 w-full justify-start text-[12px] text-muted-foreground"
               >
                 <Info className="size-3.5" />
-                Allow camera &amp; microphone access
+                {sk.record.allowAccess}
               </button>
             )}
 
@@ -1107,7 +1102,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
                   value={settings.cameraDeviceId}
                   options={cameraOptions}
                   icon={Camera}
-                  emptyLabel={hasLabels ? "No cameras found" : "Grant access to list cameras"}
+                  emptyLabel={hasLabels ? sk.record.noCameras : sk.record.grantCameraAccess}
                   onRefresh={refresh}
                   onChange={(id) => setSettings((p) => ({ ...p, cameraDeviceId: id }))}
                 />
@@ -1117,11 +1112,11 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
 
           {/* Audio */}
           <section className="flex flex-col gap-2.5">
-            <SectionLabel>Audio</SectionLabel>
+            <SectionLabel>{sk.record.audio}</SectionLabel>
             <div className="flex gap-2">
-              <AudioToggle active={settings.microphone} onIcon={Mic} offIcon={MicOff} label="Microphone"
+              <AudioToggle active={settings.microphone} onIcon={Mic} offIcon={MicOff} label={sk.record.microphone}
                 onChange={() => setSettings((p) => ({ ...p, microphone: !p.microphone }))} />
-              <AudioToggle active={settings.systemAudio} onIcon={Volume2} offIcon={VolumeX} label="System audio"
+              <AudioToggle active={settings.systemAudio} onIcon={Volume2} offIcon={VolumeX} label={sk.record.systemAudio}
                 onChange={() => setSettings((p) => ({ ...p, systemAudio: !p.systemAudio }))} />
             </div>
             {settings.microphone && micOptions.length > 0 && (
@@ -1129,7 +1124,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
                 value={settings.micDeviceId}
                 options={micOptions}
                 icon={Mic}
-                emptyLabel="No microphones found"
+                emptyLabel={sk.record.noMicrophones}
                 onRefresh={refresh}
                 onChange={(id) => setSettings((p) => ({ ...p, micDeviceId: id }))}
               />
@@ -1139,22 +1134,20 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
           {/* Webcam / PiP */}
           {needsCamera && (
             <section className="flex flex-col gap-2.5">
-              <SectionLabel>Camera</SectionLabel>
+              <SectionLabel>{sk.record.camera}</SectionLabel>
               <button
                 type="button"
                 onClick={() => setSettings((p) => ({ ...p, cameraBlur: !p.cameraBlur }))}
                 className={cn(
-                  "flex items-center justify-between rounded-xl border px-3.5 py-3 text-left transition-colors",
-                  settings.cameraBlur
-                    ? "border-primary/40 bg-primary/10"
-                    : "border-border/60 bg-[var(--surface)] hover:bg-[var(--surface-hover)]",
+                  "bloom-card flex w-full items-center justify-between px-3.5 py-3 text-left",
+                  settings.cameraBlur && "bloom-card-active",
                 )}
               >
                 <div className="flex items-center gap-2.5">
                   <Sparkles className="size-4 text-accent" />
                   <div>
-                    <p className="text-xs font-bold text-foreground">Blur background</p>
-                    <p className="text-[10px] text-muted-foreground">Soft halo around PiP or camera framing</p>
+                    <p className="text-xs font-bold text-foreground">{sk.record.blurBackground}</p>
+                    <p className="text-[10px] text-muted-foreground">{sk.record.blurBackgroundHint}</p>
                   </div>
                 </div>
                 <div className={cn(
@@ -1166,7 +1159,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
               </button>
               {settings.source === "both" && (
                 <div className="flex gap-3">
-                  <OptionGroup label="PiP size" value={settings.pipSize}
+                  <OptionGroup label={sk.record.pipSize} value={settings.pipSize}
                     options={[
                       { v: "small" as PipSize, label: "S" },
                       { v: "medium" as PipSize, label: "M" },
@@ -1174,7 +1167,7 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
                     ]}
                     onChange={(v) => setSettings((p) => ({ ...p, pipSize: v }))}
                   />
-                  <OptionGroup label="PiP position" value={settings.pipPosition}
+                  <OptionGroup label={sk.record.pipPosition} value={settings.pipPosition}
                     options={[
                       { v: "bottom-right" as PipPosition, label: "BR" },
                       { v: "bottom-left" as PipPosition, label: "BL" },
@@ -1190,22 +1183,20 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
 
           {/* Cursor highlight */}
           <section className="flex flex-col gap-2.5">
-            <SectionLabel>Cursor</SectionLabel>
+            <SectionLabel>{sk.record.cursor}</SectionLabel>
             <button
               type="button"
               onClick={() => setSettings((p) => ({ ...p, cursorHighlight: !p.cursorHighlight }))}
               className={cn(
-                "flex items-center justify-between rounded-xl border px-3.5 py-3 text-left transition-colors",
-                settings.cursorHighlight
-                  ? "border-primary/40 bg-primary/10"
-                  : "border-border/60 bg-[var(--surface)] hover:bg-[var(--surface-hover)]",
+                "bloom-card flex w-full items-center justify-between px-3.5 py-3 text-left",
+                settings.cursorHighlight && "bloom-card-active",
               )}
             >
               <div className="flex items-center gap-2.5">
                 <MousePointer2 className="size-4 text-accent" />
                 <div>
-                  <p className="text-xs font-bold text-foreground">Spotlight &amp; click rings</p>
-                  <p className="text-[10px] text-muted-foreground">Great for tutorials — overlay during recording</p>
+                  <p className="text-xs font-bold text-foreground">{sk.record.cursorSpotlight}</p>
+                  <p className="text-[10px] text-muted-foreground">{sk.record.cursorSpotlightHint}</p>
                 </div>
               </div>
               <div className={cn(
@@ -1219,14 +1210,18 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
 
           {/* Output */}
           <section className="flex flex-col gap-2.5">
-            <SectionLabel>Output</SectionLabel>
+            <SectionLabel>{sk.record.output}</SectionLabel>
             <div className="flex gap-3">
-              <OptionGroup label="Quality" value={settings.quality}
-                options={[{ v: "720p", label: "720p" }, { v: "1080p", label: "1080p" }]}
+              <OptionGroup label={sk.record.quality} value={settings.quality}
+                options={RECORDING_QUALITIES.map((q) => ({ v: q, label: sk.qualities[q] }))}
                 onChange={(v) => setSettings((p) => ({ ...p, quality: v }))}
               />
-              <OptionGroup label="Countdown" value={String(settings.countdown) as "0" | "3" | "5"}
-                options={[{ v: "0", label: "Off" }, { v: "3", label: "3 s" }, { v: "5", label: "5 s" }]}
+              <OptionGroup label={sk.record.countdown} value={String(settings.countdown) as "0" | "3" | "5"}
+                options={[
+                  { v: "0", label: sk.record.countdownOff },
+                  { v: "3", label: "3 s" },
+                  { v: "5", label: "5 s" },
+                ]}
                 onChange={(v) => setSettings((p) => ({ ...p, countdown: Number(v) as 0 | 3 | 5 }))}
               />
             </div>
@@ -1245,12 +1240,10 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-xs font-bold text-foreground">
-              {drawingMode ? "Drawing on video" : "Annotate"}
+              {drawingMode ? sk.record.drawingOn : sk.record.annotate}
             </p>
             <p className="text-[10px] text-muted-foreground">
-              {drawingMode
-                ? "Strokes are recorded live into the video"
-                : "Highlight areas while recording — no pause needed"}
+              {drawingMode ? sk.record.drawingHint : sk.record.drawingHintOff}
             </p>
           </div>
           <button
@@ -1263,35 +1256,34 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
             )}
           >
             <Pencil className="size-3.5" />
-            {drawingMode ? "Done" : "Draw"}
+            {drawingMode ? sk.record.done : sk.record.draw}
           </button>
         </div>
       )}
 
       </div>
-
-      {/* Action buttons */}
+      </PageScrollArea>
       <div className="shrink-0 border-t border-border px-6 py-3">
         <div className="flex justify-end gap-2">
         {status === "idle" && (
           <MacButton variant="primary" onClick={startCountdown} className={cn("min-w-[140px] py-2", armHighlight && "ring-2 ring-[var(--accent)]")}>
-            <Video className="size-4" /> Record
+            <Video className="size-4" /> {sk.record.record}
           </MacButton>
         )}
 
         {(status === "countdown" || status === "preparing") && (
-          <MacButton onClick={cancelCountdown} className="min-w-[100px]">Cancel</MacButton>
+          <MacButton onClick={cancelCountdown} className="min-w-[100px]">{sk.record.cancel}</MacButton>
         )}
 
         {isActive && (
           <>
             {status === "recording" ? (
-              <MacButton onClick={pauseRecording}><Pause className="size-4" /> Pause</MacButton>
+              <MacButton onClick={pauseRecording}><Pause className="size-4" /> {sk.record.pause}</MacButton>
             ) : (
-              <MacButton onClick={resumeRecording}><Play className="size-4" /> Resume</MacButton>
+              <MacButton onClick={resumeRecording}><Play className="size-4" /> {sk.record.resume}</MacButton>
             )}
             <MacButton variant="destructive" onClick={stopRecording}>
-              <Square className="size-3.5 fill-current" /> Stop
+              <Square className="size-3.5 fill-current" /> {sk.record.stop}
             </MacButton>
           </>
         )}
@@ -1299,17 +1291,17 @@ export function RecordPage({ onRecordingChange }: RecordPageProps) {
         {status === "processing" && (
           <MacButton disabled className="opacity-60">
             <div className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            Saving…
+            {sk.record.saving}
           </MacButton>
         )}
 
         {status === "done" && (
           <div className="banner-success flex flex-1 items-center gap-2 rounded-lg px-3 py-2">
             <CheckCircle2 className="size-4 opacity-80" />
-            <span className="text-[13px] font-medium">Saved{savedMeta ? ` · ${savedMeta.size}` : ""}</span>
+            <span className="text-[13px] font-medium">{sk.record.saved}{savedMeta ? ` · ${savedMeta.size}` : ""}</span>
             {bloomDir && (
               <MacButton variant="ghost" className="ml-auto !py-1" onClick={() => revealInFinder(bloomDir)}>
-                <FolderOpen className="size-3.5" /> Show
+                <FolderOpen className="size-3.5" /> {sk.record.show}
               </MacButton>
             )}
           </div>

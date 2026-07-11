@@ -16,8 +16,9 @@
 
 import type { RecordingSource } from "@/types"
 import type { AnnotationLayer } from "@/lib/annotation"
+import type { RecordingQuality } from "@/lib/videoOptions"
 
-type Quality = "720p" | "1080p"
+type Quality = RecordingQuality
 
 export type PipSize = "small" | "medium" | "large"
 export type PipPosition = "bottom-right" | "bottom-left" | "top-right" | "top-left"
@@ -44,6 +45,7 @@ export function defaultPipRect(size: PipSize, position: PipPosition): PipRect {
 }
 
 const DIMENSIONS: Record<Quality, { w: number; h: number }> = {
+  "480p": { w: 854, h: 480 },
   "720p": { w: 1280, h: 720 },
   "1080p": { w: 1920, h: 1080 },
 }
@@ -82,7 +84,9 @@ export interface CaptureHandle {
 }
 
 export function qualityFrameRate(quality: Quality): number {
-  return quality === "1080p" ? 30 : 24
+  if (quality === "1080p") return 30
+  if (quality === "720p") return 24
+  return 15
 }
 
 /** Open a camera stream for the given device (video only). */

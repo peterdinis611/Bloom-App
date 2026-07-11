@@ -1,23 +1,28 @@
 import { useCallback, useEffect, useState } from "react"
 import { RotateCcw, Trash2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
+import { sk } from "@/lib/i18n/sk"
+import { RECORDING_QUALITIES } from "@/lib/videoOptions"
 import { THEMES, type ThemeId } from "@/lib/themes"
 import { ANNOTATION_COLORS, useSettings, type AnnotationTool } from "@/hooks/useSettings"
 import { deleteAllRecordings, formatBytes, getLibraryStats } from "@/hooks/useBloomBackend"
 import { ConfirmDeleteAll } from "@/components/library/ConfirmDeleteAll"
+import { PageScrollArea } from "@/components/layout/PageScrollArea"
 import { PresetEditor } from "@/components/settings/PresetEditor"
 import { MacGroup, MacGroupHeader, MacPageHeader, MacRow, MacSegmented, MacToggle } from "@/components/mac/MacUIKit"
 
 const TOOLS: { id: AnnotationTool; label: string }[] = [
-  { id: "pen", label: "Pen" },
-  { id: "highlighter", label: "Highlighter" },
-  { id: "line", label: "Line" },
-  { id: "arrow", label: "Arrow" },
-  { id: "rect", label: "Rect" },
-  { id: "circle", label: "Circle" },
+  { id: "pen", label: sk.settings.tools.pen },
+  { id: "highlighter", label: sk.settings.tools.highlighter },
+  { id: "line", label: sk.settings.tools.line },
+  { id: "arrow", label: sk.settings.tools.arrow },
+  { id: "rect", label: sk.settings.tools.rect },
+  { id: "circle", label: sk.settings.tools.circle },
 ]
 
-export function SettingsPage() {
+export function SettingsPage({ active = true }: { active?: boolean }) {
   const { settings, setTheme, updateAnnotation, updateRecording, resetSettings } = useSettings()
   const [libraryCount, setLibraryCount] = useState(0)
   const [librarySize, setLibrarySize] = useState(0)
@@ -53,61 +58,64 @@ export function SettingsPage() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <MacPageHeader title="Settings" subtitle="Appearance and recording defaults" />
+      <MacPageHeader title={sk.settings.title} subtitle={sk.settings.subtitle} />
 
-      <div className="flex-1 overflow-y-auto pb-6">
-        <MacGroupHeader>Appearance</MacGroupHeader>
+      <PageScrollArea active={active} className="pb-6">
+        <MacGroupHeader>{sk.settings.appearance}</MacGroupHeader>
         <MacGroup>
-          <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2.5 p-3 sm:grid-cols-3">
             {THEMES.map((t) => (
               <button
                 key={t.id}
                 onClick={() => setTheme(t.id as ThemeId)}
                 className={cn(
-                  "rounded-lg border p-2.5 text-left transition-colors",
-                  settings.theme === t.id
-                    ? "border-[var(--accent)] bg-[var(--sidebar-active)]"
-                    : "border-transparent hover:bg-[var(--sidebar-hover)]",
+                  "bloom-card rounded-lg p-2.5 text-left transition-all",
+                  settings.theme === t.id && "bloom-card-active ring-1 ring-accent/30",
                 )}
               >
-                <div className="mb-2 h-6 rounded-md" style={{ background: `linear-gradient(135deg, ${t.swatch[0]}, ${t.swatch[1]})` }} />
-                <p className="text-[12px] font-medium">{t.name}</p>
+                <div className="mb-2 h-7 rounded-md shadow-inner" style={{ background: `linear-gradient(135deg, ${t.swatch[0]}, ${t.swatch[1]})` }} />
+                <p className="text-[12px] font-semibold">{t.name}</p>
+                <p className="text-[10px] text-muted-foreground">{t.description}</p>
               </button>
             ))}
           </div>
         </MacGroup>
 
-        <MacGroupHeader>Recording</MacGroupHeader>
+        <MacGroupHeader>{sk.settings.recording}</MacGroupHeader>
         <MacGroup>
-          <MacRow label="Quality">
+          <MacRow label={sk.settings.quality}>
             <MacSegmented
               className="!w-auto"
-              options={[{ value: "720p", label: "720p" }, { value: "1080p", label: "1080p" }]}
+              options={RECORDING_QUALITIES.map((q) => ({ value: q, label: sk.qualities[q] }))}
               value={settings.recording.defaultQuality}
               onChange={(v) => updateRecording({ defaultQuality: v })}
             />
           </MacRow>
-          <MacRow label="Countdown">
+          <MacRow label={sk.settings.countdown}>
             <MacSegmented
               className="!w-auto"
-              options={[{ value: "0", label: "Off" }, { value: "3", label: "3s" }, { value: "5", label: "5s" }]}
+              options={[
+                { value: "0", label: sk.record.countdownOff },
+                { value: "3", label: "3 s" },
+                { value: "5", label: "5 s" },
+              ]}
               value={String(settings.recording.defaultCountdown)}
               onChange={(v) => updateRecording({ defaultCountdown: Number(v) as 0 | 3 | 5 })}
             />
           </MacRow>
-          <MacRow label="Hide window when recording" hint="Shows a small HUD for controls">
+          <MacRow label={sk.settings.hideWindow} hint={sk.settings.hideWindowHint}>
             <MacToggle
               on={settings.recording.minimizeOnRecord}
               onChange={() => updateRecording({ minimizeOnRecord: !settings.recording.minimizeOnRecord })}
             />
           </MacRow>
-          <MacRow label="Cursor spotlight">
+          <MacRow label={sk.settings.cursorSpotlight}>
             <MacToggle
               on={settings.recording.cursorHighlight}
               onChange={() => updateRecording({ cursorHighlight: !settings.recording.cursorHighlight })}
             />
           </MacRow>
-          <MacRow label="Camera blur">
+          <MacRow label={sk.settings.cameraBlur}>
             <MacToggle
               on={settings.recording.cameraBlur}
               onChange={() => updateRecording({ cameraBlur: !settings.recording.cameraBlur })}
@@ -115,33 +123,33 @@ export function SettingsPage() {
           </MacRow>
         </MacGroup>
 
-        <MacGroupHeader>Auto-stop</MacGroupHeader>
+        <MacGroupHeader>{sk.settings.autoStop}</MacGroupHeader>
         <MacGroup>
-          <MacRow label="Max duration (min)" hint="0 = off">
-            <input
+          <MacRow label={sk.settings.maxDuration} hint={sk.settings.maxDurationHint}>
+            <Input
               type="number"
               min={0}
               max={240}
               value={Math.round(settings.recording.maxDurationSecs / 60) || ""}
               placeholder="0"
               onChange={(e) => updateRecording({ maxDurationSecs: Math.max(0, Number(e.target.value) || 0) * 60 })}
-              className="w-16 rounded-md border border-border bg-[var(--background)] px-2 py-1 text-right text-[13px] outline-none focus:border-[var(--accent)]"
+              className="w-16 text-right"
             />
           </MacRow>
-          <MacRow label="Idle timeout (min)" hint="Stops when inactive">
-            <input
+          <MacRow label={sk.settings.idleTimeout} hint={sk.settings.idleTimeoutHint}>
+            <Input
               type="number"
               min={0}
               max={60}
               value={Math.round(settings.recording.idleStopSecs / 60) || ""}
               placeholder="0"
               onChange={(e) => updateRecording({ idleStopSecs: Math.max(0, Number(e.target.value) || 0) * 60 })}
-              className="w-16 rounded-md border border-border bg-[var(--background)] px-2 py-1 text-right text-[13px] outline-none focus:border-[var(--accent)]"
+              className="w-16 text-right"
             />
           </MacRow>
         </MacGroup>
 
-        <MacGroupHeader>Drawing defaults</MacGroupHeader>
+        <MacGroupHeader>{sk.settings.drawingDefaults}</MacGroupHeader>
         <MacGroup>
           <div className="flex flex-wrap gap-2 p-3">
             {ANNOTATION_COLORS.map((c) => (
@@ -157,7 +165,7 @@ export function SettingsPage() {
               />
             ))}
           </div>
-          <MacRow label="Stroke width">
+          <MacRow label={sk.settings.strokeWidth}>
             <input
               type="range"
               min={1}
@@ -185,7 +193,7 @@ export function SettingsPage() {
           </div>
         </MacGroup>
 
-        <MacGroupHeader>Presets</MacGroupHeader>
+        <MacGroupHeader>{sk.settings.presets}</MacGroupHeader>
         <div className="px-6">
           <PresetEditor
             presets={settings.recording.presets}
@@ -194,45 +202,38 @@ export function SettingsPage() {
         </div>
 
         <div className="px-6 pt-4">
-          <button
-            onClick={resetSettings}
-            className="mac-btn mac-btn-ghost text-muted-foreground"
-          >
-            <RotateCcw className="size-4" /> Reset defaults
-          </button>
+          <Button variant="ghost" onClick={resetSettings} className="text-muted-foreground">
+            <RotateCcw className="size-4" /> {sk.settings.resetDefaults}
+          </Button>
         </div>
 
-        <MacGroupHeader>Library</MacGroupHeader>
+        <MacGroupHeader>{sk.settings.library}</MacGroupHeader>
         <MacGroup>
           <MacRow
-            label="Delete all recordings"
-            hint={
-              libraryCount > 0
-                ? `${libraryCount} file${libraryCount === 1 ? "" : "s"} · ${formatBytes(librarySize)} on disk`
-                : "No recordings in library"
-            }
+            label={sk.settings.deleteAll}
+            hint={sk.settings.deleteAllHint(libraryCount, formatBytes(librarySize))}
           >
-            <button
-              type="button"
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setConfirmDeleteAll(true)}
               disabled={libraryCount === 0}
-              className="mac-btn border border-red-500/30 bg-red-500/8 text-[12px] font-semibold text-red-300 hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-40"
+              className="border-red-500/30 bg-red-500/8 text-[12px] font-semibold text-red-300 hover:bg-red-500/15 hover:text-red-200"
             >
-              <Trash2 className="size-3.5" /> Delete all
-            </button>
+              <Trash2 className="size-3.5" /> {sk.settings.deleteAllBtn}
+            </Button>
           </MacRow>
         </MacGroup>
-      </div>
+      </PageScrollArea>
 
-      {confirmDeleteAll && (
-        <ConfirmDeleteAll
-          count={libraryCount}
-          sizeLabel={formatBytes(librarySize)}
-          busy={deleteAllBusy}
-          onCancel={() => setConfirmDeleteAll(false)}
-          onConfirm={() => { void handleDeleteAll() }}
-        />
-      )}
+      <ConfirmDeleteAll
+        open={confirmDeleteAll}
+        count={libraryCount}
+        sizeLabel={formatBytes(librarySize)}
+        busy={deleteAllBusy}
+        onCancel={() => setConfirmDeleteAll(false)}
+        onConfirm={() => { void handleDeleteAll() }}
+      />
     </div>
   )
 }

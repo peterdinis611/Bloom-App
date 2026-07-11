@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useDebouncedValue } from "@tanstack/react-pacer"
-import { useCloseOnEscape } from "@/hooks/useCloseOnEscape"
 import { PACER } from "@/lib/pacer"
 import {
   Film,
@@ -58,6 +57,20 @@ import { OptimizeModal } from "@/components/OptimizeModal"
 import { TrimModal } from "@/components/TrimModal"
 import { BatchOptimizeModal } from "@/components/BatchOptimizeModal"
 import { ConfirmDeleteAll } from "@/components/library/ConfirmDeleteAll"
+import { PageScrollArea } from "@/components/layout/PageScrollArea"
+import { MacPageHeader } from "@/components/mac/MacUIKit"
+import { sk } from "@/lib/i18n/sk"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/useToast"
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -91,9 +104,9 @@ function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, onInstallFfmp
   installingFfmpeg: boolean
 }) {
   const hints = [
-    { icon: Monitor, label: "Screen capture", tint: "text-accent bg-primary/12 border-primary/20" },
-    { icon: Camera, label: "Webcam", tint: "text-emerald-400 bg-emerald-500/12 border-emerald-500/20" },
-    { icon: Sparkles, label: "Optimise & trim", tint: "text-sky-400 bg-sky-500/12 border-sky-500/20" },
+    { icon: Monitor, label: sk.library.screenCapture, tint: "text-accent bg-primary/12 border-primary/20" },
+    { icon: Camera, label: sk.library.webcam, tint: "text-emerald-400 bg-emerald-500/12 border-emerald-500/20" },
+    { icon: Sparkles, label: sk.library.optimiseTrim, tint: "text-sky-400 bg-sky-500/12 border-sky-500/20" },
   ]
 
   return (
@@ -105,9 +118,9 @@ function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, onInstallFfmp
         </div>
       </div>
 
-      <h2 className="text-lg font-black tracking-tight text-foreground">Your library is empty</h2>
+      <h2 className="text-lg font-black tracking-tight text-foreground">{sk.library.emptyTitle}</h2>
       <p className="mt-2 max-w-[260px] text-sm leading-relaxed text-muted-foreground">
-        Record your screen, camera, or both — clips show up here automatically.
+        {sk.library.emptyBody}
       </p>
 
       <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
@@ -123,7 +136,7 @@ function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, onInstallFfmp
         className="group mt-8 flex items-center gap-2.5 rounded-2xl bg-primary px-6 py-3.5 text-sm font-bold text-white shadow-xl shadow-primary/25 transition-all hover:bg-accent hover:shadow-primary/35 active:scale-[0.98]"
       >
         <Video className="size-4 transition-transform group-hover:scale-110" />
-        Start your first recording
+        {sk.library.startFirst}
       </button>
 
       {/* ffmpeg status – compact, not a big warning banner */}
@@ -178,7 +191,7 @@ function StatPill({ icon: Icon, label, value }: {
   icon: React.FC<{ className?: string }>; label: string; value: string
 }) {
   return (
-    <div className="flex flex-1 items-center gap-2.5 rounded-xl border border-border/50 bg-[var(--surface)] px-3 py-2.5">
+    <div className="bloom-card flex flex-1 items-center gap-2.5 px-3 py-2.5">
       <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/12">
         <Icon className="size-4 text-accent" />
       </div>
@@ -191,60 +204,56 @@ function StatPill({ icon: Icon, label, value }: {
 }
 
 // ── Confirm delete dialog ──────────────────────────────────────────────────
-function ConfirmDelete({ title, onCancel, onConfirm }: {
-  title: string; onCancel: () => void; onConfirm: () => void
+function ConfirmDelete({ title, open, onCancel, onConfirm }: {
+  title: string; open: boolean; onCancel: () => void; onConfirm: () => void
 }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-6 fade-up" onClick={onCancel}>
-      <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex size-11 items-center justify-center rounded-xl bg-red-500/15">
-          <Trash2 className="size-5 text-red-400" />
-        </div>
-        <h3 className="mt-3 text-base font-bold text-foreground">Delete recording?</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          <span className="font-semibold text-foreground/80">{title}</span> and its metadata will be permanently removed from disk. This can't be undone.
-        </p>
-        <div className="mt-5 flex gap-2">
-          <button onClick={onCancel} className="flex-1 rounded-xl border border-border/60 bg-[var(--surface)] py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-secondary">
-            Cancel
-          </button>
-          <button onClick={onConfirm} className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-bold text-white transition-colors hover:bg-red-500">
-            Delete
-          </button>
-        </div>
-      </div>
-    </div>
+    <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
+      <DialogContent className="[&>button]:hidden">
+        <DialogHeader>
+          <div className="flex size-11 items-center justify-center rounded-xl bg-red-500/15">
+            <Trash2 className="size-5 text-red-400" />
+          </div>
+          <DialogTitle className="mt-3">Delete recording?</DialogTitle>
+          <DialogDescription>
+            <span className="font-semibold text-foreground/80">{title}</span> and its metadata will be permanently removed from disk. This can&apos;t be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="mt-2">
+          <Button variant="outline" className="flex-1" onClick={onCancel}>Cancel</Button>
+          <Button variant="destructive" className="flex-1" onClick={onConfirm}>Delete</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
 // ── Player modal ─────────────────────────────────────────────────────────────
-function PlayerModal({ entry, onClose }: { entry: RecordingEntry; onClose: () => void }) {
+function PlayerModal({ entry, open, onClose }: { entry: RecordingEntry; open: boolean; onClose: () => void }) {
   const meta = entry.meta
-  useCloseOnEscape(onClose)
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-black/85 fade-up" onClick={onClose}>
-      <div className="flex items-center justify-between px-4 py-3" onClick={(e) => e.stopPropagation()}>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-bold text-white">{meta.title}</p>
-          <p className="text-[11px] text-white/50">
-            {formatDurationSecs(meta.duration_secs)} · {formatBytes(meta.file_size_bytes)} · {meta.quality}
-          </p>
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="flex h-[90vh] max-w-4xl flex-col gap-0 border-white/10 bg-black/95 p-0 [&>button]:text-white/60 [&>button]:hover:text-white">
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold text-white">{meta.title}</p>
+            <p className="text-[11px] text-white/50">
+              {formatDurationSecs(meta.duration_secs)} · {formatBytes(meta.file_size_bytes)} · {meta.quality}
+            </p>
+          </div>
         </div>
-        <button onClick={onClose} className="flex size-8 items-center justify-center rounded-lg text-white/60 transition-colors hover:bg-white/10 hover:text-white">
-          <X className="size-4" />
-        </button>
-      </div>
-      <div className="flex flex-1 items-center justify-center px-4 pb-5 min-h-0" onClick={(e) => e.stopPropagation()}>
-        <video
-          key={entry.path}
-          src={fileSrc(entry.path)}
-          controls
-          autoPlay
-          className="max-h-full max-w-full rounded-xl border border-white/10 bg-black shadow-2xl"
-        />
-      </div>
-    </div>
+        <div className="flex flex-1 items-center justify-center px-4 pb-5 min-h-0">
+          <video
+            key={entry.path}
+            src={fileSrc(entry.path)}
+            controls
+            autoPlay
+            className="max-h-full max-w-full rounded-xl border border-white/10 bg-black shadow-2xl"
+          />
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -299,8 +308,8 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
 
   return (
     <div className={cn(
-      "group flex flex-col gap-3 rounded-2xl border bg-[var(--surface)] p-3 transition-colors hover:border-border",
-      selected ? "border-primary/50 ring-1 ring-primary/25" : "border-border/50",
+      "bloom-card group flex flex-col gap-3 p-3 transition-colors hover:border-border",
+      selected ? "bloom-card-active ring-1 ring-primary/25" : "",
     )}>
       <div className="flex items-start gap-3">
         {batchMode && (
@@ -404,7 +413,7 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
       {/* Actions */}
       <div className="flex items-center gap-1 border-t border-border/40 pt-2">
         <ActionBtn icon={Play} label="Play" onClick={onPlay} />
-        {ffmpegReady && <ActionBtn icon={Sparkles} label="Optimise" onClick={onOptimize} accent />}
+        {ffmpegReady && <ActionBtn icon={Sparkles} label={sk.library.optimise} onClick={onOptimize} accent />}
         {ffmpegReady && <ActionBtn icon={Scissors} label="Trim" onClick={onTrim} />}
         <ActionBtn icon={ScanSearch} label="Verify" onClick={onValidate} disabled={busy} />
         <ActionBtn icon={FolderOpen} label="Reveal" onClick={onReveal} />
@@ -441,9 +450,10 @@ function ActionBtn({ icon: Icon, label, onClick, danger, accent, disabled }: {
 // ── Main page ────────────────────────────────────────────────────────────────
 interface LibraryPageProps {
   onStartRecording?: () => void
+  active?: boolean
 }
 
-export function LibraryPage({ onStartRecording }: LibraryPageProps) {
+export function LibraryPage({ onStartRecording, active = true }: LibraryPageProps) {
   const { success: toastSuccess, error: toastError, toast: toastInfo } = useToast()
   const [entries, setEntries] = useState<RecordingEntry[]>([])
   const [stats, setStats] = useState<LibraryStats | null>(null)
@@ -700,53 +710,50 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="mac-page-header !pb-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-[22px] font-semibold tracking-tight">Library</h1>
-            <p className="mt-0.5 text-[13px] text-muted-foreground">
-              {loading ? "Loading…" : stats ? `${stats.total_recordings} recordings` : "Your recordings"}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-          {entries.length > 0 && (
-            <button
-              onClick={() => setConfirmDeleteAll(true)}
-              className="hidden items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/8 px-2.5 py-1.5 text-[10px] font-bold text-red-300 transition-colors hover:bg-red-500/15 sm:flex"
-              title="Delete all recordings"
+      <MacPageHeader
+        title={sk.library.title}
+        subtitle={loading ? "Načítavam…" : stats ? `${stats.total_recordings} nahrávok` : "Vaše nahrávky"}
+        actions={
+          <>
+            {entries.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setConfirmDeleteAll(true)}
+                className="hidden border-red-500/30 bg-red-500/8 text-[10px] font-bold text-red-300 hover:bg-red-500/15 hover:text-red-200 sm:flex"
+              >
+                <Trash2 className="size-3" /> Delete all
+              </Button>
+            )}
+            {entries.length > 0 && (
+              <Button
+                variant={batchMode ? "default" : "outline"}
+                size="sm"
+                onClick={() => { setBatchMode((b) => !b); setSelectedIds(new Set()) }}
+                className="hidden text-[10px] font-bold sm:flex"
+              >
+                <CheckSquare className="size-3" /> Select
+              </Button>
+            )}
+            {ffmpeg?.available && (
+              <Badge variant="secondary" className="hidden border-emerald-500/20 bg-emerald-500/8 text-[10px] font-bold text-emerald-300 sm:flex">
+                <Sparkles className="size-3" /> ffmpeg
+              </Badge>
+            )}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={load}
+              title="Refresh"
             >
-              <Trash2 className="size-3" /> Delete all
-            </button>
-          )}
-          {entries.length > 0 && (
-            <button
-              onClick={() => { setBatchMode((b) => !b); setSelectedIds(new Set()) }}
-              className={cn(
-                "hidden items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[10px] font-bold transition-colors sm:flex",
-                batchMode ? "border-primary/40 bg-primary/10 text-primary" : "border-border/60 text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <CheckSquare className="size-3" /> Select
-            </button>
-          )}
-          {ffmpeg?.available && (
-            <span className="hidden items-center gap-1 rounded-lg border border-emerald-500/20 bg-emerald-500/8 px-2 py-1 text-[10px] font-bold text-emerald-300 sm:flex">
-              <Sparkles className="size-3" /> ffmpeg
-            </span>
-          )}
-          <button
-            onClick={load}
-            className="flex size-9 items-center justify-center rounded-xl border border-border/60 bg-[var(--surface)] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-            title="Refresh"
-          >
-            <RefreshCw className={cn("size-4", loading && "animate-spin")} />
-          </button>
-        </div>
-        </div>
-      </div>
+              <RefreshCw className={cn("size-4", loading && "animate-spin")} />
+            </Button>
+          </>
+        }
+      />
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-6 pb-5">
+      <PageScrollArea active={active}>
+      <div className="flex flex-col gap-3 px-6 pb-5">
       {/* Stats */}
       {stats && stats.total_recordings > 0 && (
         <div className="flex gap-2">
@@ -832,7 +839,7 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
               }}
               className="flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-[11px] font-bold text-primary hover:bg-primary/15"
             >
-              <Sparkles className="size-3" /> Optimise {selectedIds.size}
+              <Sparkles className="size-3" /> {sk.library.optimise} {selectedIds.size}
             </button>
           )}
           {batchMode && selectedIds.size > 0 && (
@@ -850,14 +857,11 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
       {entries.length > 0 && (
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/50" />
-          <input
+          <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search recordings…"
-            className={cn(
-              "w-full rounded-xl border border-border/60 bg-[var(--surface)] py-2.5 pl-9 pr-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/50 focus:border-primary/40",
-              searchPending && "opacity-80",
-            )}
+            className={cn("pl-9", searchPending && "opacity-80")}
           />
         </div>
       )}
@@ -874,7 +878,7 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
       )}
 
       {/* List */}
-      <div className="flex-1 min-h-0 overflow-y-auto -mx-1 px-1">
+      <div className="-mx-1 px-1">
         {loading ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
             <div className="size-8 animate-spin rounded-full border-2 border-border border-t-primary" />
@@ -942,11 +946,15 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
         )}
       </div>
       </div>
+      </PageScrollArea>
 
-      {playing && <PlayerModal entry={playing} onClose={() => setPlaying(null)} />}
+      {playing && (
+        <PlayerModal entry={playing} open onClose={() => setPlaying(null)} />
+      )}
       {confirmEntry && (
         <ConfirmDelete
           title={confirmEntry.meta.title}
+          open
           onCancel={() => setConfirmId(null)}
           onConfirm={() => handleDelete(confirmEntry.meta.id)}
         />
@@ -965,17 +973,16 @@ export function LibraryPage({ onStartRecording }: LibraryPageProps) {
           onComplete={load}
         />
       )}
-      {confirmDeleteAll && (
-        <ConfirmDeleteAll
-          count={stats?.total_recordings ?? entries.length}
-          sizeLabel={formatBytes(
-            stats?.total_size_bytes ?? entries.reduce((sum, e) => sum + e.meta.file_size_bytes, 0),
-          )}
-          busy={deleteAllBusy}
-          onCancel={() => setConfirmDeleteAll(false)}
-          onConfirm={() => { void handleDeleteAll() }}
-        />
-      )}
+      <ConfirmDeleteAll
+        open={confirmDeleteAll}
+        count={stats?.total_recordings ?? entries.length}
+        sizeLabel={formatBytes(
+          stats?.total_size_bytes ?? entries.reduce((sum, e) => sum + e.meta.file_size_bytes, 0),
+        )}
+        busy={deleteAllBusy}
+        onCancel={() => setConfirmDeleteAll(false)}
+        onConfirm={() => { void handleDeleteAll() }}
+      />
       {batchOptimizing && (
         <BatchOptimizeModal
           entries={batchOptimizing}

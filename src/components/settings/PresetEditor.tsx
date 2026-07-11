@@ -7,6 +7,8 @@ import {
   newPresetId,
   type RecordingPreset,
 } from "@/lib/presets"
+import { sk } from "@/lib/i18n/sk"
+import { RECORDING_QUALITIES } from "@/lib/videoOptions"
 import type { RecordingSource } from "@/types"
 
 interface PresetEditorProps {
@@ -14,7 +16,11 @@ interface PresetEditorProps {
   onChange: (presets: RecordingPreset[]) => void
 }
 
-const SOURCES: RecordingSource[] = ["screen", "camera", "both"]
+const SOURCES: { id: RecordingSource; label: string }[] = [
+  { id: "screen", label: sk.record.sources.screen },
+  { id: "camera", label: sk.record.sources.camera },
+  { id: "both", label: sk.record.sources.both },
+]
 
 function PresetForm({ preset, onUpdate, onDelete, canDelete }: {
   preset: RecordingPreset
@@ -29,7 +35,7 @@ function PresetForm({ preset, onUpdate, onDelete, canDelete }: {
           value={preset.name}
           onChange={(e) => onUpdate({ ...preset, name: e.target.value })}
           className="flex-1 rounded-lg border border-border/60 bg-[var(--surface)] px-2.5 py-1.5 text-sm font-bold outline-none focus:border-primary/40"
-          placeholder="Preset name"
+          placeholder="Názov predvoľby"
         />
         {canDelete && (
           <button onClick={onDelete} className="rounded-lg p-2 text-muted-foreground hover:bg-red-500/10 hover:text-red-400">
@@ -41,42 +47,43 @@ function PresetForm({ preset, onUpdate, onDelete, canDelete }: {
         value={preset.description}
         onChange={(e) => onUpdate({ ...preset, description: e.target.value })}
         className="rounded-lg border border-border/60 bg-[var(--surface)] px-2.5 py-1.5 text-xs outline-none focus:border-primary/40"
-        placeholder="Short description"
+        placeholder="Krátky popis"
       />
       <div className="flex flex-wrap gap-1.5">
         {SOURCES.map((s) => (
           <button
-            key={s}
-            onClick={() => onUpdate({ ...preset, source: s })}
+            key={s.id}
+            onClick={() => onUpdate({ ...preset, source: s.id })}
             className={cn(
-              "rounded-lg border px-2.5 py-1 text-[11px] font-bold capitalize",
-              preset.source === s ? "border-primary/50 bg-primary/10 text-primary" : "border-border/60 text-muted-foreground",
+              "rounded-lg border px-2.5 py-1 text-[11px] font-bold",
+              preset.source === s.id ? "border-primary/50 bg-primary/10 text-primary" : "border-border/60 text-muted-foreground",
             )}
           >
-            {s}
+            {s.label}
           </button>
         ))}
       </div>
       <div className="grid grid-cols-2 gap-2 text-[11px]">
         <label className="flex flex-col gap-1">
-          <span className="font-bold text-muted-foreground/70">Quality</span>
+          <span className="font-bold text-muted-foreground/70">{sk.record.quality}</span>
           <select
             value={preset.quality}
-            onChange={(e) => onUpdate({ ...preset, quality: e.target.value as "720p" | "1080p" })}
+            onChange={(e) => onUpdate({ ...preset, quality: e.target.value as RecordingPreset["quality"] })}
             className="rounded-lg border border-border/60 bg-[var(--surface)] px-2 py-1.5"
           >
-            <option value="720p">720p</option>
-            <option value="1080p">1080p</option>
+            {RECORDING_QUALITIES.map((q) => (
+              <option key={q} value={q}>{sk.qualities[q]}</option>
+            ))}
           </select>
         </label>
         <label className="flex flex-col gap-1">
-          <span className="font-bold text-muted-foreground/70">Countdown</span>
+          <span className="font-bold text-muted-foreground/70">{sk.record.countdown}</span>
           <select
             value={preset.countdown}
             onChange={(e) => onUpdate({ ...preset, countdown: Number(e.target.value) as 0 | 3 | 5 })}
             className="rounded-lg border border-border/60 bg-[var(--surface)] px-2 py-1.5"
           >
-            <option value={0}>Off</option>
+            <option value={0}>{sk.record.countdownOff}</option>
             <option value={3}>3s</option>
             <option value={5}>5s</option>
           </select>
@@ -84,10 +91,10 @@ function PresetForm({ preset, onUpdate, onDelete, canDelete }: {
       </div>
       <div className="flex flex-wrap gap-2">
         {([
-          ["microphone", "Mic"],
-          ["systemAudio", "System audio"],
-          ["cursorHighlight", "Cursor spotlight"],
-          ["cameraBlur", "Camera blur"],
+          ["microphone", sk.record.microphone],
+          ["systemAudio", sk.record.systemAudio],
+          ["cursorHighlight", sk.settings.cursorSpotlight],
+          ["cameraBlur", sk.settings.cameraBlur],
         ] as const).map(([key, label]) => (
           <button
             key={key}
@@ -125,7 +132,7 @@ function PresetForm({ preset, onUpdate, onDelete, canDelete }: {
         </div>
       )}
       {isBuiltinPreset(preset.id) && (
-        <p className="text-[10px] text-muted-foreground/70">Built-in preset — duplicate to customise.</p>
+        <p className="text-[10px] text-muted-foreground/70">Vstavaná predvoľba — duplikuj pre úpravu.</p>
       )}
     </div>
   )
@@ -137,13 +144,13 @@ export function PresetEditor({ presets, onChange }: PresetEditorProps) {
   }
 
   const duplicate = (p: RecordingPreset) => {
-    const copy: RecordingPreset = { ...p, id: newPresetId(), name: `${p.name} copy` }
+    const copy: RecordingPreset = { ...p, id: newPresetId(), name: `${p.name} (kópia)` }
     onChange([...presets, copy])
   }
 
   const addCustom = () => {
     const base = BUILTIN_PRESETS[0]
-    onChange([...presets, { ...base, id: newPresetId(), name: "My preset", description: "Custom profile" }])
+    onChange([...presets, { ...base, id: newPresetId(), name: "Moja predvoľba", description: "Vlastný profil" }])
   }
 
   const remove = (id: string) => {
@@ -165,7 +172,7 @@ export function PresetEditor({ presets, onChange }: PresetEditorProps) {
             onClick={() => duplicate(p)}
             className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-muted-foreground hover:text-foreground"
           >
-            <Copy className="size-3" /> Duplicate
+            <Copy className="size-3" /> Duplikovať
           </button>
         </div>
       ))}
@@ -173,7 +180,7 @@ export function PresetEditor({ presets, onChange }: PresetEditorProps) {
         onClick={addCustom}
         className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 py-3 text-xs font-bold text-muted-foreground hover:border-primary/40 hover:text-primary"
       >
-        <Plus className="size-4" /> Add custom preset
+        <Plus className="size-4" /> Pridať vlastnú predvoľbu
       </button>
     </div>
   )
