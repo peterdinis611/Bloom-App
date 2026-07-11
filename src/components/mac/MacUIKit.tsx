@@ -4,6 +4,7 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Check } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /** macOS-style inset grouped section */
@@ -39,7 +40,9 @@ export function MacRow({
         <Label className="cursor-[inherit]">{label}</Label>
         {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
       </div>
-      {children && <div className="shrink-0">{children}</div>}
+      {children && (
+        <div className={cn("shrink-0", onClick && "pointer-events-none")}>{children}</div>
+      )}
     </Tag>
   )
 }
@@ -100,7 +103,66 @@ export function MacButton({
 }
 
 export function MacToggle({ on, onChange }: { on: boolean; onChange: () => void }) {
-  return <Switch checked={on} onCheckedChange={onChange} />
+  return <Switch checked={on} onCheckedChange={onChange} aria-hidden={false} />
+}
+
+/** Large, clearly marked option buttons — whole chip is clickable. */
+export function ChoiceGroup<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+  layout = "equal",
+}: {
+  label?: string
+  options: { value: T; label: string; hint?: string }[]
+  value: T
+  onChange: (v: T) => void
+  /** equal = stretch in one row; wrap = chips flow to next line */
+  layout?: "equal" | "wrap"
+}) {
+  return (
+    <fieldset className="flex min-w-0 flex-col gap-2 border-0 p-0">
+      {label && (
+        <legend className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">
+          {label}
+        </legend>
+      )}
+      <div
+        className={cn(
+          "choice-group",
+          layout === "wrap" && "choice-group-wrap",
+        )}
+      >
+        {options.map((o) => {
+          const active = o.value === value
+          return (
+            <button
+              key={o.value}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onChange(o.value)}
+              className={cn("choice-chip", layout === "equal" && "flex-1", active && "choice-chip-active")}
+            >
+              <span
+                className={cn(
+                  "choice-chip-indicator",
+                  active && "choice-chip-indicator-active",
+                )}
+                aria-hidden
+              >
+                {active && <Check className="size-3" strokeWidth={3} />}
+              </span>
+              <span className={cn("min-w-0", o.hint ? "flex flex-col items-start gap-0.5 text-left" : "text-center")}>
+                <span>{o.label}</span>
+                {o.hint && <span className="choice-chip-hint">{o.hint}</span>}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </fieldset>
+  )
 }
 
 export function MacPageHeader({

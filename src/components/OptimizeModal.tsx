@@ -3,8 +3,6 @@ import { useCloseOnEscape } from "@/hooks/useCloseOnEscape"
 import {
   X,
   Zap,
-  Gauge,
-  Maximize2,
   FileVideo,
   Scissors,
   Sparkles,
@@ -12,10 +10,10 @@ import {
   CircleAlert,
   FolderOpen,
   LoaderCircle,
-  FastForward,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { sk, type OptimizeSpeed } from "@/lib/i18n/sk"
+import { ChoiceGroup } from "@/components/mac/MacUIKit"
 import { OPTIMIZE_SPEEDS, speedToNumber } from "@/lib/videoOptions"
 import type {
   OptimizeFormat,
@@ -36,58 +34,26 @@ import {
 
 type Phase = "config" | "running" | "done" | "error"
 
-const PRESETS: { v: OptimizePreset; label: string; hint: string }[] = [
-  { v: "small", label: sk.optimize.presets.small.label, hint: sk.optimize.presets.small.hint },
-  { v: "medium", label: sk.optimize.presets.medium.label, hint: sk.optimize.presets.medium.hint },
-  { v: "high", label: sk.optimize.presets.high.label, hint: sk.optimize.presets.high.hint },
+const PRESETS = [
+  { value: "small" as const, label: sk.optimize.presets.small.label, hint: sk.optimize.presets.small.hint },
+  { value: "medium" as const, label: sk.optimize.presets.medium.label, hint: sk.optimize.presets.medium.hint },
+  { value: "high" as const, label: sk.optimize.presets.high.label, hint: sk.optimize.presets.high.hint },
 ]
-const RESOLUTIONS: { v: OptimizeResolution; label: string }[] = [
-  { v: "480p", label: sk.optimize.resolutions["480p"] },
-  { v: "720p", label: sk.optimize.resolutions["720p"] },
-  { v: "1080p", label: sk.optimize.resolutions["1080p"] },
-  { v: "original", label: sk.optimize.resolutions.original },
+const RESOLUTIONS = [
+  { value: "480p" as const, label: sk.optimize.resolutions["480p"] },
+  { value: "720p" as const, label: sk.optimize.resolutions["720p"] },
+  { value: "1080p" as const, label: sk.optimize.resolutions["1080p"] },
+  { value: "original" as const, label: sk.optimize.resolutions.original },
 ]
-const FORMATS: { v: OptimizeFormat; label: string }[] = [
-  { v: "mp4", label: "MP4" },
-  { v: "webm", label: "WebM" },
-  { v: "gif", label: "GIF" },
+const FORMATS = [
+  { value: "mp4" as const, label: "MP4" },
+  { value: "webm" as const, label: "WebM" },
+  { value: "gif" as const, label: "GIF" },
 ]
-const SPEEDS: { v: OptimizeSpeed; label: string }[] = OPTIMIZE_SPEEDS.map((v) => ({
-  v,
+const SPEEDS: { value: OptimizeSpeed; label: string }[] = OPTIMIZE_SPEEDS.map((v) => ({
+  value: v,
   label: sk.optimize.speeds[v],
 }))
-
-function Segmented<T extends string>({ icon: Icon, label, options, value, onChange, render }: {
-  icon: React.FC<{ className?: string }>
-  label: string
-  options: { v: T; label: string; hint?: string }[]
-  value: T
-  onChange: (v: T) => void
-  render?: (o: { v: T; label: string; hint?: string }) => React.ReactNode
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground/60">
-        <Icon className="size-3" /> {label}
-      </span>
-      <div className="grid grid-flow-col gap-1 rounded-xl border border-border/60 bg-[var(--surface)] p-1">
-        {options.map((o) => (
-          <button
-            key={o.v}
-            onClick={() => onChange(o.v)}
-            className={cn(
-              "flex flex-col items-center rounded-lg px-2 py-2 text-xs font-semibold transition-all",
-              o.v === value ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {render ? render(o) : o.label}
-            {o.hint && <span className={cn("text-[9px] font-medium", o.v === value ? "text-white/70" : "text-muted-foreground/50")}>{o.hint}</span>}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-}
 
 interface OptimizeModalProps {
   entry: RecordingEntry
@@ -216,10 +182,10 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
 
           {phase === "config" && (
             <>
-              <Segmented icon={Gauge} label={sk.optimize.qualityPreset} options={PRESETS} value={preset} onChange={setPreset} />
-              <Segmented icon={Maximize2} label={sk.optimize.resolution} options={RESOLUTIONS} value={resolution} onChange={setResolution} />
-              <Segmented icon={FastForward} label={sk.optimize.speed} options={SPEEDS} value={speed} onChange={setSpeed} />
-              <Segmented icon={FileVideo} label={sk.optimize.format} options={FORMATS} value={format} onChange={setFormat} />
+              <ChoiceGroup label={sk.optimize.qualityPreset} options={PRESETS} value={preset} onChange={setPreset} />
+              <ChoiceGroup label={sk.optimize.resolution} layout="wrap" options={RESOLUTIONS} value={resolution} onChange={setResolution} />
+              <ChoiceGroup label={sk.optimize.speed} layout="wrap" options={SPEEDS} value={speed} onChange={setSpeed} />
+              <ChoiceGroup label={sk.optimize.format} options={FORMATS} value={format} onChange={setFormat} />
 
               <div className="flex flex-col gap-2">
                 <button

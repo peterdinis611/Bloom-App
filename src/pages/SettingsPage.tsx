@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { RotateCcw, Trash2 } from "lucide-react"
+import { RotateCcw, Trash2, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -11,7 +11,7 @@ import { deleteAllRecordings, formatBytes, getLibraryStats } from "@/hooks/useBl
 import { ConfirmDeleteAll } from "@/components/library/ConfirmDeleteAll"
 import { PageScrollArea } from "@/components/layout/PageScrollArea"
 import { PresetEditor } from "@/components/settings/PresetEditor"
-import { MacGroup, MacGroupHeader, MacPageHeader, MacRow, MacSegmented, MacToggle } from "@/components/mac/MacUIKit"
+import { MacGroup, MacGroupHeader, MacPageHeader, MacRow, MacToggle, ChoiceGroup } from "@/components/mac/MacUIKit"
 
 const TOOLS: { id: AnnotationTool; label: string }[] = [
   { id: "pen", label: sk.settings.tools.pen },
@@ -64,36 +64,42 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
         <MacGroupHeader>{sk.settings.appearance}</MacGroupHeader>
         <MacGroup>
           <div className="grid grid-cols-2 gap-2.5 p-3 sm:grid-cols-3">
-            {THEMES.map((t) => (
+            {THEMES.map((t) => {
+              const active = settings.theme === t.id
+              return (
               <button
                 key={t.id}
+                type="button"
                 onClick={() => setTheme(t.id as ThemeId)}
                 className={cn(
-                  "bloom-card rounded-lg p-2.5 text-left transition-all",
-                  settings.theme === t.id && "bloom-card-active ring-1 ring-accent/30",
+                  "bloom-card relative rounded-lg p-2.5 text-left transition-all min-h-[72px] cursor-pointer",
+                  active && "bloom-card-active ring-2 ring-accent/30",
                 )}
               >
+                {active && (
+                  <span className="absolute right-2 top-2 flex size-5 items-center justify-center rounded-full bg-accent text-white">
+                    <Check className="size-3" strokeWidth={3} />
+                  </span>
+                )}
                 <div className="mb-2 h-7 rounded-md shadow-inner" style={{ background: `linear-gradient(135deg, ${t.swatch[0]}, ${t.swatch[1]})` }} />
                 <p className="text-[12px] font-semibold">{t.name}</p>
                 <p className="text-[10px] text-muted-foreground">{t.description}</p>
               </button>
-            ))}
+            )})}
           </div>
         </MacGroup>
 
         <MacGroupHeader>{sk.settings.recording}</MacGroupHeader>
         <MacGroup>
-          <MacRow label={sk.settings.quality}>
-            <MacSegmented
-              className="!w-auto"
+          <div className="flex flex-col gap-4 p-3">
+            <ChoiceGroup
+              label={sk.settings.quality}
               options={RECORDING_QUALITIES.map((q) => ({ value: q, label: sk.qualities[q] }))}
               value={settings.recording.defaultQuality}
               onChange={(v) => updateRecording({ defaultQuality: v })}
             />
-          </MacRow>
-          <MacRow label={sk.settings.countdown}>
-            <MacSegmented
-              className="!w-auto"
+            <ChoiceGroup
+              label={sk.settings.countdown}
               options={[
                 { value: "0", label: sk.record.countdownOff },
                 { value: "3", label: "3 s" },
@@ -102,20 +108,30 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
               value={String(settings.recording.defaultCountdown)}
               onChange={(v) => updateRecording({ defaultCountdown: Number(v) as 0 | 3 | 5 })}
             />
-          </MacRow>
-          <MacRow label={sk.settings.hideWindow} hint={sk.settings.hideWindowHint}>
+          </div>
+          <MacRow
+            label={sk.settings.hideWindow}
+            hint={sk.settings.hideWindowHint}
+            onClick={() => updateRecording({ minimizeOnRecord: !settings.recording.minimizeOnRecord })}
+          >
             <MacToggle
               on={settings.recording.minimizeOnRecord}
               onChange={() => updateRecording({ minimizeOnRecord: !settings.recording.minimizeOnRecord })}
             />
           </MacRow>
-          <MacRow label={sk.settings.cursorSpotlight}>
+          <MacRow
+            label={sk.settings.cursorSpotlight}
+            onClick={() => updateRecording({ cursorHighlight: !settings.recording.cursorHighlight })}
+          >
             <MacToggle
               on={settings.recording.cursorHighlight}
               onChange={() => updateRecording({ cursorHighlight: !settings.recording.cursorHighlight })}
             />
           </MacRow>
-          <MacRow label={sk.settings.cameraBlur}>
+          <MacRow
+            label={sk.settings.cameraBlur}
+            onClick={() => updateRecording({ cameraBlur: !settings.recording.cameraBlur })}
+          >
             <MacToggle
               on={settings.recording.cameraBlur}
               onChange={() => updateRecording({ cameraBlur: !settings.recording.cameraBlur })}

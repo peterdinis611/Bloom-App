@@ -31,7 +31,7 @@ import { findPreset } from "@/lib/presets"
 import { defaultPipRect, type PipRect, type PipPosition, type PipSize } from "@/lib/capture"
 import { createAudioMeter } from "@/lib/audioMeter"
 import { AudioMeterBar } from "@/components/record/AudioMeterBar"
-import { MacButton, MacGroup, MacGroupHeader, MacPageHeader, MacSegmented } from "@/components/mac/MacUIKit"
+import { MacButton, MacGroup, MacGroupHeader, MacPageHeader, MacSegmented, ChoiceGroup } from "@/components/mac/MacUIKit"
 import { PageScrollArea } from "@/components/layout/PageScrollArea"
 import { Button } from "@/components/ui/button"
 import {
@@ -218,10 +218,10 @@ function AudioToggle({ active, onIcon: OnIcon, offIcon: OffIcon, label, onChange
     <button
       onClick={onChange}
       className={cn(
-        "flex flex-1 items-center gap-2.5 rounded-xl border px-3.5 py-3 text-sm font-medium transition-all",
+        "flex flex-1 items-center gap-2.5 rounded-xl border px-3.5 py-3.5 text-sm font-medium transition-all min-h-[52px] cursor-pointer",
         active
-          ? "border-primary/40 bg-primary/10 text-primary"
-          : "border-border/60 bg-[var(--surface)] text-muted-foreground hover:border-border hover:text-foreground",
+          ? "border-primary/50 bg-primary/10 text-primary ring-1 ring-primary/25"
+          : "border-border/60 bg-[var(--surface)] text-muted-foreground hover:border-border hover:bg-secondary/40 hover:text-foreground",
       )}
     >
       <Icon className="size-4 shrink-0" />
@@ -230,31 +230,6 @@ function AudioToggle({ active, onIcon: OnIcon, offIcon: OffIcon, label, onChange
         <div className={cn("size-4 rounded-full bg-white shadow-sm transition-transform", active ? "translate-x-4" : "translate-x-0")} />
       </div>
     </button>
-  )
-}
-
-// ── Option group ───────────────────────────────────────────────────────────────
-function OptionGroup<T extends string>({ label, options, value, onChange }: {
-  label: string; options: { v: T; label: string }[]; value: T; onChange: (v: T) => void
-}) {
-  return (
-    <div className="flex flex-1 flex-col gap-2">
-      <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/60">{label}</span>
-      <div className="flex rounded-xl border border-border/60 bg-[var(--surface)] p-1">
-        {options.map((o) => (
-          <button
-            key={o.v}
-            onClick={() => onChange(o.v)}
-            className={cn(
-              "flex-1 rounded-lg px-2 py-2 text-xs font-semibold transition-all",
-              o.v === value ? "bg-secondary text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {o.label}
-          </button>
-        ))}
-      </div>
-    </div>
   )
 }
 
@@ -1024,21 +999,29 @@ export function RecordPage({ active = true, onRecordingChange }: RecordPageProps
           <section className="flex flex-col gap-2.5">
             <SectionLabel>{sk.record.quickStart}</SectionLabel>
             <div className="flex flex-wrap gap-2">
-              {presets.map((p) => (
+              {presets.map((p) => {
+                const active = appSettings.recording.activePresetId === p.id
+                return (
                 <button
                   key={p.id}
+                  type="button"
                   onClick={() => applyPreset(p)}
                   className={cn(
-                    "bloom-card flex flex-1 min-w-[100px] flex-col items-start gap-0.5 px-3 py-2.5 text-left active:scale-[0.98]",
-                    appSettings.recording.activePresetId === p.id && "bloom-card-active",
+                    "bloom-card relative flex flex-1 min-w-[120px] flex-col items-start gap-1 px-3.5 py-3 text-left active:scale-[0.98]",
+                    active && "bloom-card-active ring-2 ring-accent/30",
                   )}
                 >
-                  <span className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                  {active && (
+                    <span className="absolute right-2 top-2 flex size-5 items-center justify-center rounded-full bg-accent text-white">
+                      <CheckIcon className="size-3" strokeWidth={3} />
+                    </span>
+                  )}
+                  <span className="flex items-center gap-1.5 pr-6 text-xs font-bold text-foreground">
                     <Zap className="size-3 text-accent" /> {p.name}
                   </span>
                   <span className="text-[10px] leading-tight text-muted-foreground">{p.description}</span>
                 </button>
-              ))}
+              )})}
             </div>
             <button
               onClick={() => startWithPreset(appSettings.recording.activePresetId)}
@@ -1139,8 +1122,8 @@ export function RecordPage({ active = true, onRecordingChange }: RecordPageProps
                 type="button"
                 onClick={() => setSettings((p) => ({ ...p, cameraBlur: !p.cameraBlur }))}
                 className={cn(
-                  "bloom-card flex w-full items-center justify-between px-3.5 py-3 text-left",
-                  settings.cameraBlur && "bloom-card-active",
+                  "bloom-card flex w-full items-center justify-between px-3.5 py-3.5 text-left min-h-[52px] cursor-pointer",
+                  settings.cameraBlur && "bloom-card-active ring-2 ring-accent/25",
                 )}
               >
                 <div className="flex items-center gap-2.5">
@@ -1158,23 +1141,28 @@ export function RecordPage({ active = true, onRecordingChange }: RecordPageProps
                 </div>
               </button>
               {settings.source === "both" && (
-                <div className="flex gap-3">
-                  <OptionGroup label={sk.record.pipSize} value={settings.pipSize}
-                    options={[
-                      { v: "small" as PipSize, label: "S" },
-                      { v: "medium" as PipSize, label: "M" },
-                      { v: "large" as PipSize, label: "L" },
-                    ]}
-                    onChange={(v) => setSettings((p) => ({ ...p, pipSize: v }))}
+                <div className="flex flex-col gap-4">
+                  <ChoiceGroup
+                    label={sk.record.pipSize}
+                    value={settings.pipSize}
+                    options={([
+                      ["small", sk.record.pipSizes.small],
+                      ["medium", sk.record.pipSizes.medium],
+                      ["large", sk.record.pipSizes.large],
+                    ] as const).map(([value, label]) => ({ value, label }))}
+                    onChange={(v) => setSettings((p) => ({ ...p, pipSize: v as PipSize }))}
                   />
-                  <OptionGroup label={sk.record.pipPosition} value={settings.pipPosition}
-                    options={[
-                      { v: "bottom-right" as PipPosition, label: "BR" },
-                      { v: "bottom-left" as PipPosition, label: "BL" },
-                      { v: "top-right" as PipPosition, label: "TR" },
-                      { v: "top-left" as PipPosition, label: "TL" },
-                    ]}
-                    onChange={(v) => setSettings((p) => ({ ...p, pipPosition: v }))}
+                  <ChoiceGroup
+                    label={sk.record.pipPosition}
+                    layout="wrap"
+                    value={settings.pipPosition}
+                    options={([
+                      ["bottom-right", sk.record.pipPositions["bottom-right"]],
+                      ["bottom-left", sk.record.pipPositions["bottom-left"]],
+                      ["top-right", sk.record.pipPositions["top-right"]],
+                      ["top-left", sk.record.pipPositions["top-left"]],
+                    ] as const).map(([value, label]) => ({ value, label }))}
+                    onChange={(v) => setSettings((p) => ({ ...p, pipPosition: v as PipPosition }))}
                   />
                 </div>
               )}
@@ -1188,8 +1176,8 @@ export function RecordPage({ active = true, onRecordingChange }: RecordPageProps
               type="button"
               onClick={() => setSettings((p) => ({ ...p, cursorHighlight: !p.cursorHighlight }))}
               className={cn(
-                "bloom-card flex w-full items-center justify-between px-3.5 py-3 text-left",
-                settings.cursorHighlight && "bloom-card-active",
+                "bloom-card flex w-full items-center justify-between px-3.5 py-3.5 text-left min-h-[52px] cursor-pointer",
+                settings.cursorHighlight && "bloom-card-active ring-2 ring-accent/25",
               )}
             >
               <div className="flex items-center gap-2.5">
@@ -1209,22 +1197,24 @@ export function RecordPage({ active = true, onRecordingChange }: RecordPageProps
           </section>
 
           {/* Output */}
-          <section className="flex flex-col gap-2.5">
+          <section className="flex flex-col gap-4">
             <SectionLabel>{sk.record.output}</SectionLabel>
-            <div className="flex gap-3">
-              <OptionGroup label={sk.record.quality} value={settings.quality}
-                options={RECORDING_QUALITIES.map((q) => ({ v: q, label: sk.qualities[q] }))}
-                onChange={(v) => setSettings((p) => ({ ...p, quality: v }))}
-              />
-              <OptionGroup label={sk.record.countdown} value={String(settings.countdown) as "0" | "3" | "5"}
-                options={[
-                  { v: "0", label: sk.record.countdownOff },
-                  { v: "3", label: "3 s" },
-                  { v: "5", label: "5 s" },
-                ]}
-                onChange={(v) => setSettings((p) => ({ ...p, countdown: Number(v) as 0 | 3 | 5 }))}
-              />
-            </div>
+            <ChoiceGroup
+              label={sk.record.quality}
+              value={settings.quality}
+              options={RECORDING_QUALITIES.map((q) => ({ value: q, label: sk.qualities[q] }))}
+              onChange={(v) => setSettings((p) => ({ ...p, quality: v }))}
+            />
+            <ChoiceGroup
+              label={sk.record.countdown}
+              value={String(settings.countdown)}
+              options={[
+                { value: "0", label: sk.record.countdownOff },
+                { value: "3", label: "3 s" },
+                { value: "5", label: "5 s" },
+              ]}
+              onChange={(v) => setSettings((p) => ({ ...p, countdown: Number(v) as 0 | 3 | 5 }))}
+            />
           </section>
         </div>
       )}

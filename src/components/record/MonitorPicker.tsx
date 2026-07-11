@@ -15,7 +15,7 @@ export function MonitorPicker({ monitors, selectedId, onChange, onHighlight }: M
       <div className="mac-group !mx-0">
         <div className="mac-row text-[13px] text-muted-foreground">
           <Monitor className="size-4 shrink-0 opacity-50" />
-          No displays detected
+          Displej nenájdený
         </div>
       </div>
     )
@@ -29,36 +29,30 @@ export function MonitorPicker({ monitors, selectedId, onChange, onHighlight }: M
           <div
             key={m.id}
             className={cn(
-              "flex items-center gap-3 px-3.5 py-2.5",
+              "flex items-center gap-2 px-2 py-1",
               index > 0 && "border-t border-border",
-              active && "bg-[var(--sidebar-active)]",
             )}
           >
             <button
               type="button"
-              onClick={() => {
-                onChange(m.id, index)
-              }}
-              className="flex min-w-0 flex-1 items-center gap-3 text-left"
+              onClick={() => onChange(m.id, index)}
+              className={cn(
+                "choice-chip flex-1 !min-h-[52px] !justify-start !px-3",
+                active && "choice-chip-active",
+              )}
             >
               <span
-                className={cn(
-                  "flex size-[18px] shrink-0 items-center justify-center rounded-full border",
-                  active
-                    ? "border-[var(--accent)] bg-[var(--accent)]"
-                    : "border-[var(--muted-foreground)]/40 bg-transparent",
-                )}
+                className={cn("choice-chip-indicator", active && "choice-chip-indicator-active")}
+                aria-hidden
               >
-                {active && <Check className="size-2.5 text-white" strokeWidth={3} />}
+                {active && <Check className="size-3" strokeWidth={3} />}
               </span>
-
               <Monitor className="size-4 shrink-0 text-muted-foreground" />
-
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[13px] font-medium text-foreground">
+              <div className="min-w-0 flex-1 text-left">
+                <p className="truncate text-[13px] font-semibold text-foreground">
                   {m.name}
                   {m.is_primary && (
-                    <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">Primary</span>
+                    <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">(hlavný)</span>
                   )}
                 </p>
                 <p className="text-[11px] text-muted-foreground">
@@ -71,9 +65,9 @@ export function MonitorPicker({ monitors, selectedId, onChange, onHighlight }: M
               <button
                 type="button"
                 onClick={() => onHighlight(m)}
-                className="shrink-0 text-[12px] font-medium text-[var(--accent)] hover:underline"
+                className="shrink-0 rounded-lg px-3 py-2.5 text-[12px] font-semibold text-accent hover:bg-accent/10"
               >
-                Identify
+                Ukázať
               </button>
             )}
           </div>

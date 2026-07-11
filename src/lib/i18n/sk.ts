@@ -36,6 +36,13 @@ export const sk = {
     blurBackgroundHint: "Jemné rozmazanie okolo PiP alebo kamery",
     pipSize: "Veľkosť PiP",
     pipPosition: "Pozícia PiP",
+    pipSizes: { small: "Malá", medium: "Stredná", large: "Veľká" },
+    pipPositions: {
+      "bottom-right": "Vpravo dole",
+      "bottom-left": "Vľavo dole",
+      "top-right": "Vpravo hore",
+      "top-left": "Vľavo hore",
+    },
     cursor: "Kurzor",
     cursorSpotlight: "Spotlight a kliknutia",
     cursorSpotlightHint: "Vhodné pre tutoriály — overlay počas nahrávania",
@@ -145,11 +152,6 @@ export const sk = {
       "3": "3×",
     },
   },
-  qualities: {
-    "480p": "480p",
-    "720p": "720p",
-    "1080p": "1080p",
-  },
   library: {
     title: "Knižnica",
     subtitle: "Vaše nahrávky",
@@ -165,6 +167,11 @@ export const sk = {
       `Natrvalo odstráni ${count} ${count === 1 ? "nahrávku" : count < 5 ? "nahrávky" : "nahrávok"} (${size}) z disku. Túto akciu nemožno vrátiť.`,
     cancel: "Zrušiť",
     deleting: "Mažem…",
+  },
+  qualities: {
+    "480p": "480p",
+    "720p": "720p",
+    "1080p": "1080p",
   },
 } as const
 
