@@ -296,8 +296,8 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
 
   return (
     <div className={cn(
-      "relative flex aspect-video w-full shrink-0 items-center justify-center overflow-hidden rounded-lg bg-black/90",
-      isRecording && "ring-1 ring-[var(--rec-indicator)]/50",
+      "viewfinder relative flex aspect-video w-full shrink-0 items-center justify-center overflow-hidden rounded-lg bg-black/90",
+      isRecording && "viewfinder-recording ring-1 ring-[var(--rec-indicator)]/40",
     )}>
       <div className="absolute inset-0 z-0 bg-black" />
       <video
@@ -307,6 +307,20 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
         playsInline
         className={cn("absolute inset-0 z-[1] h-full w-full object-contain bg-black", showVideo ? "opacity-100" : "opacity-0")}
       />
+
+      <div className="viewfinder-frame" aria-hidden>
+        <span className="viewfinder-corner viewfinder-corner-tl" />
+        <span className="viewfinder-corner viewfinder-corner-tr" />
+        <span className="viewfinder-corner viewfinder-corner-bl" />
+        <span className="viewfinder-corner viewfinder-corner-br" />
+        {isRecording && (
+          <>
+            <span className="aperture-bloom" />
+            <span className="aperture-bloom" />
+            <span className="aperture-bloom" />
+          </>
+        )}
+      </div>
 
       {showFault && fault && <PreviewFaultPanel fault={fault} details={details} />}
 
@@ -320,15 +334,15 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
       {status === "countdown" && (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/40">
           <div className="flex flex-col items-center gap-2">
-            <span className="text-5xl font-semibold tabular-nums text-white">{countdown}</span>
-            <p className="text-[12px] text-white/80">{sk.record.starting}</p>
+            <span className="text-5xl font-semibold tabular-nums tracking-tight text-white">{countdown}</span>
+            <p className="text-[12px] text-white/75">{sk.record.starting}</p>
           </div>
         </div>
       )}
 
       {isActive && (
-        <div className="pointer-events-none absolute bottom-3 left-3 z-30 rounded-lg bg-black/55 px-2.5 py-1.5">
-          <div className="font-mono text-lg font-medium tabular-nums text-white">{formatDuration(elapsed)}</div>
+        <div className="pointer-events-none absolute bottom-3 left-3 z-30 rounded-[8px] bg-black/55 px-2.5 py-1.5 backdrop-blur-md">
+          <div className="font-mono text-[17px] font-medium tabular-nums text-white">{formatDuration(elapsed)}</div>
           {isPaused && <span className="text-[10px] text-white/70">{sk.record.paused}</span>}
         </div>
       )}
@@ -348,14 +362,14 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
       )}
 
       {isRecording && (
-        <div className="absolute left-3 top-3 z-30 flex items-center gap-1.5 rounded-md bg-black/50 px-2 py-1">
+        <div className="absolute left-3 top-3 z-30 flex items-center gap-1.5 rounded-[7px] bg-black/55 px-2 py-1 backdrop-blur-md">
           <span className="rec-dot size-2 rounded-full" />
-          <span className="text-[10px] font-medium text-white/90">REC</span>
+          <span className="text-[11px] font-semibold tracking-wide text-white/90">REC</span>
         </div>
       )}
 
       {status === "idle" && summary && !showFault && (
-        <div className="absolute bottom-2 left-2 z-[2] rounded-md bg-black/50 px-2 py-1 text-[10px] text-white/70">
+        <div className="absolute bottom-2 left-2 z-[2] rounded-[7px] bg-black/50 px-2 py-1 text-[11px] text-white/70">
           {summary}
         </div>
       )}
@@ -926,10 +940,12 @@ export function RecordPage({ active = true, onRecordingChange }: RecordPageProps
       <MacPageHeader title={sk.record.title} subtitle={sk.record.subtitle} />
 
       <PageScrollArea active={active}>
-      <div className="flex flex-col gap-3 px-6 pb-4">
+      <div className="flex flex-col gap-3 px-6 pb-4 pt-3">
 
       {showBanner && bloomDir && (
+        <div className="bay-enter bay-enter-delay-1">
         <SaveBanner path={bloomDir} onDismiss={() => setShowBanner(false)} />
+        </div>
       )}
 
       {diskWarn && (
@@ -953,7 +969,7 @@ export function RecordPage({ active = true, onRecordingChange }: RecordPageProps
       )}
 
       {/* Preview */}
-      <div className="relative shrink-0">
+      <div className="relative shrink-0 bay-enter bay-enter-delay-2">
         <PreviewCanvas
           source={settings.source}
           status={status}
@@ -994,7 +1010,7 @@ export function RecordPage({ active = true, onRecordingChange }: RecordPageProps
 
       {/* Config panel (idle only) */}
       {showConfig && (
-        <div className="fade-up flex flex-col gap-5">
+        <div className="fade-up bay-enter bay-enter-delay-3 flex flex-col gap-5">
           {/* Quick presets */}
           <section className="flex flex-col gap-2.5">
             <SectionLabel>{sk.record.quickStart}</SectionLabel>

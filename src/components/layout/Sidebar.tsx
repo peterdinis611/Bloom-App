@@ -21,21 +21,23 @@ const ITEMS: { id: AppView; label: string; icon: React.FC<{ className?: string }
 
 export function Sidebar({ view, onChange, locked = false, recording = false }: SidebarProps) {
   return (
-    <aside className="mac-sidebar flex w-[188px] shrink-0 flex-col">
+    <aside className="mac-sidebar flex w-[200px] shrink-0 flex-col">
       <div className="flex items-center gap-2.5 px-4 pb-3 pt-4">
-        <div className="flex size-8 items-center justify-center rounded-lg bg-primary/15 shadow-sm shadow-primary/10">
+        <div className="flex size-8 items-center justify-center rounded-[9px] bg-primary/15">
           <Video className="size-4 text-accent" />
         </div>
         <div className="min-w-0">
-          <p className="text-[13px] font-semibold tracking-tight text-foreground">{sk.app.name}</p>
-          <p className="text-[10px] text-muted-foreground">{sk.app.tagline}</p>
+          <p className="brand-mark text-[13px] text-foreground">{sk.app.name}</p>
+          <p className="text-[11px] text-muted-foreground">{sk.app.tagline}</p>
         </div>
       </div>
 
       {recording && (
-        <div className="mx-3 mb-3 flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/8 px-2.5 py-2">
+        <div className="mx-3 mb-2 flex items-center gap-2 rounded-[8px] bg-[var(--status-error-bg)] px-2.5 py-2">
           <Circle className="rec-dot size-2 fill-[var(--rec-indicator)] text-[var(--rec-indicator)]" />
-          <span className="text-[11px] font-semibold text-red-300">{sk.nav.recordingActive}</span>
+          <span className="text-[11px] font-medium text-[var(--status-error-fg)]">
+            {sk.nav.recordingActive}
+          </span>
         </div>
       )}
 
@@ -50,18 +52,15 @@ export function Sidebar({ view, onChange, locked = false, recording = false }: S
               onClick={() => !disabled && onChange(item.id)}
               disabled={disabled}
               className={cn(
-                "relative h-9 w-full justify-start gap-2.5 px-2.5 text-[13px] font-normal",
+                "h-8 w-full justify-start gap-2 rounded-[7px] px-2.5 text-[13px] font-normal",
                 active
-                  ? "bg-[var(--sidebar-active)] font-medium text-foreground shadow-sm"
+                  ? "bg-[var(--sidebar-active)] font-medium text-foreground"
                   : disabled
                     ? "text-muted-foreground/35"
-                    : "text-muted-foreground hover:bg-[var(--sidebar-hover)] hover:text-foreground",
+                    : "text-foreground/80 hover:bg-[var(--sidebar-hover)] hover:text-foreground",
               )}
             >
-              {active && (
-                <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-accent" />
-              )}
-              <item.icon className={cn("size-4 shrink-0", active ? "text-accent" : "opacity-70")} />
+              <item.icon className={cn("size-[15px] shrink-0", active ? "text-accent" : "opacity-70")} />
               {item.label}
             </Button>
           )
@@ -76,8 +75,8 @@ export function Sidebar({ view, onChange, locked = false, recording = false }: S
         })}
       </nav>
 
-      <div className="mt-auto px-4 py-4">
-        <p className="text-[10px] text-muted-foreground/60">{sk.app.version}</p>
+      <div className="mt-auto px-4 py-3">
+        <p className="text-[10px] text-muted-foreground/55">{sk.app.version}</p>
       </div>
     </aside>
   )
