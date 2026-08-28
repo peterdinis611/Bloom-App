@@ -61,7 +61,7 @@ pub struct FfmpegInstallResult {
     pub status: FfmpegStatus,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct VideoInfo {
     pub width: u32,
     pub height: u32,
@@ -71,6 +71,13 @@ pub struct VideoInfo {
     pub bitrate_bps: u64,
     pub size_bytes: u64,
     pub has_audio: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SubtitleCard {
+    pub text: String,
+    pub start_secs: f64,
+    pub end_secs: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -95,6 +102,23 @@ pub struct OptimizeOptions {
     /// Overwrite the source file instead of creating a new library entry.
     #[serde(default)]
     pub replace_original: bool,
+    /// Optional .srt file with timed captions (merged with subtitle_cards).
+    pub srt_path: Option<String>,
+    /// Manual text overlays burned in via ffmpeg drawtext.
+    #[serde(default)]
+    pub subtitle_cards: Vec<SubtitleCard>,
+    /// Light temporal denoise (good for screen recordings).
+    #[serde(default)]
+    pub denoise: bool,
+    /// Normalize audio loudness before export.
+    #[serde(default)]
+    pub normalize_audio: bool,
+    /// Drop the audio track entirely.
+    #[serde(default)]
+    pub remove_audio: bool,
+    /// H.265 / HEVC encode for smaller MP4 (when supported).
+    #[serde(default)]
+    pub use_hevc: bool,
 }
 
 fn default_true() -> bool {
@@ -111,6 +135,20 @@ pub struct ExportEstimate {
     pub size_bytes: u64,
     pub resolution_label: String,
     pub format_label: String,
+    /// When true, export will remux without re-encoding (very fast).
+    pub stream_copy: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct VideoAnalyze {
+    pub info: VideoInfo,
+    pub suggested_preset: String,
+    pub suggested_resolution: String,
+    pub can_stream_copy_trim: bool,
+    pub bitrate_mbps: f64,
+    pub bytes_per_sec: f64,
+    pub has_room_to_compress: bool,
+    pub notes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -823,18 +861,317 @@ fn scale_filter(height: u32, preset: &str) -> String {
 }
 
 static VT_ENCODER: OnceLock<bool> = OnceLock::new();
+static VT_HEVC: OnceLock<bool> = OnceLock::new();
+static NVENC_ENCODER: OnceLock<bool> = OnceLock::new();
 
 /// Whether ffmpeg exposes Apple VideoToolbox H.264 encoder.
 pub(crate) fn videotoolbox_available(ffmpeg: &Path) -> bool {
-    *VT_ENCODER.get_or_init(|| {
-        Command::new(ffmpeg)
-            .args(["-hide_banner", "-encoders"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).contains("h264_videotoolbox"))
-            .unwrap_or(false)
-    })
+    *VT_ENCODER.get_or_init(|| encoder_available(ffmpeg, "h264_videotoolbox"))
+}
+
+fn hevc_videotoolbox_available(ffmpeg: &Path) -> bool {
+    *VT_HEVC.get_or_init(|| encoder_available(ffmpeg, "hevc_videotoolbox"))
+}
+
+fn nvenc_available(ffmpeg: &Path) -> bool {
+    *NVENC_ENCODER.get_or_init(|| encoder_available(ffmpeg, "h264_nvenc"))
+}
+
+fn encoder_available(ffmpeg: &Path, name: &str) -> bool {
+    Command::new(ffmpeg)
+        .args(["-hide_banner", "-encoders"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains(name))
+        .unwrap_or(false)
+}
+
+fn has_subtitles(opts: &OptimizeOptions) -> bool {
+    !opts.subtitle_cards.is_empty()
+        || opts
+            .srt_path
+            .as_ref()
+            .is_some_and(|p| !p.trim().is_empty())
+}
+
+fn is_h264_codec(codec: &str) -> bool {
+    matches!(codec, "h264" | "avc1" | "avc" | "h264_videotoolbox")
+}
+
+/// Trim-only export without re-encode when filters/codecs unchanged.
+pub(crate) fn can_stream_copy(opts: &OptimizeOptions, info: &VideoInfo) -> bool {
+    opts.format == "mp4"
+        && opts.resolution == "original"
+        && effective_speed(opts.speed) == 1.0
+        && !opts.use_hevc
+        && !opts.denoise
+        && !opts.normalize_audio
+        && !opts.remove_audio
+        && !has_subtitles(opts)
+        && is_h264_codec(&info.codec)
+}
+
+fn build_stream_copy_args(opts: &OptimizeOptions, input: &str, output: &str) -> Vec<String> {
+    let mut a: Vec<String> = vec!["-y".into(), "-hide_banner".into(), "-loglevel".into(), "error".into()];
+    if let Some(start) = opts.trim_start {
+        if start > 0.0 {
+            a.push("-ss".into());
+            a.push(format!("{start:.3}"));
+        }
+    }
+    a.push("-i".into());
+    a.push(input.to_string());
+    if let Some(dur) = trim_duration(opts) {
+        a.push("-t".into());
+        a.push(format!("{dur:.3}"));
+    }
+    a.extend([
+        "-c".into(),
+        "copy".into(),
+        "-movflags".into(),
+        "+faststart".into(),
+        "-progress".into(),
+        "pipe:1".into(),
+        "-nostats".into(),
+        output.to_string(),
+    ]);
+    a
+}
+
+fn denoise_filter(preset: &str) -> &'static str {
+    if preset == "high" {
+        "hqdn3d=2:1:3:2"
+    } else {
+        "hqdn3d=3:2:4:3"
+    }
+}
+
+fn append_video_filters(vf: &mut Vec<String>, opts: &OptimizeOptions, height: Option<u32>, format: &str) {
+    if format == "gif" {
+        vf.push("fps=12".into());
+        vf.push(scale_filter(height.unwrap_or(480), &opts.preset));
+    } else if let Some(h) = height {
+        vf.push(scale_filter(h, &opts.preset));
+    }
+    let speed = effective_speed(opts.speed);
+    if speed != 1.0 {
+        vf.push(format!("setpts=PTS/{speed}"));
+    }
+    if opts.denoise && format != "gif" {
+        vf.push(denoise_filter(&opts.preset).into());
+    }
+    vf.extend(subtitle_drawtext_filters(opts));
+}
+
+fn append_audio_filters(af: &mut Vec<String>, opts: &OptimizeOptions, speed: f64) {
+    if opts.normalize_audio {
+        af.push("dynaudnorm=f=150:g=12".into());
+    }
+    if speed != 1.0 {
+        let tempo = build_atempo_chain(speed);
+        if !tempo.is_empty() {
+            af.push(tempo);
+        }
+    }
+}
+
+fn append_mp4_video_codec(a: &mut Vec<String>, opts: &OptimizeOptions, pv: &PresetValues, hw_h264: bool, hw_hevc: bool, nvenc: bool) {
+    if opts.use_hevc {
+        if hw_hevc {
+            a.extend([
+                "-c:v", "hevc_videotoolbox",
+                "-q:v", pv.vt_quality,
+                "-tag:v", "hvc1",
+                "-allow_sw", "1",
+                "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart",
+            ]
+            .map(String::from));
+            return;
+        }
+        a.extend([
+            "-c:v", "libx265",
+            "-preset", pv.x264_preset,
+            "-crf", pv.x264_crf,
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            "-tag:v", "hvc1",
+        ]
+        .map(String::from));
+        a.push("-threads".into());
+        a.push("0".into());
+        return;
+    }
+    if hw_h264 {
+        a.extend([
+            "-c:v", "h264_videotoolbox",
+            "-q:v", pv.vt_quality,
+            "-allow_sw", "1",
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+        ]
+        .map(String::from));
+        return;
+    }
+    if nvenc {
+        a.extend([
+            "-c:v", "h264_nvenc",
+            "-preset", "p4",
+            "-rc", "vbr",
+            "-cq", pv.x264_crf,
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+        ]
+        .map(String::from));
+        return;
+    }
+    a.extend([
+        "-c:v", "libx264",
+        "-preset", pv.x264_preset,
+        "-crf", pv.x264_crf,
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        "-tune", "fastdecode",
+    ]
+    .map(String::from));
+    a.push("-threads".into());
+    a.push("0".into());
+}
+
+pub fn analyze_video_info(info: &VideoInfo) -> VideoAnalyze {
+    let duration = info.duration_secs.max(0.01);
+    let bitrate_mbps = info.bitrate_bps as f64 / 1_000_000.0;
+    let bytes_per_sec = info.size_bytes as f64 / duration;
+    let has_room_to_compress = bitrate_mbps > 4.5 || bytes_per_sec > 900_000.0;
+
+    let suggested_preset = if bitrate_mbps > 9.0 || bytes_per_sec > 1_800_000.0 {
+        "small"
+    } else if bitrate_mbps > 4.5 || bytes_per_sec > 900_000.0 {
+        "medium"
+    } else {
+        "high"
+    };
+
+    let suggested_resolution = if info.height > 1440 {
+        "1080p"
+    } else if info.height > 900 {
+        "720p"
+    } else {
+        "original"
+    };
+
+    let mut notes: Vec<String> = Vec::new();
+    if has_room_to_compress {
+        notes.push("Nahrávka má vysoký bitrate — kompresia výrazne zmenší súbor.".into());
+    }
+    if info.height > 1080 {
+        notes.push("Rozlíšenie nad 1080p — zvážte downscale na 1080p alebo 720p.".into());
+    }
+    if info.fps > 45.0 {
+        notes.push("Vysoká snímková frekvencia — export môže trvať dlhšie.".into());
+    }
+    if notes.is_empty() {
+        notes.push("Súbor je už relatívne kompaktný — preset high alebo original rozlíšenie.".into());
+    }
+
+    VideoAnalyze {
+        can_stream_copy_trim: true,
+        suggested_preset: suggested_preset.into(),
+        suggested_resolution: suggested_resolution.into(),
+        bitrate_mbps,
+        bytes_per_sec,
+        has_room_to_compress,
+        notes,
+        info: info.clone(),
+    }
+}
+
+fn escape_drawtext(text: &str) -> String {
+    text.replace('\\', "\\\\")
+        .replace(':', "\\:")
+        .replace('\'', "\\'")
+        .replace('\n', " ")
+}
+
+fn parse_srt_timestamp(raw: &str) -> Option<f64> {
+    let raw = raw.trim().replace(',', ".");
+    let parts: Vec<&str> = raw.split(':').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let h: f64 = parts[0].parse().ok()?;
+    let m: f64 = parts[1].parse().ok()?;
+    let s: f64 = parts[2].parse().ok()?;
+    Some(h * 3600.0 + m * 60.0 + s)
+}
+
+fn parse_srt(path: &str) -> Result<Vec<SubtitleCard>, String> {
+    let raw = std::fs::read_to_string(path).map_err(|e| format!("Cannot read SRT: {e}"))?;
+    let mut cards = Vec::new();
+    let mut lines = raw.lines().peekable();
+    while lines.peek().is_some() {
+        while matches!(lines.peek(), Some(l) if l.trim().is_empty()) {
+            lines.next();
+        }
+        if lines.peek().is_none() {
+            break;
+        }
+        if lines.next().is_none() {
+            break;
+        }
+        let timing = lines.next().ok_or("SRT missing timing line")?;
+        let mut parts = timing.split("-->");
+        let start = parse_srt_timestamp(parts.next().unwrap_or("")).ok_or("SRT bad start time")?;
+        let end = parse_srt_timestamp(parts.next().unwrap_or("")).ok_or("SRT bad end time")?;
+        let mut text = String::new();
+        while let Some(line) = lines.peek() {
+            if line.trim().is_empty() {
+                break;
+            }
+            if !text.is_empty() {
+                text.push(' ');
+            }
+            text.push_str(line.trim());
+            lines.next();
+        }
+        if !text.is_empty() && end > start {
+            cards.push(SubtitleCard {
+                text,
+                start_secs: start,
+                end_secs: end,
+            });
+        }
+    }
+    Ok(cards)
+}
+
+fn collect_subtitle_cards(opts: &OptimizeOptions) -> Vec<SubtitleCard> {
+    let mut cards = opts.subtitle_cards.clone();
+    if let Some(path) = opts.srt_path.as_ref().filter(|p| !p.trim().is_empty()) {
+        if let Ok(mut parsed) = parse_srt(path) {
+            cards.append(&mut parsed);
+        }
+    }
+    cards
+}
+
+fn subtitle_drawtext_filters(opts: &OptimizeOptions) -> Vec<String> {
+    let trim_start = opts.trim_start.unwrap_or(0.0);
+    collect_subtitle_cards(opts)
+        .into_iter()
+        .filter_map(|card| {
+            if card.text.trim().is_empty() {
+                return None;
+            }
+            let start = (card.start_secs - trim_start).max(0.0);
+            let end = (card.end_secs - trim_start).max(start + 0.05);
+            let text = escape_drawtext(card.text.trim());
+            Some(format!(
+                "drawtext=text='{text}':fontsize=28:fontcolor=white:borderw=2:bordercolor=black@0.55:x=(w-text_w)/2:y=h*0.82:enable='between(t\\,{start:.3}\\,{end:.3})'"
+            ))
+        })
+        .collect()
 }
 
 fn hwaccel_input_args() -> Vec<String> {
@@ -852,14 +1189,19 @@ fn build_args(
     opts: &OptimizeOptions,
     input: &str,
     output: &str,
-    has_audio: bool,
-    hw_encode: bool,
+    info: &VideoInfo,
+    hw_h264: bool,
+    hw_hevc: bool,
+    nvenc: bool,
 ) -> Vec<String> {
+    if can_stream_copy(opts, info) {
+        return build_stream_copy_args(opts, input, output);
+    }
+
     let mut a: Vec<String> = vec!["-y".into(), "-hide_banner".into(), "-loglevel".into(), "error".into()];
 
     a.extend(hwaccel_input_args());
 
-    // Fast input-side seek for trimming.
     if let Some(start) = opts.trim_start {
         if start > 0.0 {
             a.push("-ss".into());
@@ -869,7 +1211,6 @@ fn build_args(
     a.push("-i".into());
     a.push(input.to_string());
 
-    // Duration (from trim window).
     if let Some(dur) = trim_duration(opts) {
         a.push("-t".into());
         a.push(format!("{dur:.3}"));
@@ -879,37 +1220,28 @@ fn build_args(
     let pv = preset_values(&opts.preset);
     let format = opts.format.as_str();
     let speed = effective_speed(opts.speed);
+    let use_audio = info.has_audio && !opts.remove_audio;
 
-    // Video filters
     let mut vf: Vec<String> = Vec::new();
-    if format == "gif" {
-        vf.push("fps=12".into());
-        vf.push(scale_filter(height.unwrap_or(480), &opts.preset));
-    } else if let Some(h) = height {
-        vf.push(scale_filter(h, &opts.preset));
-    }
-    if speed != 1.0 {
-        vf.push(format!("setpts=PTS/{speed}"));
-    }
+    append_video_filters(&mut vf, opts, height, format);
     if !vf.is_empty() {
         a.push("-vf".into());
         a.push(vf.join(","));
     }
 
-    // Audio tempo (skip for GIF).
-    if has_audio && speed != 1.0 && format != "gif" {
-        let af = build_atempo_chain(speed);
+    if use_audio && format != "gif" {
+        let mut af: Vec<String> = Vec::new();
+        append_audio_filters(&mut af, opts, speed);
         if !af.is_empty() {
             a.push("-af".into());
-            a.push(af);
+            a.push(af.join(","));
         }
     }
 
-    // Codecs per container
     match format {
         "webm" => {
             a.extend(["-c:v", "libvpx-vp9", "-b:v", "0", "-crf", pv.vp9_crf, "-row-mt", "1"].map(String::from));
-            if has_audio {
+            if use_audio {
                 a.extend(["-c:a", "libopus", "-b:a", pv.audio_bitrate].map(String::from));
             } else {
                 a.push("-an".into());
@@ -919,29 +1251,8 @@ fn build_args(
             a.extend(["-loop", "0", "-an"].map(String::from));
         }
         _ => {
-            if hw_encode {
-                a.extend([
-                    "-c:v", "h264_videotoolbox",
-                    "-q:v", pv.vt_quality,
-                    "-allow_sw", "1",
-                    "-pix_fmt", "yuv420p",
-                    "-movflags", "+faststart",
-                ]
-                .map(String::from));
-            } else {
-                a.extend([
-                    "-c:v", "libx264",
-                    "-preset", pv.x264_preset,
-                    "-crf", pv.x264_crf,
-                    "-pix_fmt", "yuv420p",
-                    "-movflags", "+faststart",
-                    "-tune", "fastdecode",
-                ]
-                .map(String::from));
-                a.push("-threads".into());
-                a.push("0".into());
-            }
-            if has_audio {
+            append_mp4_video_codec(&mut a, opts, &pv, hw_h264, hw_hevc, nvenc);
+            if use_audio {
                 a.extend(["-c:a", "aac", "-b:a", pv.audio_bitrate].map(String::from));
             } else {
                 a.push("-an".into());
@@ -949,7 +1260,6 @@ fn build_args(
         }
     }
 
-    // Machine-readable progress on stdout.
     a.extend(["-progress", "pipe:1", "-nostats"].map(String::from));
     a.push(output.to_string());
     a
@@ -1091,6 +1401,7 @@ pub fn compute_export_estimate(info: &VideoInfo, opts: &OptimizeOptions) -> Expo
     let source_duration = trim_duration(opts).unwrap_or(info.duration_secs).max(0.0);
     let speed = effective_speed(opts.speed);
     let out_duration = (source_duration / speed).max(0.0);
+    let stream_copy = can_stream_copy(opts, info);
 
     let mut size = info.size_bytes as f64;
     if info.duration_secs > 0.0 {
@@ -1098,31 +1409,53 @@ pub fn compute_export_estimate(info: &VideoInfo, opts: &OptimizeOptions) -> Expo
     }
     size /= speed;
 
-    let preset_factor = match opts.preset.as_str() {
-        "small" => 0.38,
-        "high" => 0.82,
-        _ => 0.58,
-    };
-    size *= preset_factor;
-
-    if let Some(h) = resolution_height(&opts.resolution) {
-        if info.height > 0 {
-            let scale = (h as f64 / info.height as f64).min(1.0);
-            size *= scale * scale;
+    if stream_copy {
+        ExportEstimate {
+            duration_secs: out_duration,
+            size_bytes: size.max(1024.0) as u64,
+            resolution_label: opts.resolution.clone(),
+            format_label: opts.format.to_uppercase(),
+            stream_copy: true,
         }
-    }
+    } else {
+        let preset_factor = match opts.preset.as_str() {
+            "small" => 0.38,
+            "high" => 0.82,
+            _ => 0.58,
+        };
+        size *= preset_factor;
 
-    size = match opts.format.as_str() {
-        "gif" => size * 0.45,
-        "webm" => size * 0.92,
-        _ => size,
-    };
+        if let Some(h) = resolution_height(&opts.resolution) {
+            if info.height > 0 {
+                let scale = (h as f64 / info.height as f64).min(1.0);
+                size *= scale * scale;
+            }
+        }
 
-    ExportEstimate {
-        duration_secs: out_duration,
-        size_bytes: size.max(1024.0) as u64,
-        resolution_label: opts.resolution.clone(),
-        format_label: opts.format.to_uppercase(),
+        if opts.use_hevc {
+            size *= 0.62;
+        }
+        if opts.denoise {
+            size *= 0.95;
+        }
+
+        size = match opts.format.as_str() {
+            "gif" => size * 0.45,
+            "webm" => size * 0.92,
+            _ => size,
+        };
+
+        ExportEstimate {
+            duration_secs: out_duration,
+            size_bytes: size.max(1024.0) as u64,
+            resolution_label: opts.resolution.clone(),
+            format_label: if opts.use_hevc && opts.format == "mp4" {
+                "HEVC MP4".into()
+            } else {
+                opts.format.to_uppercase()
+            },
+            stream_copy: false,
+        }
     }
 }
 
@@ -1386,6 +1719,10 @@ fn run_optimize(
 
     let final_size = std::fs::metadata(&final_path).map(|m| m.len()).unwrap_or(size);
 
+    if opts.format == "mp4" {
+        let _ = remux_mp4_faststart(&ffmpeg_thumb, &final_path);
+    }
+
     emit(OptimizeProgress {
         job_id: job_id.clone(),
         percent: 100.0,
@@ -1453,12 +1790,14 @@ pub fn optimize_video(
 
     // Determine total duration for progress (trimmed window or full clip).
     let info = probe(&ffprobe, &options.input_path)?;
-    let has_audio = info.has_audio;
     let total_secs = trim_duration(&options).unwrap_or(info.duration_secs)
         / effective_speed(options.speed);
 
     if options.replace_original && options.format != "mp4" {
         return Err("Nahradenie originálu je podporované len pre MP4.".into());
+    }
+    if options.replace_original && options.use_hevc {
+        return Err("Nahradenie originálu nepodporuje HEVC.".into());
     }
 
     let output = if options.replace_original {
@@ -1466,13 +1805,17 @@ pub fn optimize_video(
     } else {
         build_output_path(&options, &input)
     };
-    let hw_encode = videotoolbox_available(&ffmpeg);
+    let hw_h264 = videotoolbox_available(&ffmpeg);
+    let hw_hevc = hevc_videotoolbox_available(&ffmpeg);
+    let nvenc = nvenc_available(&ffmpeg) && !hw_h264;
     let args = build_args(
         &options,
         &options.input_path,
         &output.to_string_lossy(),
-        has_audio,
-        hw_encode,
+        &info,
+        hw_h264,
+        hw_hevc,
+        nvenc,
     );
 
     let job_id = Uuid::new_v4().to_string();
@@ -1501,6 +1844,14 @@ pub fn optimize_video(
     });
 
     Ok(job_id)
+}
+
+#[tauri::command]
+pub fn analyze_video(path: String) -> Result<VideoAnalyze, String> {
+    let ffprobe = find_ffprobe(find_ffmpeg().as_deref())
+        .ok_or_else(|| "ffprobe not found".to_string())?;
+    let info = probe(&ffprobe, &path)?;
+    Ok(analyze_video_info(&info))
 }
 
 #[tauri::command]

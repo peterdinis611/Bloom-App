@@ -320,14 +320,8 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
         <span className="viewfinder-corner viewfinder-corner-tr" />
         <span className="viewfinder-corner viewfinder-corner-bl" />
         <span className="viewfinder-corner viewfinder-corner-br" />
-        {isRecording && (
-          <>
-            <span className="aperture-bloom" />
-            <span className="aperture-bloom" />
-            <span className="aperture-bloom" />
-          </>
-        )}
       </div>
+      <div className="aperture-bloom" aria-hidden />
 
       {showFullFault && fault && <PreviewFaultPanel fault={fault} details={details} />}
 
@@ -953,7 +947,7 @@ export function RecordPage({ active = true, onRecordingChange }: RecordPageProps
 
   return (
     <div className="flex h-full flex-col">
-      <MacPageHeader title={sk.record.title} subtitle={sk.record.subtitle} />
+      <MacPageHeader eyebrow={sk.pageEyebrow.record} title={sk.record.title} subtitle={sk.record.subtitle} />
 
       <PageScrollArea active={active}>
       <div className="flex flex-col gap-3 px-6 pb-4 pt-3">

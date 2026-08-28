@@ -4,6 +4,7 @@ use serde::Deserialize;
 use std::fs;
 use std::path::Path;
 
+use crate::share;
 use crate::types::{LibraryStats, RecordingEntry, RecordingMeta, ValidationResult};
 use crate::util::{bloom_dir, find_recording, load_all_recordings};
 
@@ -158,7 +159,7 @@ pub(crate) fn delete_all_recordings(app: tauri::AppHandle) -> Result<u32, String
 pub(crate) fn share_recording(app: tauri::AppHandle, id: String) -> Result<String, String> {
     let dir = bloom_dir(&app)?;
     let entry = find_recording(&dir, &id).ok_or_else(|| format!("Recording {id} not found"))?;
-    reveal_in_finder(entry.path.clone())?;
+    share::share_file(&app, &entry.path)?;
     Ok(entry.path)
 }
 

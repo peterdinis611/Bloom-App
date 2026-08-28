@@ -3,6 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { ToastProvider } from "@/hooks/useToast"
 import { SettingsProvider } from "@/hooks/useSettings"
 import { TanStackRoot } from "@/components/TanStackRoot"
+import { ExportQueueProvider } from "@/hooks/useExportQueue"
 import { TitleBar } from "@/components/layout/TitleBar"
 import { Sidebar, type AppView } from "@/components/layout/Sidebar"
 import { RecordPage } from "@/pages/RecordPage"
@@ -17,8 +18,9 @@ function App() {
     <TanStackRoot>
       <ToastProvider>
       <SettingsProvider>
+        <ExportQueueProvider>
         <TooltipProvider delayDuration={300}>
-        <div className="flex h-screen w-screen flex-col overflow-hidden bg-background">
+        <div className="bloom-shell flex h-screen w-screen flex-col overflow-hidden bg-background">
           <TitleBar />
           <div className="flex min-h-0 flex-1">
             <Sidebar
@@ -27,7 +29,7 @@ function App() {
               locked={recording}
               recording={recording}
             />
-            <main className="mac-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <main className="mac-main bloom-stage flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
               <div className={view === "record" ? "flex h-full min-h-0 flex-1 flex-col" : "hidden"}>
                 <RecordPage active={view === "record"} onRecordingChange={setRecording} />
               </div>
@@ -39,6 +41,7 @@ function App() {
           </div>
         </div>
         </TooltipProvider>
+        </ExportQueueProvider>
       </SettingsProvider>
       </ToastProvider>
     </TanStackRoot>

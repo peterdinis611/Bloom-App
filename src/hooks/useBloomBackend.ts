@@ -22,6 +22,7 @@ import type {
   RecordingMeta,
   SessionMeta,
   ValidationResult,
+  VideoAnalyze,
   VideoInfo,
 } from "@/types"
 
@@ -142,7 +143,7 @@ export async function deleteAllRecordings(): Promise<number> {
   return invoke<number>("delete_all_recordings")
 }
 
-/** Reveal recording in Finder for sharing (AirDrop, Mail, …). */
+/** Opens the native macOS share sheet for a recording (AirDrop, Mail, …). */
 export async function shareRecording(id: string): Promise<string> {
   return invoke<string>("share_recording", { id })
 }
@@ -194,6 +195,11 @@ export async function getFilmstrip(path: string, frameCount?: number): Promise<s
 /** Estimate output size and duration before export. */
 export async function estimateExport(options: OptimizeOptions): Promise<ExportEstimate> {
   return invoke<ExportEstimate>("estimate_export", { options })
+}
+
+/** Analyze a recording and suggest preset/resolution for optimization. */
+export async function analyzeVideo(path: string): Promise<VideoAnalyze> {
+  return invoke<VideoAnalyze>("analyze_video", { path })
 }
 
 /**

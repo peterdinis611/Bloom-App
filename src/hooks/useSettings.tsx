@@ -4,6 +4,7 @@ import {
   ANNOTATION_COLORS,
   DEFAULT_ANNOTATION_COLOR,
   DEFAULT_THEME,
+  isThemeId,
   type ThemeId,
 } from "@/lib/themes"
 import { PACER } from "@/lib/pacer"
@@ -68,9 +69,11 @@ function loadSettings(): AppSettings {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return DEFAULTS
     const parsed = JSON.parse(raw) as Partial<AppSettings>
+    const theme = isThemeId(parsed.theme) ? parsed.theme : DEFAULT_THEME
     return {
       ...DEFAULTS,
       ...parsed,
+      theme,
       annotation: { ...DEFAULTS.annotation, ...parsed.annotation },
       recording: { ...DEFAULTS.recording, ...parsed.recording, presets: parsed.recording?.presets ?? DEFAULTS.recording.presets },
     }

@@ -53,12 +53,14 @@ import {
   formatBytes,
   formatDurationSecs,
 } from "@/hooks/useBloomBackend"
+import { useExportQueue } from "@/hooks/useExportQueue"
 import { VideoPlayerModal } from "@/components/video/VideoPlayerModal"
 import { EditorModal } from "@/components/editor/EditorModal"
 import { BatchOptimizeModal } from "@/components/BatchOptimizeModal"
 import { ConfirmDeleteAll } from "@/components/library/ConfirmDeleteAll"
 import { PageScrollArea } from "@/components/layout/PageScrollArea"
 import { MacPageHeader } from "@/components/mac/MacUIKit"
+import { MacSelect } from "@/components/mac/MacSelect"
 import { sk } from "@/lib/i18n/sk"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -554,7 +556,14 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
     }
   }, [])
 
+  const { activeCount } = useExportQueue()
+  const prevQueueActive = useRef(0)
+
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    if (prevQueueActive.current > 0 && activeCount === 0) void load()
+    prevQueueActive.current = activeCount
+  }, [activeCount, load])
   useEffect(() => { recheckFfmpeg() }, [recheckFfmpeg])
 
   const copyInstall = useCallback(() => {
@@ -706,6 +715,7 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
   return (
     <div className="flex h-full flex-col">
       <MacPageHeader
+        eyebrow={sk.pageEyebrow.library}
         title={sk.library.title}
         subtitle={loading ? sk.library.loading : stats ? sk.library.recordingCount(stats.total_recordings) : sk.library.subtitle}
         actions={
@@ -819,14 +829,16 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
           >
             <Star className={cn("size-3", starredOnly && "fill-current")} /> {sk.library.starred}
           </button>
-          <select
+          <MacSelect
             value={folderFilter}
-            onChange={(e) => setFolderFilter(e.target.value)}
-            className="min-h-[36px] rounded-lg border border-border/60 bg-[var(--surface)] px-3 py-2 text-[12px] font-medium text-foreground outline-none"
-          >
-            <option value="">{sk.library.allFolders}</option>
-            {folders.map((f) => <option key={f} value={f}>{f}</option>)}
-          </select>
+            onChange={setFolderFilter}
+            placeholder={sk.library.allFolders}
+            icon={Folder}
+            options={[
+              { value: "", label: sk.library.allFolders },
+              ...folders.map((f) => ({ value: f, label: f })),
+            ]}
+          />
           {batchMode && selectedIds.size > 0 && ffmpeg?.available && (
             <button
               onClick={() => {
@@ -909,7 +921,14 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
                 onPlay={() => setPlaying(entry)}
                 onDelete={() => setConfirmId(entry.meta.id)}
                 onReveal={() => revealInFinder(entry.path).catch((e) => setError(String(e)))}
-                onShare={() => shareRecording(entry.meta.id).catch((e) => setError(String(e)))}
+                onShare={async () => {
+                  try {
+                    await shareRecording(entry.meta.id)
+                    toastSuccess({ title: sk.library.shareOpened })
+                  } catch (e) {
+                    toastError({ title: sk.library.shareFailed, description: String(e) })
+                  }
+                }}
                 onRename={(title) => handleRename(entry.meta.id, title)}
                 onValidate={() => handleValidate(entry.meta.id)}
                 onEdit={() => setEditing(entry)}

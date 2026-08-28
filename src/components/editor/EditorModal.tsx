@@ -4,13 +4,11 @@ import {
   Scissors,
   Sparkles,
   Check,
-  CircleAlert,
-  FolderOpen,
-  LoaderCircle,
   ChevronLeft,
   ChevronRight,
   FileVideo,
   Zap,
+  SplitSquareHorizontal,
 } from "lucide-react"
 import { useCloseOnEscape } from "@/hooks/useCloseOnEscape"
 import { cn } from "@/lib/utils"
@@ -18,29 +16,40 @@ import { sk, type OptimizeSpeed } from "@/lib/i18n/sk"
 import { ChoiceGroup } from "@/components/mac/MacUIKit"
 import { OPTIMIZE_SPEEDS, speedToNumber } from "@/lib/videoOptions"
 import { clampTrimRange, formatEditorTime, parseEditorTime } from "@/lib/editorTime"
+import {
+  defaultSegments,
+  mergeSegment,
+  segmentDuration,
+  splitSegmentAt,
+  totalSegmentsDuration,
+  updateSegment,
+  type EditorSegment,
+} from "@/lib/editorSegments"
 import { FilmstripTimeline } from "@/components/editor/FilmstripTimeline"
+import { CompareSlider } from "@/components/editor/CompareSlider"
 import { BloomVideoPlayer, type BloomVideoPlayerHandle } from "@/components/video/BloomVideoPlayer"
+import { useExportQueue } from "@/hooks/useExportQueue"
 import type {
   ExportEstimate,
   OptimizeFormat,
+  OptimizeOptions,
   OptimizePreset,
   OptimizeResolution,
   RecordingEntry,
+  SubtitleCard,
+  VideoAnalyze,
   VideoInfo,
 } from "@/types"
 import {
-  cancelOptimize,
+  analyzeVideo,
   estimateExport,
   formatBytes,
   formatDurationSecs,
   getFilmstrip,
   getVideoInfo,
-  onOptimizeProgress,
-  optimizeVideo,
-  revealInFinder,
 } from "@/hooks/useBloomBackend"
 
-type Step = "preview" | "trim" | "export" | "running" | "done" | "error"
+type Step = "preview" | "trim" | "export" | "queued"
 type SaveMode = "copy" | "replace"
 
 const STEPS: Step[] = ["preview", "trim", "export"]
@@ -76,12 +85,14 @@ interface EditorModalProps {
 }
 
 function StepIndicator({ step }: { step: Step }) {
-  const idx = STEPS.indexOf(step)
+  const visualStep = step === "queued" ? "export" : step
+  const idx = STEPS.indexOf(visualStep)
+  const allDone = step === "queued"
   return (
     <div className="flex items-center gap-1.5">
       {STEPS.map((s, i) => {
-        const active = i === idx
-        const done = idx > i
+        const active = i === idx && !allDone
+        const done = i < idx || allDone
         const labels = sk.editor.steps
         const label = s === "preview" ? labels.preview : s === "trim" ? labels.trim : labels.export
         return (
@@ -107,16 +118,20 @@ function StepIndicator({ step }: { step: Step }) {
   )
 }
 
+function fileStem(path: string): string {
+  const base = path.split(/[/\\]/).pop() ?? "video"
+  return base.replace(/\.[^.]+$/, "")
+}
+
 export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
   const playerRef = useRef<BloomVideoPlayerHandle>(null)
-  const jobIdRef = useRef<string | null>(null)
-  const unlistenRef = useRef<(() => void) | null>(null)
+  const { enqueue } = useExportQueue()
 
   const [step, setStep] = useState<Step>("preview")
   const [info, setInfo] = useState<VideoInfo | null>(null)
   const [duration, setDuration] = useState(entry.meta.duration_secs)
-  const [trimStart, setTrimStart] = useState(0)
-  const [trimEnd, setTrimEnd] = useState(entry.meta.duration_secs)
+  const [segments, setSegments] = useState<EditorSegment[]>(() => defaultSegments(entry.meta.duration_secs))
+  const [activeSegment, setActiveSegment] = useState(0)
   const [playhead, setPlayhead] = useState(0)
   const [startText, setStartText] = useState("0:00.00")
   const [endText, setEndText] = useState(formatEditorTime(entry.meta.duration_secs))
@@ -131,58 +146,62 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
   const [speed, setSpeed] = useState<OptimizeSpeed>("1")
   const [saveMode, setSaveMode] = useState<SaveMode>("copy")
   const [estimate, setEstimate] = useState<ExportEstimate | null>(null)
+  const [previewEstimate, setPreviewEstimate] = useState<ExportEstimate | null>(null)
   const [estimateLoading, setEstimateLoading] = useState(false)
+  const [queuedCount, setQueuedCount] = useState(0)
 
-  const [percent, setPercent] = useState(0)
-  const [result, setResult] = useState<{ path: string; size: number } | null>(null)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [subtitlesOn, setSubtitlesOn] = useState(false)
+  const [srtPath, setSrtPath] = useState("")
+  const [cards, setCards] = useState<SubtitleCard[]>([{ text: "", start_secs: 0, end_secs: 3 }])
+  const [denoise, setDenoise] = useState(false)
+  const [normalizeAudio, setNormalizeAudio] = useState(false)
+  const [removeAudio, setRemoveAudio] = useState(false)
+  const [useHevc, setUseHevc] = useState(false)
+  const [analysis, setAnalysis] = useState<VideoAnalyze | null>(null)
 
-  const replaceOriginal = saveMode === "replace"
+  const active = segments[activeSegment] ?? segments[0]!
+  const multiClip = segments.length > 1
+  const replaceOriginal = saveMode === "replace" && !multiClip
 
-  const exportOptions = useMemo(
-    () => ({
+  const baseOptions = useMemo(
+    (): Omit<OptimizeOptions, "trim_start" | "trim_end" | "output_name"> => ({
       input_path: entry.path,
       preset,
       resolution,
       format,
       speed: speedToNumber(speed),
-      trim_start: trimStart,
-      trim_end: trimEnd,
       add_to_library: !replaceOriginal,
       replace_original: replaceOriginal,
+      srt_path: subtitlesOn && srtPath.trim() ? srtPath.trim() : null,
+      subtitle_cards: subtitlesOn
+        ? cards.filter((c) => c.text.trim() && c.end_secs > c.start_secs)
+        : [],
+      denoise,
+      normalize_audio: normalizeAudio,
+      remove_audio: removeAudio,
+      use_hevc: useHevc,
     }),
-    [entry.path, preset, resolution, format, speed, trimStart, trimEnd, replaceOriginal],
+    [entry.path, preset, resolution, format, speed, replaceOriginal, subtitlesOn, srtPath, cards, denoise, normalizeAudio, removeAudio, useHevc],
   )
+
+  const syncFieldsFromSegment = useCallback((seg: EditorSegment) => {
+    setStartText(formatEditorTime(seg.start))
+    setEndText(formatEditorTime(seg.end))
+    setStartError(false)
+    setEndError(false)
+  }, [])
 
   useEffect(() => {
     getVideoInfo(entry.path)
       .then((i) => {
         setInfo(i)
         setDuration(i.duration_secs)
-        setTrimEnd(i.duration_secs)
-        setEndText(formatEditorTime(i.duration_secs))
+        const segs = defaultSegments(i.duration_secs)
+        setSegments(segs)
+        syncFieldsFromSegment(segs[0]!)
       })
       .catch(() => {})
-
-    let disposed = false
-    onOptimizeProgress((p) => {
-      if (p.job_id !== jobIdRef.current) return
-      if (!p.done) { setPercent(p.percent); return }
-      if (p.cancelled) { setStep("export"); setPercent(0); return }
-      if (p.error) { setErrorMsg(p.error); setStep("error"); return }
-      setPercent(100)
-      setResult({ path: p.output_path ?? "", size: p.output_size_bytes ?? 0 })
-      setStep("done")
-    }).then((un) => {
-      if (disposed) un()
-      else unlistenRef.current = un
-    })
-
-    return () => {
-      disposed = true
-      unlistenRef.current?.()
-    }
-  }, [entry.path])
+  }, [entry.path, syncFieldsFromSegment])
 
   useEffect(() => {
     if (step !== "trim") return
@@ -194,81 +213,122 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
   }, [entry.path, step])
 
   useEffect(() => {
-    if (step !== "export") return
-    if (replaceOriginal && format !== "mp4") {
-      setFormat("mp4")
-      return
-    }
+    if (step !== "preview" && step !== "export") return
+    const seg = segments[0]!
     setEstimateLoading(true)
     const timer = window.setTimeout(() => {
-      estimateExport(exportOptions)
-        .then(setEstimate)
-        .catch(() => setEstimate(null))
+      const opts: OptimizeOptions = {
+        ...baseOptions,
+        trim_start: multiClip ? null : seg.start,
+        trim_end: multiClip ? null : seg.end,
+      }
+      estimateExport(opts)
+        .then((e) => {
+          if (step === "preview") setPreviewEstimate(e)
+          else setEstimate(e)
+        })
+        .catch(() => {
+          if (step === "preview") setPreviewEstimate(null)
+          else setEstimate(null)
+        })
         .finally(() => setEstimateLoading(false))
     }, 180)
     return () => window.clearTimeout(timer)
-  }, [step, exportOptions, replaceOriginal, format])
+  }, [step, baseOptions, segments, multiClip])
 
-  useCloseOnEscape(onClose, step !== "running")
+  useEffect(() => {
+    if (step !== "export") return
+    analyzeVideo(entry.path).then(setAnalysis).catch(() => setAnalysis(null))
+  }, [entry.path, step])
 
-  const syncTrim = useCallback((start: number, end: number) => {
+  useEffect(() => {
+    if (step !== "export") return
+    if (replaceOriginal && format !== "mp4") setFormat("mp4")
+    if (multiClip && saveMode === "replace") setSaveMode("copy")
+  }, [step, replaceOriginal, format, multiClip, saveMode])
+
+  useCloseOnEscape(onClose, step !== "queued")
+
+  const syncActiveSegment = useCallback((start: number, end: number) => {
     const next = clampTrimRange(duration, start, end)
-    setTrimStart(next.start)
-    setTrimEnd(next.end)
-    setStartText(formatEditorTime(next.start))
-    setEndText(formatEditorTime(next.end))
-    setStartError(false)
-    setEndError(false)
-  }, [duration])
+    setSegments((prev) => updateSegment(prev, activeSegment, next.start, next.end, duration))
+    syncFieldsFromSegment({ start: next.start, end: next.end })
+  }, [duration, activeSegment, syncFieldsFromSegment])
 
   const applyStartField = useCallback(() => {
     const parsed = parseEditorTime(startText)
     if (parsed === null) { setStartError(true); return }
-    syncTrim(parsed, trimEnd)
-  }, [startText, trimEnd, syncTrim])
+    syncActiveSegment(parsed, active.end)
+  }, [startText, active.end, syncActiveSegment])
 
   const applyEndField = useCallback(() => {
     const parsed = parseEditorTime(endText)
     if (parsed === null) { setEndError(true); return }
-    syncTrim(trimStart, parsed)
-  }, [endText, trimStart, syncTrim])
+    syncActiveSegment(active.start, parsed)
+  }, [endText, active.start, syncActiveSegment])
 
   const setInAtPlayhead = useCallback(() => {
-    syncTrim(playhead, trimEnd)
-  }, [playhead, trimEnd, syncTrim])
+    syncActiveSegment(playhead, active.end)
+  }, [playhead, active.end, syncActiveSegment])
 
   const setOutAtPlayhead = useCallback(() => {
-    syncTrim(trimStart, playhead)
-  }, [playhead, trimStart, syncTrim])
+    syncActiveSegment(active.start, playhead)
+  }, [playhead, active.start, syncActiveSegment])
 
-  const startExport = useCallback(async () => {
-    setErrorMsg(null)
-    setPercent(0)
-    setStep("running")
-    try {
-      const id = await optimizeVideo(exportOptions)
-      jobIdRef.current = id
-    } catch (e) {
-      setErrorMsg(String(e))
-      setStep("error")
+  const splitAtPlayhead = useCallback(() => {
+    const next = splitSegmentAt(segments, activeSegment, playhead)
+    if (next) {
+      setSegments(next)
+      setActiveSegment(activeSegment + 1)
+      syncFieldsFromSegment(next[activeSegment + 1]!)
     }
-  }, [exportOptions])
+  }, [segments, activeSegment, playhead, syncFieldsFromSegment])
 
-  const cancel = useCallback(() => {
-    if (jobIdRef.current) cancelOptimize(jobIdRef.current).catch(() => {})
-  }, [])
+  const buildExportJobs = useCallback(() => {
+    const stem = fileStem(entry.path)
+    const subtitleOpts = {
+      srt_path: baseOptions.srt_path,
+      subtitle_cards: baseOptions.subtitle_cards,
+    }
+    if (multiClip) {
+      return segments.map((seg, i) => ({
+        label: `${entry.meta.title} — ${sk.editor.segment(i + 1)}`,
+        options: {
+          ...baseOptions,
+          trim_start: seg.start,
+          trim_end: seg.end,
+          output_name: `${stem}-cast${i + 1}`,
+          add_to_library: true,
+          replace_original: false,
+          ...subtitleOpts,
+        } satisfies OptimizeOptions,
+      }))
+    }
+    return [{
+      label: entry.meta.title,
+      options: {
+        ...baseOptions,
+        trim_start: active.start,
+        trim_end: active.end,
+        ...subtitleOpts,
+      } satisfies OptimizeOptions,
+    }]
+  }, [entry, baseOptions, multiClip, segments, active])
 
-  const reduction =
-    result && result.size > 0 && entry.meta.file_size_bytes > 0
-      ? Math.round((1 - result.size / entry.meta.file_size_bytes) * 100)
-      : null
+  const startExport = useCallback(() => {
+    const jobs = buildExportJobs()
+    enqueue(jobs)
+    setQueuedCount(jobs.length)
+    onComplete()
+    setStep("queued")
+  }, [buildExportJobs, enqueue, onComplete])
 
-  const clipDuration = Math.max(0, trimEnd - trimStart)
+  const clipDuration = multiClip ? totalSegmentsDuration(segments) : segmentDuration(active)
 
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4 fade-up"
-      onClick={() => step !== "running" && onClose()}
+      onClick={() => step !== "queued" && onClose()}
     >
       <div
         className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
@@ -284,14 +344,13 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
           </div>
           <button
             onClick={onClose}
-            disabled={step === "running"}
-            className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-30"
+            className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
           >
             <X className="size-4" />
           </button>
         </div>
 
-        {STEPS.includes(step) && (
+        {(STEPS.includes(step as (typeof STEPS)[number]) || step === "queued") && (
           <div className="border-b border-border/40 px-4 py-3">
             <StepIndicator step={step} />
           </div>
@@ -312,7 +371,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
             )}
           </div>
 
-          {(step === "preview" || step === "trim") && (
+          {step === "trim" && (
             <BloomVideoPlayer
               ref={playerRef}
               path={entry.path}
@@ -323,7 +382,8 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
 
           {step === "preview" && (
             <>
-              <p className="text-xs text-muted-foreground">{sk.editor.previewHint}</p>
+              <CompareSlider path={entry.path} info={info} estimate={previewEstimate} />
+              <p className="text-xs text-muted-foreground">{sk.editor.compare.hint}</p>
               <button
                 onClick={() => setStep("trim")}
                 className="flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-accent active:scale-[0.98]"
@@ -336,92 +396,106 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
 
           {step === "trim" && (
             <>
-              <p className="text-xs text-muted-foreground">{sk.editor.trimHint}</p>
+              <p className="text-xs text-muted-foreground">{sk.editor.splitHint}</p>
               <FilmstripTimeline
                 duration={duration}
-                start={trimStart}
-                end={trimEnd}
                 playhead={playhead}
                 frames={frames}
                 loading={framesLoading}
-                onChange={syncTrim}
+                segments={segments}
+                activeSegment={activeSegment}
+                onChangeSegment={(index, start, end) => {
+                  setActiveSegment(index)
+                  setSegments((prev) => updateSegment(prev, index, start, end, duration))
+                  if (index === activeSegment) syncFieldsFromSegment({ start, end })
+                }}
                 onSeek={(t) => playerRef.current?.seek(t)}
               />
 
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={splitAtPlayhead}
+                  disabled={segments.length >= 3}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-[var(--surface)] px-3 py-2 text-[11px] font-semibold text-foreground transition-colors hover:bg-secondary disabled:opacity-40"
+                >
+                  <SplitSquareHorizontal className="size-3.5" /> {sk.editor.splitAtPlayhead}
+                </button>
+                {segments.map((_, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => {
+                      setActiveSegment(i)
+                      syncFieldsFromSegment(segments[i]!)
+                    }}
+                    className={cn(
+                      "rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors",
+                      i === activeSegment ? "bg-primary text-white" : "bg-secondary text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {sk.editor.segment(i + 1)}
+                  </button>
+                ))}
+                {activeSegment > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const merged = mergeSegment(segments, activeSegment)
+                      setSegments(merged)
+                      setActiveSegment(Math.max(0, activeSegment - 1))
+                      syncFieldsFromSegment(merged[Math.max(0, activeSegment - 1)]!)
+                    }}
+                    className="rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  >
+                    {sk.editor.mergeSegment}
+                  </button>
+                )}
+              </div>
+
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="flex flex-col gap-2 rounded-xl border border-border/50 bg-[var(--surface)] p-3">
-                  <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">
-                    {sk.editor.startField}
-                  </label>
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">{sk.editor.startField}</label>
                   <div className="flex gap-2">
                     <input
                       value={startText}
                       onChange={(e) => { setStartText(e.target.value); setStartError(false) }}
                       onBlur={applyStartField}
                       onKeyDown={(e) => e.key === "Enter" && applyStartField()}
-                      className={cn(
-                        "min-w-0 flex-1 rounded-lg border bg-background px-2.5 py-2 font-mono text-sm tabular-nums",
-                        startError ? "border-red-500/60" : "border-border/60",
-                      )}
+                      className={cn("min-w-0 flex-1 rounded-lg border bg-background px-2.5 py-2 font-mono text-sm tabular-nums", startError ? "border-red-500/60" : "border-border/60")}
                       spellCheck={false}
                     />
-                    <button
-                      type="button"
-                      onClick={setInAtPlayhead}
-                      className="rounded-lg border border-border/60 bg-secondary px-2.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-secondary/80"
-                    >
-                      {sk.editor.setIn}
-                    </button>
+                    <button type="button" onClick={setInAtPlayhead} className="rounded-lg border border-border/60 bg-secondary px-2.5 text-[11px] font-semibold">{sk.editor.setIn}</button>
                   </div>
                   {startError && <p className="text-[10px] text-red-400">{sk.editor.invalidTime}</p>}
                 </div>
-
                 <div className="flex flex-col gap-2 rounded-xl border border-border/50 bg-[var(--surface)] p-3">
-                  <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">
-                    {sk.editor.endField}
-                  </label>
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">{sk.editor.endField}</label>
                   <div className="flex gap-2">
                     <input
                       value={endText}
                       onChange={(e) => { setEndText(e.target.value); setEndError(false) }}
                       onBlur={applyEndField}
                       onKeyDown={(e) => e.key === "Enter" && applyEndField()}
-                      className={cn(
-                        "min-w-0 flex-1 rounded-lg border bg-background px-2.5 py-2 font-mono text-sm tabular-nums",
-                        endError ? "border-red-500/60" : "border-border/60",
-                      )}
+                      className={cn("min-w-0 flex-1 rounded-lg border bg-background px-2.5 py-2 font-mono text-sm tabular-nums", endError ? "border-red-500/60" : "border-border/60")}
                       spellCheck={false}
                     />
-                    <button
-                      type="button"
-                      onClick={setOutAtPlayhead}
-                      className="rounded-lg border border-border/60 bg-secondary px-2.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-secondary/80"
-                    >
-                      {sk.editor.setOut}
-                    </button>
+                    <button type="button" onClick={setOutAtPlayhead} className="rounded-lg border border-border/60 bg-secondary px-2.5 text-[11px] font-semibold">{sk.editor.setOut}</button>
                   </div>
                   {endError && <p className="text-[10px] text-red-400">{sk.editor.invalidTime}</p>}
                 </div>
               </div>
 
               <p className="text-[11px] text-muted-foreground">
-                {sk.editor.clipLength}:{" "}
-                <span className="font-mono text-foreground">{formatDurationSecs(clipDuration)}</span>
+                {sk.editor.clipLength}: <span className="font-mono text-foreground">{formatDurationSecs(clipDuration)}</span>
               </p>
 
               <div className="flex gap-2">
-                <button
-                  onClick={() => setStep("preview")}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-border/60 bg-[var(--surface)] py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-secondary"
-                >
+                <button onClick={() => setStep("preview")} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-border/60 bg-[var(--surface)] py-2.5 text-sm font-semibold hover:bg-secondary">
                   <ChevronLeft className="size-4" /> {sk.editor.back}
                 </button>
-                <button
-                  onClick={() => setStep("export")}
-                  className="flex flex-[2] items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-bold text-white transition-all hover:bg-accent"
-                >
-                  {sk.editor.continueToExport}
-                  <ChevronRight className="size-4" />
+                <button onClick={() => setStep("export")} className="flex flex-[2] items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-bold text-white hover:bg-accent">
+                  {sk.editor.continueToExport} <ChevronRight className="size-4" />
                 </button>
               </div>
             </>
@@ -434,118 +508,166 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
               <ChoiceGroup label={sk.optimize.resolution} layout="wrap" options={RESOLUTIONS} value={resolution} onChange={setResolution} />
               <ChoiceGroup label={sk.optimize.speed} layout="wrap" options={SPEEDS} value={speed} onChange={setSpeed} />
               <ChoiceGroup label={sk.optimize.format} options={FORMATS} value={format} onChange={setFormat} />
-              <ChoiceGroup label={sk.editor.saveMode} options={SAVE_MODES} value={saveMode} onChange={setSaveMode} />
+              {!multiClip && (
+                <ChoiceGroup label={sk.editor.saveMode} options={SAVE_MODES} value={saveMode} onChange={setSaveMode} />
+              )}
+              {analysis && (
+                <div className="rounded-xl border border-border/50 bg-[var(--surface)] p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">{sk.editor.analyzeTitle}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{analysis.notes[0]}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPreset(analysis.suggested_preset)
+                        setResolution(analysis.suggested_resolution)
+                      }}
+                      className="shrink-0 rounded-lg border border-border/60 bg-secondary px-2.5 py-1.5 text-[10px] font-semibold hover:bg-secondary/80"
+                    >
+                      {sk.editor.applySuggestion}
+                    </button>
+                  </div>
+                </div>
+              )}
 
+              <div className="grid gap-2 sm:grid-cols-2">
+                {([
+                  [denoise, setDenoise, sk.editor.enhance.denoise, sk.editor.enhance.denoiseHint],
+                  [normalizeAudio, setNormalizeAudio, sk.editor.enhance.normalizeAudio, ""],
+                  [removeAudio, setRemoveAudio, sk.editor.enhance.removeAudio, ""],
+                  [useHevc, setUseHevc, sk.editor.enhance.useHevc, sk.editor.enhance.useHevcHint],
+                ] as const).map(([on, setOn, label, hint]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setOn(!on)}
+                    className={cn(
+                      "rounded-xl border px-3 py-2 text-left text-[11px] transition-colors",
+                      on ? "border-primary/40 bg-primary/10 text-foreground" : "border-border/50 bg-[var(--surface)] text-muted-foreground",
+                    )}
+                  >
+                    <span className="font-semibold">{label}</span>
+                    {hint && <span className="mt-0.5 block text-[10px] opacity-70">{hint}</span>}
+                  </button>
+                ))}
+              </div>
+              {multiClip && (
+                <p className="text-[11px] text-muted-foreground">{sk.editor.multiClipExport(segments.length)}</p>
+              )}
               {replaceOriginal && format !== "mp4" && (
                 <p className="text-[11px] text-amber-400">{sk.editor.replaceMp4Only}</p>
               )}
+
+              <div className="rounded-xl border border-border/50 bg-[var(--surface)] p-3">
+                <button
+                  type="button"
+                  onClick={() => setSubtitlesOn((v) => !v)}
+                  className="flex w-full items-center justify-between text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70"
+                >
+                  {sk.editor.subtitles}
+                  <span className={cn("rounded-full px-2 py-0.5 text-[10px]", subtitlesOn ? "bg-primary/20 text-primary" : "bg-secondary text-muted-foreground")}>
+                    {subtitlesOn ? "Zapnuté" : sk.editor.subtitlesOff}
+                  </span>
+                </button>
+                {subtitlesOn && (
+                  <div className="mt-3 flex flex-col gap-3">
+                    <label className="flex flex-col gap-1 text-[11px]">
+                      <span className="font-semibold text-muted-foreground">{sk.editor.srtPath}</span>
+                      <input
+                        value={srtPath}
+                        onChange={(e) => setSrtPath(e.target.value)}
+                        placeholder={sk.editor.srtPlaceholder}
+                        className="rounded-lg border border-border/60 bg-background px-2.5 py-2 font-mono text-[11px]"
+                      />
+                    </label>
+                    {cards.slice(0, 2).map((card, i) => (
+                      <div key={i} className="grid gap-2 sm:grid-cols-4">
+                        <input
+                          value={card.text}
+                          onChange={(e) => setCards((prev) => prev.map((c, j) => (j === i ? { ...c, text: e.target.value } : c)))}
+                          placeholder={sk.editor.cardText}
+                          className="rounded-lg border border-border/60 bg-background px-2.5 py-2 text-[11px] sm:col-span-2"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.1}
+                          value={card.start_secs}
+                          onChange={(e) => setCards((prev) => prev.map((c, j) => (j === i ? { ...c, start_secs: Number(e.target.value) } : c)))}
+                          placeholder={sk.editor.cardStart}
+                          className="rounded-lg border border-border/60 bg-background px-2 py-2 font-mono text-[11px]"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.1}
+                          value={card.end_secs}
+                          onChange={(e) => setCards((prev) => prev.map((c, j) => (j === i ? { ...c, end_secs: Number(e.target.value) } : c)))}
+                          placeholder={sk.editor.cardEnd}
+                          className="rounded-lg border border-border/60 bg-background px-2 py-2 font-mono text-[11px]"
+                        />
+                      </div>
+                    ))}
+                    {cards.length < 2 && (
+                      <button
+                        type="button"
+                        onClick={() => setCards((prev) => [...prev, { text: "", start_secs: 0, end_secs: 3 }])}
+                        className="self-start text-[11px] font-semibold text-accent hover:underline"
+                      >
+                        {sk.editor.addCard}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
 
               <div className="rounded-xl border border-accent/30 bg-accent/5 px-3 py-2.5">
                 <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-accent">
                   <Sparkles className="size-3.5" /> {sk.editor.estimateTitle}
                 </div>
                 <p className="mt-1.5 text-sm text-foreground">
-                  {estimateLoading || !estimate ? (
-                    sk.editor.estimateLoading
-                  ) : (
-                    sk.editor.estimateBody(
-                      formatBytes(estimate.size_bytes),
-                      formatDurationSecs(estimate.duration_secs),
-                      estimate.resolution_label,
-                      estimate.format_label,
-                    )
-                  )}
+                  {estimateLoading || !estimate
+                    ? sk.editor.estimateLoading
+                    : sk.editor.estimateBody(
+                        formatBytes(estimate.size_bytes),
+                        formatDurationSecs(estimate.duration_secs),
+                        estimate.resolution_label,
+                        estimate.format_label,
+                      )}
                 </p>
+                {estimate?.stream_copy && (
+                  <p className="mt-1 text-[11px] text-emerald-400">{sk.editor.streamCopyHint}</p>
+                )}
               </div>
 
               <div className="flex gap-2">
-                <button
-                  onClick={() => setStep("trim")}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-border/60 bg-[var(--surface)] py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-secondary"
-                >
+                <button onClick={() => setStep("trim")} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-border/60 bg-[var(--surface)] py-2.5 text-sm font-semibold hover:bg-secondary">
                   <ChevronLeft className="size-4" /> {sk.editor.back}
                 </button>
-                <button
-                  onClick={startExport}
-                  className="flex flex-[2] items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-accent active:scale-[0.98]"
-                >
-                  <Zap className="size-4" /> {sk.editor.startExport}
+                <button onClick={startExport} className="flex flex-[2] items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/25 hover:bg-accent">
+                  <Zap className="size-4" />
+                  {multiClip ? sk.editor.multiClipExport(segments.length) : sk.editor.startExport}
                 </button>
               </div>
             </>
           )}
 
-          {step === "running" && (
-            <div className="flex flex-col items-center gap-4 py-6">
-              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                <LoaderCircle className="size-4 animate-spin text-accent" />
-                {sk.editor.transcoding}
-              </div>
-              <div className="h-2.5 w-full overflow-hidden rounded-full bg-secondary">
-                <div
-                  className={cn("h-full rounded-full bg-primary transition-all duration-200", percent < 0 && "animate-pulse w-1/3")}
-                  style={percent >= 0 ? { width: `${percent}%` } : undefined}
-                />
-              </div>
-              <p className="font-mono text-xs tabular-nums text-muted-foreground">
-                {percent >= 0 ? `${percent.toFixed(0)}%` : sk.editor.working}
-              </p>
-              <button
-                onClick={cancel}
-                className="rounded-xl border border-border/60 bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-muted-foreground transition-colors hover:border-red-500/40 hover:text-red-400"
-              >
-                {sk.editor.cancel}
-              </button>
-            </div>
-          )}
-
-          {step === "done" && (
-            <div className="flex flex-col items-center gap-3 py-4 text-center">
+          {step === "queued" && (
+            <div className="flex flex-col items-center gap-3 py-6 text-center">
               <div className="flex size-14 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15">
                 <Check className="size-7 text-emerald-400" />
               </div>
               <div>
-                <p className="text-sm font-bold text-emerald-300">{sk.editor.success}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {formatBytes(result?.size ?? 0)}
-                  {!replaceOriginal && reduction !== null && (
-                    <span className={cn("ml-1 font-semibold", reduction >= 0 ? "text-emerald-400" : "text-amber-400")}>
-                      ({reduction >= 0 ? sk.optimize.smaller(reduction) : sk.optimize.larger(-reduction)})
-                    </span>
-                  )}
-                </p>
-              </div>
-              <div className="flex w-full gap-2">
-                <button
-                  onClick={() => result?.path && revealInFinder(result.path).catch(() => {})}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-border/60 bg-[var(--surface)] py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-secondary"
-                >
-                  <FolderOpen className="size-4" /> {sk.editor.reveal}
-                </button>
-                <button
-                  onClick={() => { onComplete(); onClose() }}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-primary py-2.5 text-sm font-bold text-white transition-colors hover:bg-accent"
-                >
-                  {sk.editor.close}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {step === "error" && (
-            <div className="flex flex-col items-center gap-3 py-4 text-center">
-              <div className="flex size-14 items-center justify-center rounded-full border border-red-500/30 bg-red-500/15">
-                <CircleAlert className="size-7 text-red-400" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-red-300">{sk.editor.failed}</p>
-                <p className="mt-1 max-h-24 overflow-y-auto text-xs text-muted-foreground">{errorMsg}</p>
+                <p className="text-sm font-bold text-emerald-300">{sk.editor.queuedTitle}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{sk.editor.queuedBody(queuedCount)}</p>
               </div>
               <button
-                onClick={() => setStep("export")}
-                className="rounded-xl border border-border/60 bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-secondary"
+                onClick={onClose}
+                className="mt-2 w-full rounded-xl bg-primary py-2.5 text-sm font-bold text-white hover:bg-accent"
               >
-                {sk.editor.tryAgain}
+                {sk.editor.close}
               </button>
             </div>
           )}

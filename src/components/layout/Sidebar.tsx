@@ -2,6 +2,7 @@ import { Circle, Library, Settings, Video } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { sk } from "@/lib/i18n/sk"
+import { ExportQueuePanel } from "@/components/layout/ExportQueuePanel"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 export type AppView = "record" | "library" | "settings"
@@ -21,14 +22,19 @@ const ITEMS: { id: AppView; label: string; icon: React.FC<{ className?: string }
 
 export function Sidebar({ view, onChange, locked = false, recording = false }: SidebarProps) {
   return (
-    <aside className="mac-sidebar flex w-[200px] shrink-0 flex-col">
+    <aside className="mac-sidebar relative flex w-[204px] shrink-0 flex-col">
       <div className="flex items-center gap-2.5 px-4 pb-3 pt-4">
-        <div className="flex size-8 items-center justify-center rounded-[9px] bg-primary/15">
+        <div className="brand-icon flex size-9 items-center justify-center">
           <Video className="size-4 text-accent" />
         </div>
         <div className="min-w-0">
-          <p className="brand-mark text-[13px] text-foreground">{sk.app.name}</p>
-          <p className="text-[11px] text-muted-foreground">{sk.app.tagline}</p>
+          <p className="brand-mark">
+            {sk.app.name}
+            <span className="brand-mark-dot" aria-hidden>.</span>
+          </p>
+          <p className="font-mono-bay text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">
+            {sk.app.tagline}
+          </p>
         </div>
       </div>
 
@@ -74,6 +80,8 @@ export function Sidebar({ view, onChange, locked = false, recording = false }: S
           )
         })}
       </nav>
+
+      <ExportQueuePanel />
 
       <div className="mt-auto px-4 py-3">
         <p className="text-[10px] text-muted-foreground/55">{sk.app.version}</p>

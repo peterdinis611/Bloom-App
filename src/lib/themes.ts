@@ -1,24 +1,51 @@
 /** App colour themes + shared annotation palette. */
 
-export type ThemeId = "mac" | "daylight" | "ember" | "aurora" | "violet" | "rose" | "ocean"
+export type ThemeId =
+  | "mac"
+  | "daylight"
+  | "ember"
+  | "aurora"
+  | "violet"
+  | "rose"
+  | "ocean"
+  | "cinema"
+  | "forest"
+  | "slate"
+  | "neon"
+  | "paper"
+  | "copper"
+  | "midnight"
 
 export interface ThemeMeta {
   id: ThemeId
   name: string
   description: string
-  /** Preview swatch gradient stops */
-  swatch: [string, string]
+  /** Preview swatch: [primary, accent, background] */
+  swatch: [string, string, string]
 }
 
 export const THEMES: ThemeMeta[] = [
-  { id: "mac",      name: "Automaticky", description: "macOS tmavý vzhľad",   swatch: ["#0A84FF", "#1c1c1e"] },
-  { id: "daylight", name: "Svetlý",      description: "macOS svetlý vzhľad",  swatch: ["#007AFF", "#f2f2f7"] },
-  { id: "ember",    name: "Oranžový",    description: "Systémový oranžový",   swatch: ["#FF9F0A", "#1c1917"] },
-  { id: "aurora",   name: "Tyrkysový",   description: "Systémový tyrkysový",  swatch: ["#64D2FF", "#141c1c"] },
-  { id: "violet",   name: "Fialový",     description: "Systémový fialový",    swatch: ["#BF5AF2", "#1c1a22"] },
-  { id: "rose",     name: "Ružový",      description: "Systémový ružový",     swatch: ["#FF375F", "#1e181a"] },
-  { id: "ocean",    name: "Modrý",       description: "Svetlejší Aqua",       swatch: ["#409CFF", "#161b22"] },
+  { id: "mac",      name: "Darkroom",     description: "Monitor + tungsten",        swatch: ["#6B9EFF", "#E6A94C", "#090A0D"] },
+  { id: "daylight", name: "Svetlý",       description: "Teplý papier + med",        swatch: ["#2F6FED", "#C8781A", "#F0EDE6"] },
+  { id: "paper",    name: "Papier",       description: "Svetlý editor + ink",       swatch: ["#1D4ED8", "#B45309", "#F7F5F0"] },
+  { id: "cinema",   name: "Kino",         description: "Striebro + červená opona",  swatch: ["#E8E4DC", "#C41E3A", "#050506"] },
+  { id: "midnight", name: "Polnoc",       description: "Indigo + ľad",              swatch: ["#818CF8", "#38BDF8", "#080B14"] },
+  { id: "slate",    name: "Bridlica",     description: "Studiová sivá + jantár",    swatch: ["#94A3B8", "#F59E0B", "#111318"] },
+  { id: "ocean",    name: "Oceán",        description: "Modrá + teal",              swatch: ["#4D9DFF", "#2DD4BF", "#0A1018"] },
+  { id: "aurora",   name: "Tyrkysový",    description: "Aqua + mätový",             swatch: ["#3ECFE0", "#7CF7C6", "#0A1214"] },
+  { id: "forest",   name: "Les",          description: "Tmavá zeleň + limetka",     swatch: ["#4ADE80", "#A3E635", "#0A0F0C"] },
+  { id: "copper",   name: "Meď",          description: "Teplá hrdza + zlato",       swatch: ["#D97706", "#FBBF24", "#150F0C"] },
+  { id: "ember",    name: "Oranžový",     description: "Jantár + zlatý",            swatch: ["#FF9F0A", "#FFD60A", "#12100E"] },
+  { id: "neon",     name: "Neón",         description: "Magenta + cyan",            swatch: ["#FF2D95", "#00F0FF", "#0D0514"] },
+  { id: "violet",   name: "Fialový",      description: "Fialová + ružová",          swatch: ["#A855F7", "#F472B6", "#100E16"] },
+  { id: "rose",     name: "Ružový",       description: "Ružová + broskyňa",         swatch: ["#FB7185", "#FDA4AF", "#140F11"] },
 ]
+
+export const THEME_IDS = new Set<ThemeId>(THEMES.map((t) => t.id))
+
+export function isThemeId(value: unknown): value is ThemeId {
+  return typeof value === "string" && THEME_IDS.has(value as ThemeId)
+}
 
 export const ANNOTATION_COLORS = [
   { id: "red",     hex: "#FF453A", label: "Červená"  },

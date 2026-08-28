@@ -6,6 +6,7 @@ mod cursor;
 mod finalize;
 mod library;
 mod session;
+mod share;
 mod system;
 mod tray;
 mod types;
@@ -51,6 +52,7 @@ pub fn run() {
             video::check_ffmpeg,
             video::install_ffmpeg,
             video::get_video_info,
+            video::analyze_video,
             video::get_thumbnail,
             video::get_filmstrip,
             video::estimate_export,

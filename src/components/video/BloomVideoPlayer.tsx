@@ -19,6 +19,9 @@ import {
   RotateCw,
   Volume2,
   VolumeX,
+  ChevronDown,
+  Maximize2,
+  Minimize2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { sk } from "@/lib/i18n/sk"
@@ -54,6 +57,7 @@ export interface BloomVideoPlayerProps {
   autoHideControls?: boolean
   onReveal?: () => void
   onOpenExternal?: () => void
+  hideFileActions?: boolean
   onTimeUpdate?: (currentTime: number) => void
   onDurationChange?: (duration: number) => void
   onPlayStateChange?: (playing: boolean) => void
@@ -117,6 +121,7 @@ interface ControlsBarProps {
   onToggleFit: () => void
   onReveal?: () => void
   onOpenExternal?: () => void
+  hideFileActions?: boolean
   onBumpControls: () => void
 }
 
@@ -147,177 +152,193 @@ function ControlsBar({
   onToggleFit,
   onReveal,
   onOpenExternal,
+  hideFileActions,
   onBumpControls,
 }: ControlsBarProps) {
+  const [speedOpen, setSpeedOpen] = useState(false)
+  const [volumeOpen, setVolumeOpen] = useState(false)
+  const speedRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!speedOpen) return
+    const close = (e: MouseEvent) => {
+      if (!speedRef.current?.contains(e.target as Node)) setSpeedOpen(false)
+    }
+    window.addEventListener("pointerdown", close)
+    return () => window.removeEventListener("pointerdown", close)
+  }, [speedOpen])
+
   const shell = docked
-    ? "shrink-0 space-y-3 border-t border-white/10 bg-[#121212] px-4 py-3"
+    ? "shrink-0 border-t border-white/10 bg-[#101010]/95 px-4 py-2.5 backdrop-blur-md"
     : cn(
-        "pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/92 via-black/60 to-transparent px-3 pb-3 pt-12 transition-opacity duration-300",
+        "pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/70 to-transparent px-4 pb-3 pt-10 transition-opacity duration-300",
         visible || !isPlaying || scrubbing ? "opacity-100" : "opacity-0",
       )
 
+  const btn = "flex items-center justify-center rounded-lg text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+  const btnActive = "bg-[var(--accent)]/20 text-[var(--accent)]"
+
   return (
     <div className={shell}>
-      <div className={cn(!docked && "pointer-events-auto space-y-2", docked && "space-y-3")}>
-        {/* Scrubber */}
-        <div className="relative h-5">
-          <div className="absolute top-1/2 h-1 w-full -translate-y-1/2 overflow-hidden rounded-full bg-white/15">
-            <div
-              className="h-full rounded-full bg-[var(--accent)] transition-[width] duration-75"
-              style={{ width: `${progress}%` }}
+      <div className={cn(!docked && "pointer-events-auto", "space-y-2")}>
+        {/* Scrubber + times */}
+        <div className="flex items-center gap-2.5">
+          <span className="w-[2.75rem] shrink-0 text-right font-mono text-[10px] tabular-nums text-white/55">
+            {formatDurationSecs(current)}
+          </span>
+          <div className="group/scrub relative min-w-0 flex-1 py-1">
+            <div className="absolute top-1/2 h-[3px] w-full -translate-y-1/2 overflow-hidden rounded-full bg-white/12 transition-[height] group-hover/scrub:h-1">
+              <div
+                className="h-full rounded-full bg-[var(--accent)] transition-[width] duration-75"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={duration || 0}
+              step={0.05}
+              value={Math.min(current, duration || 0)}
+              onPointerDown={() => { onScrubStart(); onBumpControls() }}
+              onPointerUp={onScrubEnd}
+              onChange={(e) => onSeek(Number(e.target.value))}
+              className="bloom-player-scrub absolute inset-0 w-full cursor-pointer opacity-0"
+              aria-label={sk.video.play}
             />
           </div>
-          <input
-            type="range"
-            min={0}
-            max={duration || 0}
-            step={0.05}
-            value={Math.min(current, duration || 0)}
-            onPointerDown={() => { onScrubStart(); onBumpControls() }}
-            onPointerUp={onScrubEnd}
-            onChange={(e) => onSeek(Number(e.target.value))}
-            className="bloom-player-scrub absolute inset-0 w-full cursor-pointer opacity-0"
-            aria-label={sk.video.play}
-          />
+          <span className="w-[2.75rem] shrink-0 font-mono text-[10px] tabular-nums text-white/55">
+            {formatDurationSecs(duration)}
+          </span>
         </div>
 
-        {/* Transport */}
-        <div className="flex flex-wrap items-center gap-1.5">
+        {/* Single transport row */}
+        <div className="flex items-center gap-0.5">
           <button
             type="button"
             onClick={onTogglePlay}
-            className="flex size-9 items-center justify-center rounded-lg text-white hover:bg-white/12"
+            className={cn(btn, "size-8")}
             aria-label={isPlaying ? sk.video.pause : sk.video.play}
           >
-            {isPlaying ? <Pause className="size-[18px]" /> : <Play className="size-[18px] translate-x-px" />}
+            {isPlaying ? <Pause className="size-[17px]" /> : <Play className="size-[17px] translate-x-px" />}
           </button>
 
-          <button
-            type="button"
-            onClick={() => onSkip(-10)}
-            className="flex h-9 items-center gap-1 rounded-lg px-2.5 text-[11px] font-medium text-white/75 hover:bg-white/12"
-          >
-            <RotateCcw className="size-3.5" />
-            {sk.video.skipBack}
+          <button type="button" onClick={() => onSkip(-10)} className={cn(btn, "h-8 gap-1 px-2 text-[10px] font-medium")}>
+            <RotateCcw className="size-3" />
+            <span className="hidden sm:inline">{sk.video.skipBack}</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => onSkip(10)}
-            className="flex h-9 items-center gap-1 rounded-lg px-2.5 text-[11px] font-medium text-white/75 hover:bg-white/12"
-          >
-            <RotateCw className="size-3.5" />
-            {sk.video.skipForward}
+          <button type="button" onClick={() => onSkip(10)} className={cn(btn, "h-8 gap-1 px-2 text-[10px] font-medium")}>
+            <RotateCw className="size-3" />
+            <span className="hidden sm:inline">{sk.video.skipForward}</span>
           </button>
-
-          <span className="min-w-[6.5rem] px-1 font-mono text-[11px] tabular-nums text-white/75">
-            {formatDurationSecs(current)} / {formatDurationSecs(duration)}
-          </span>
 
           <div className="flex-1" />
 
-          {onOpenExternal && (
+          {showSpeedControl && (
+            <div ref={speedRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setSpeedOpen((v) => !v)}
+                className={cn(btn, "h-8 gap-0.5 px-2 text-[11px] font-semibold tabular-nums", speedOpen && btnActive)}
+                aria-expanded={speedOpen}
+              >
+                {speedLabel(rate)}
+                <ChevronDown className={cn("size-3 opacity-60 transition-transform", speedOpen && "rotate-180")} />
+              </button>
+              {speedOpen && (
+                <div className="absolute bottom-full right-0 z-20 mb-1.5 min-w-[5.5rem] overflow-hidden rounded-xl border border-white/10 bg-[#1a1a1a]/95 py-1 shadow-2xl backdrop-blur-md">
+                  {PLAYBACK_RATES.map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => { onRate(r); onBumpControls(); setSpeedOpen(false) }}
+                      className={cn(
+                        "flex w-full px-3 py-1.5 text-left text-[11px] font-medium tabular-nums transition-colors hover:bg-white/10",
+                        rate === r ? "text-[var(--accent)]" : "text-white/75",
+                      )}
+                    >
+                      {speedLabel(r)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div
+            className="relative"
+            onMouseEnter={() => setVolumeOpen(true)}
+            onMouseLeave={() => setVolumeOpen(false)}
+          >
+            <button
+              type="button"
+              onClick={onToggleMute}
+              className={cn(btn, "size-8")}
+              aria-label={muted ? sk.video.unmute : sk.video.mute}
+            >
+              {muted || volume === 0 ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+            </button>
+            {showAdvancedOptions && volumeOpen && (
+              <div className="absolute bottom-full right-0 z-20 mb-2 flex items-center gap-2 rounded-xl border border-white/10 bg-[#1a1a1a]/95 px-3 py-2 shadow-2xl backdrop-blur-md">
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={muted ? 0 : volume}
+                  onChange={(e) => onVolume(Number(e.target.value))}
+                  className="bloom-player-volume h-1 w-24 cursor-pointer accent-[var(--accent)]"
+                />
+              </div>
+            )}
+          </div>
+
+          {showAdvancedOptions && (
+            <>
+              <button
+                type="button"
+                onClick={onToggleLoop}
+                className={cn(btn, "size-8", looping && btnActive)}
+                title={looping ? sk.video.loop : sk.video.loopOff}
+                aria-label={looping ? sk.video.loop : sk.video.loopOff}
+              >
+                <Repeat className={cn("size-4", looping && "fill-current")} />
+              </button>
+
+              <button
+                type="button"
+                onClick={onToggleFit}
+                className={cn(btn, "size-8")}
+                title={fit === "contain" ? sk.video.fitContain : sk.video.fitFill}
+                aria-label={fit === "contain" ? sk.video.fitContain : sk.video.fitFill}
+              >
+                {fit === "contain" ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+              </button>
+            </>
+          )}
+
+          {!hideFileActions && onOpenExternal && (
             <button
               type="button"
               onClick={onOpenExternal}
-              className="hidden h-9 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-medium text-white/70 hover:bg-white/12 hover:text-white md:flex"
+              className={cn(btn, "hidden size-8 md:flex")}
               title={sk.video.openInSystem}
             >
-              <ExternalLink className="size-3.5" />
-              {sk.video.openInSystem}
+              <ExternalLink className="size-4" />
             </button>
           )}
 
-          {onReveal && (
+          {!hideFileActions && onReveal && (
             <button
               type="button"
               onClick={onReveal}
-              className="flex size-9 items-center justify-center rounded-lg text-white/70 hover:bg-white/12 hover:text-white"
+              className={cn(btn, "size-8")}
               title={sk.video.openInFinder}
             >
               <FolderOpen className="size-4" />
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={onToggleMute}
-            className="flex size-9 items-center justify-center rounded-lg text-white/70 hover:bg-white/12 hover:text-white"
-            aria-label={muted ? sk.video.unmute : sk.video.mute}
-          >
-            {muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
-          </button>
         </div>
-
-        {/* Speed — single row, horizontal scroll */}
-        {showSpeedControl && (
-          <div className="flex items-center gap-2">
-            <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-white/40">
-              {sk.video.speed}
-            </span>
-            <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {PLAYBACK_RATES.map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => { onRate(r); onBumpControls() }}
-                  className={cn(
-                    "shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-colors",
-                    rate === r
-                      ? "bg-[var(--accent)] text-white"
-                      : "bg-white/10 text-white/70 hover:bg-white/15 hover:text-white",
-                  )}
-                >
-                  {speedLabel(r)}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Advanced options */}
-        {showAdvancedOptions && (
-          <div className="flex flex-wrap items-center gap-3 border-t border-white/8 pt-3">
-            <button
-              type="button"
-              onClick={onToggleLoop}
-              className={cn(
-                "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-colors",
-                looping ? "bg-[var(--accent)]/20 text-[var(--accent)]" : "bg-white/8 text-white/65 hover:bg-white/12",
-              )}
-            >
-              <Repeat className={cn("size-3.5", looping && "fill-current")} />
-              {looping ? sk.video.loop : sk.video.loopOff}
-            </button>
-
-            <button
-              type="button"
-              onClick={onToggleFit}
-              className="rounded-lg bg-white/8 px-2.5 py-1.5 text-[11px] font-medium text-white/65 hover:bg-white/12"
-            >
-              {fit === "contain" ? sk.video.fitContain : sk.video.fitFill}
-            </button>
-
-            <label className="flex min-w-[140px] flex-1 items-center gap-2">
-              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-white/40">
-                {sk.video.volume}
-              </span>
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.05}
-                value={muted ? 0 : volume}
-                onChange={(e) => onVolume(Number(e.target.value))}
-                className="h-1 min-w-0 flex-1 cursor-pointer accent-[var(--accent)]"
-              />
-            </label>
-          </div>
-        )}
-
-        {docked && (
-          <p className="text-[10px] text-white/30">{sk.video.shortcuts}</p>
-        )}
       </div>
     </div>
   )
@@ -341,6 +362,7 @@ export const BloomVideoPlayer = forwardRef<BloomVideoPlayerHandle, BloomVideoPla
       autoHideControls = false,
       onReveal,
       onOpenExternal,
+      hideFileActions = false,
       onTimeUpdate,
       onDurationChange,
       onPlayStateChange,
@@ -632,6 +654,7 @@ export const BloomVideoPlayer = forwardRef<BloomVideoPlayerHandle, BloomVideoPla
       onToggleFit: () => setFit((f) => (f === "contain" ? "cover" : "contain")),
       onReveal,
       onOpenExternal,
+      hideFileActions,
       onBumpControls: revealControls,
     }
 

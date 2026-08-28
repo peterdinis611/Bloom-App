@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { sk } from "@/lib/i18n/sk"
 import { RECORDING_QUALITIES } from "@/lib/videoOptions"
-import { THEMES, type ThemeId } from "@/lib/themes"
+import { THEMES } from "@/lib/themes"
 import { ANNOTATION_COLORS, useSettings, type AnnotationTool } from "@/hooks/useSettings"
 import { deleteAllRecordings, formatBytes, getLibraryStats } from "@/hooks/useBloomBackend"
 import { ConfirmDeleteAll } from "@/components/library/ConfirmDeleteAll"
@@ -58,19 +58,19 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <MacPageHeader title={sk.settings.title} subtitle={sk.settings.subtitle} />
+      <MacPageHeader eyebrow={sk.pageEyebrow.settings} title={sk.settings.title} subtitle={sk.settings.subtitle} />
 
       <PageScrollArea active={active} className="pb-6">
         <MacGroupHeader>{sk.settings.appearance}</MacGroupHeader>
         <MacGroup>
-          <div className="grid grid-cols-2 gap-2.5 p-3 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2.5 p-3 sm:grid-cols-3 lg:grid-cols-4">
             {THEMES.map((t) => {
               const active = settings.theme === t.id
               return (
               <button
                 key={t.id}
                 type="button"
-                onClick={() => setTheme(t.id as ThemeId)}
+                onClick={() => setTheme(t.id)}
                 className={cn(
                   "bloom-card relative rounded-lg p-2.5 text-left transition-all min-h-[72px] cursor-pointer",
                   active && "bloom-card-active ring-2 ring-accent/30",
@@ -81,7 +81,12 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
                     <Check className="size-3" strokeWidth={3} />
                   </span>
                 )}
-                <div className="mb-2 h-7 rounded-md shadow-inner" style={{ background: `linear-gradient(135deg, ${t.swatch[0]}, ${t.swatch[1]})` }} />
+                <div
+                  className="mb-2 h-7 rounded-md shadow-inner"
+                  style={{
+                    background: `linear-gradient(135deg, ${t.swatch[0]} 0%, ${t.swatch[1]} 42%, ${t.swatch[2]} 100%)`,
+                  }}
+                />
                 <p className="text-[12px] font-semibold">{t.name}</p>
                 <p className="text-[10px] text-muted-foreground">{t.description}</p>
               </button>

@@ -168,19 +168,23 @@ export function ChoiceGroup<T extends string>({
 export function MacPageHeader({
   title,
   subtitle,
+  eyebrow,
   actions,
 }: {
   title: string
   subtitle?: string
+  /** Krátky kontextový štítok — encode úlohu stránky, nie dekorácia */
+  eyebrow?: string
   actions?: React.ReactNode
 }) {
   return (
-    <header className="mac-page-header shrink-0">
+    <header className="mac-page-header shrink-0 bay-enter">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-foreground">{title}</h1>
+          {eyebrow && <p className="page-eyebrow">{eyebrow}</p>}
+          <h1 className="font-display text-foreground">{title}</h1>
           {subtitle && (
-            <p className="mt-1 text-[13px] text-muted-foreground">
+            <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-muted-foreground">
               {subtitle}
             </p>
           )}

@@ -156,6 +156,21 @@ export interface OptimizeOptions {
   add_to_library?: boolean
   /** Overwrite the source file in the library instead of creating a copy. */
   replace_original?: boolean
+  /** Path to an .srt subtitle file burned in via ffmpeg drawtext. */
+  srt_path?: string | null
+  /** Manual timed text cards (max ~2 in UI). */
+  subtitle_cards?: SubtitleCard[]
+  denoise?: boolean
+  normalize_audio?: boolean
+  remove_audio?: boolean
+  use_hevc?: boolean
+}
+
+/** Mirrors SubtitleCard in Rust. */
+export interface SubtitleCard {
+  text: string
+  start_secs: number
+  end_secs: number
 }
 
 /** Mirrors ExportEstimate in Rust. */
@@ -164,6 +179,19 @@ export interface ExportEstimate {
   size_bytes: number
   resolution_label: string
   format_label: string
+  stream_copy: boolean
+}
+
+/** Smart analysis + export suggestions from ffprobe. */
+export interface VideoAnalyze {
+  info: VideoInfo
+  suggested_preset: OptimizePreset
+  suggested_resolution: OptimizeResolution
+  can_stream_copy_trim: boolean
+  bitrate_mbps: number
+  bytes_per_sec: number
+  has_room_to_compress: boolean
+  notes: string[]
 }
 
 /** Mirrors OptimizeProgress event payload in Rust. */
