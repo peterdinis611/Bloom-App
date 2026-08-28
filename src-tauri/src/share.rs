@@ -1,8 +1,15 @@
 //! Platform-specific sharing for library recordings.
 
 use std::path::Path;
-use std::process::{Command, Stdio};
+
+#[cfg(not(target_os = "macos"))]
+use std::process::Command;
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
 use std::io::Write;
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+use std::process::Stdio;
 
 use tauri::AppHandle;
 
@@ -164,29 +171,18 @@ fn reveal_in_file_manager(path: &str) -> bool {
     false
 }
 
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
 fn command_exists(name: &str) -> bool {
-    #[cfg(windows)]
-    {
-        Command::new("where")
-            .arg(name)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-    }
-    #[cfg(not(windows))]
-    {
-        Command::new("which")
-            .arg(name)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-    }
+    Command::new("which")
+        .arg(name)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
 fn copy_text_to_clipboard(text: &str) -> bool {
     if command_exists("wl-copy") {
         if let Ok(mut child) = Command::new("wl-copy")
@@ -235,6 +231,7 @@ fn copy_text_to_clipboard(text: &str) -> bool {
     false
 }
 
+#[allow(dead_code)]
 pub(crate) fn file_uri(path: &str) -> String {
     let normalized = path.replace('\\', "/");
     let encoded = normalized

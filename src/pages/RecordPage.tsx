@@ -60,6 +60,7 @@ import {
 } from "@/hooks/useBloomBackend"
 import { useMediaDevices } from "@/hooks/useMediaDevices"
 import { useSettings } from "@/hooks/useSettings"
+import { useToast } from "@/hooks/useToast"
 import { startCapture, openCameraStream, type CaptureHandle } from "@/lib/capture"
 import { highlightMonitor, dismissMonitorHighlight } from "@/lib/monitorHighlight"
 import { MonitorPicker } from "@/components/record/MonitorPicker"
@@ -425,6 +426,7 @@ interface RecordPageProps {
 export function RecordPage({ active = true, onRecordingChange }: RecordPageProps) {
   const { cameras, microphones, monitors, hasLabels, requestPermission, refresh } = useMediaDevices()
   const { settings: appSettings, updateRecording } = useSettings()
+  const { success: toastSuccess } = useToast()
 
   const [settings, setSettings] = useState<RecordingSettings>({
     source: "screen",
@@ -810,6 +812,10 @@ export function RecordPage({ active = true, onRecordingChange }: RecordPageProps
     try {
       const meta = await closeSession(sid)
       setSavedMeta({ title: meta.title, size: formatBytes(meta.file_size_bytes) })
+      toastSuccess({
+        title: sk.toast.recordingSaved(meta.title),
+        description: sk.toast.recordingSavedBody,
+      })
     } catch { /* non-critical */ }
   }
 

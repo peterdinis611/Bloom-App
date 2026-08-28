@@ -8,6 +8,7 @@ import { RECORDING_QUALITIES } from "@/lib/videoOptions"
 import { THEMES } from "@/lib/themes"
 import { ANNOTATION_COLORS, useSettings, type AnnotationTool } from "@/hooks/useSettings"
 import { deleteAllRecordings, formatBytes, getLibraryStats } from "@/hooks/useBloomBackend"
+import { useToast } from "@/hooks/useToast"
 import { ConfirmDeleteAll } from "@/components/library/ConfirmDeleteAll"
 import { PageScrollArea } from "@/components/layout/PageScrollArea"
 import { PresetEditor } from "@/components/settings/PresetEditor"
@@ -24,6 +25,7 @@ const TOOLS: { id: AnnotationTool; label: string }[] = [
 
 export function SettingsPage({ active = true }: { active?: boolean }) {
   const { settings, setTheme, updateAnnotation, updateRecording, resetSettings } = useSettings()
+  const { success: toastSuccess, error: toastError } = useToast()
   const [libraryCount, setLibraryCount] = useState(0)
   const [librarySize, setLibrarySize] = useState(0)
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false)
@@ -45,15 +47,34 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
   }, [refreshLibraryStats])
 
   const handleDeleteAll = async () => {
+    const count = libraryCount
     setDeleteAllBusy(true)
     try {
       await deleteAllRecordings()
       setLibraryCount(0)
       setLibrarySize(0)
       setConfirmDeleteAll(false)
+      toastSuccess({ title: sk.toast.deletedAll(count) })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: String(e) })
     } finally {
       setDeleteAllBusy(false)
     }
+  }
+
+  const handleThemeChange = (themeId: typeof settings.theme) => {
+    if (settings.theme === themeId) return
+    setTheme(themeId)
+    const theme = THEMES.find((t) => t.id === themeId)
+    toastSuccess({ title: sk.toast.themeChanged(theme?.name ?? themeId) })
+  }
+
+  const handleResetSettings = () => {
+    resetSettings()
+    toastSuccess({
+      title: sk.toast.settingsReset,
+      description: sk.toast.settingsResetBody,
+    })
   }
 
   return (
@@ -63,14 +84,14 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
       <PageScrollArea active={active} className="pb-6">
         <MacGroupHeader>{sk.settings.appearance}</MacGroupHeader>
         <MacGroup>
-          <div className="grid grid-cols-2 gap-2.5 p-3 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="grid max-h-[420px] grid-cols-2 gap-2.5 overflow-y-auto p-3 sm:grid-cols-3 lg:grid-cols-4">
             {THEMES.map((t) => {
               const active = settings.theme === t.id
               return (
               <button
                 key={t.id}
                 type="button"
-                onClick={() => setTheme(t.id)}
+                onClick={() => handleThemeChange(t.id)}
                 className={cn(
                   "bloom-card relative rounded-lg p-2.5 text-left transition-all min-h-[72px] cursor-pointer",
                   active && "bloom-card-active ring-2 ring-accent/30",
@@ -223,7 +244,7 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
         </div>
 
         <div className="px-6 pt-4">
-          <Button variant="ghost" onClick={resetSettings} className="text-muted-foreground">
+          <Button variant="ghost" onClick={handleResetSettings} className="text-muted-foreground">
             <RotateCcw className="size-4" /> {sk.settings.resetDefaults}
           </Button>
         </div>

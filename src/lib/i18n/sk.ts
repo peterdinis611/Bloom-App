@@ -10,6 +10,33 @@ export const sk = {
     library: "Archív",
     settings: "Panel",
   },
+  toast: {
+    dismiss: "Zavrieť",
+    themeChanged: (name: string) => `Téma ${name} je aktívna`,
+    settingsReset: "Nastavenia obnovené",
+    settingsResetBody: "Predvolené hodnoty boli obnovené.",
+    recordingSaved: (title: string) => `Uložené: ${title}`,
+    recordingSavedBody: "Nahrávka je v knižnici.",
+    exportQueued: (count: number) =>
+      count === 1 ? "Export pridaný do fronty" : `${count} exporty pridané do fronty`,
+    exportQueuedBody: "Priebeh sleduj v sidebar-e.",
+    exportDone: "Export dokončený",
+    exportFailed: "Export zlyhal",
+    exportCancelled: "Export zrušený",
+    deleted: "Nahrávka vymazaná",
+    deletedAll: (count: number) =>
+      count === 1 ? "Vymazaná 1 nahrávka" : `Vymazaných ${count} nahrávok`,
+    batchDeleted: (count: number) =>
+      count === 1 ? "Vymazaná 1 nahrávka" : `Vymazaných ${count} nahrávok`,
+    renamed: (title: string) => `Premenované na „${title}"`,
+    tagAdded: (tag: string) => `Štítok „${tag}" pridaný`,
+    folderSet: (folder: string) => folder ? `Priečinok: ${folder}` : "Priečinok odstránený",
+    validateOk: "Súbor je v poriadku",
+    validateFail: "Súbor má problém",
+    copied: "Skopírované",
+    loadFailed: "Nepodarilo sa načítať knižnicu",
+    actionFailed: "Operácia zlyhala",
+  },
   nav: {
     record: "Nahrávanie",
     library: "Knižnica",

@@ -11,10 +11,92 @@
       rel="stylesheet"
     />
     <title>Bloom</title>
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: #090a0d;
+        color: #eceef2;
+      }
+      #root {
+        min-height: 100%;
+      }
+      .bloom-preload {
+        display: flex;
+        min-height: 100vh;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background:
+          radial-gradient(ellipse 70% 50% at 100% 0%, rgba(230, 169, 76, 0.08), transparent 55%),
+          radial-gradient(ellipse 60% 45% at 0% 100%, rgba(107, 158, 255, 0.09), transparent 50%),
+          #090a0d;
+        user-select: none;
+      }
+      .bloom-preload-mark {
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: -0.04em;
+      }
+      .bloom-preload-mark span {
+        color: #e6a94c;
+      }
+      .bloom-preload-ring {
+        position: relative;
+        width: 36px;
+        height: 36px;
+      }
+      .bloom-preload-ring::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        border: 2px solid rgba(230, 169, 76, 0.18);
+        border-top-color: #e6a94c;
+        animation: bloom-preload-spin 0.9s linear infinite;
+      }
+      .bloom-preload-caption {
+        font-family: ui-monospace, "JetBrains Mono", Menlo, monospace;
+        font-size: 10px;
+        font-weight: 500;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: rgba(139, 145, 158, 0.9);
+      }
+      @keyframes bloom-preload-spin {
+        to { transform: rotate(360deg); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .bloom-preload-ring::before {
+          animation: none;
+          border-top-color: rgba(230, 169, 76, 0.45);
+        }
+      }
+      html.bloom-overlay-entry,
+      html.bloom-overlay-entry body {
+        background: transparent !important;
+      }
+      html.bloom-overlay-entry .bloom-preload {
+        display: none;
+      }
+    </style>
+    <script>
+      if (window.location.hash) {
+        document.documentElement.classList.add("bloom-overlay-entry");
+      }
+    </script>
   </head>
 
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="bloom-preload" id="bloom-preload" role="status" aria-live="polite" aria-busy="true">
+        <div class="bloom-preload-ring" aria-hidden="true"></div>
+        <p class="bloom-preload-mark">Bloom<span>.</span></p>
+        <p class="bloom-preload-caption">Načítavam</p>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

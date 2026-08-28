@@ -15,6 +15,12 @@ export type ThemeId =
   | "paper"
   | "copper"
   | "midnight"
+  | "tally"
+  | "sand"
+  | "graphite"
+  | "sakura"
+  | "waveform"
+  | "dusk"
 
 export interface ThemeMeta {
   id: ThemeId
@@ -39,6 +45,12 @@ export const THEMES: ThemeMeta[] = [
   { id: "neon",     name: "Neón",         description: "Magenta + cyan",            swatch: ["#FF2D95", "#00F0FF", "#0D0514"] },
   { id: "violet",   name: "Fialový",      description: "Fialová + ružová",          swatch: ["#A855F7", "#F472B6", "#100E16"] },
   { id: "rose",     name: "Ružový",       description: "Ružová + broskyňa",         swatch: ["#FB7185", "#FDA4AF", "#140F11"] },
+  { id: "tally",    name: "Tally",        description: "REC červená + striebro",     swatch: ["#FF3B30", "#E8E4DC", "#080808"] },
+  { id: "waveform", name: "Vlna",         description: "Fosfor + jantár",           swatch: ["#39FF14", "#FFB020", "#050805"] },
+  { id: "dusk",     name: "Súmrak",       description: "Fialovo-oranžový súmrak",   swatch: ["#A78BFA", "#FB923C", "#120C18"] },
+  { id: "sakura",   name: "Sakura",       description: "Tmavá + čerešňová",        swatch: ["#F9A8D4", "#FBCFE8", "#140E12"] },
+  { id: "graphite", name: "Grafit",       description: "Neutrálna monochrom",       swatch: ["#D4D4D8", "#A1A1AA", "#0C0C0E"] },
+  { id: "sand",     name: "Piesok",       description: "Svetlý piesok + terakota",  swatch: ["#C2410C", "#D97706", "#F5F0E8"] },
 ]
 
 export const THEME_IDS = new Set<ThemeId>(THEMES.map((t) => t.id))

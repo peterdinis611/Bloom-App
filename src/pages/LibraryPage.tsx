@@ -452,7 +452,7 @@ interface LibraryPageProps {
 }
 
 export function LibraryPage({ onStartRecording, active = true }: LibraryPageProps) {
-  const { success: toastSuccess, error: toastError, toast: toastInfo } = useToast()
+  const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
   const [entries, setEntries] = useState<RecordingEntry[]>([])
   const [stats, setStats] = useState<LibraryStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -550,11 +550,13 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
       setEntries(recs)
       setStats(st)
     } catch (e) {
-      setError(String(e))
+      const msg = String(e)
+      setError(msg)
+      toastError({ title: sk.toast.loadFailed, description: msg })
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [toastError])
 
   const { activeCount } = useExportQueue()
   const prevQueueActive = useRef(0)
@@ -570,9 +572,10 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
     const cmd = ffmpeg?.install_hint.split(/:\s+/).pop() ?? "brew install ffmpeg"
     navigator.clipboard?.writeText(cmd).then(() => {
       setCopied(true)
+      toastSuccess({ title: sk.toast.copied, description: cmd })
       setTimeout(() => setCopied(false), 1800)
     }).catch(() => {})
-  }, [ffmpeg])
+  }, [ffmpeg, toastSuccess])
 
   const filtered = useMemo(() => {
     let list = entries
@@ -600,8 +603,11 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
     try {
       const meta = await renameRecording(id, title)
       setEntries((prev) => prev.map((e) => (e.meta.id === id ? { ...e, meta } : e)))
+      toastSuccess({ title: sk.toast.renamed(title) })
     } catch (e) {
-      setError(String(e))
+      const msg = String(e)
+      setError(msg)
+      toastError({ title: sk.toast.actionFailed, description: msg })
     }
   }
 
@@ -612,8 +618,11 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
       setEntries((prev) => prev.filter((e) => e.meta.id !== id))
       const st = await getLibraryStats().catch(() => null)
       if (st) setStats(st)
+      toastSuccess({ title: sk.toast.deleted })
     } catch (e) {
-      setError(String(e))
+      const msg = String(e)
+      setError(msg)
+      toastError({ title: sk.toast.actionFailed, description: msg })
     }
   }
 
@@ -627,12 +636,16 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
       setBatchMode(false)
       const st = await getLibraryStats().catch(() => null)
       if (st) setStats(st)
+      toastSuccess({ title: sk.toast.batchDeleted(ids.length) })
     } catch (e) {
-      setError(String(e))
+      const msg = String(e)
+      setError(msg)
+      toastError({ title: sk.toast.actionFailed, description: msg })
     }
   }
 
   const handleDeleteAll = async () => {
+    const count = entries.length
     setDeleteAllBusy(true)
     try {
       await deleteAllRecordings()
@@ -649,8 +662,11 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
       setConfirmDeleteAll(false)
       setPlaying(null)
       setValidations({})
+      toastSuccess({ title: sk.toast.deletedAll(count) })
     } catch (e) {
-      setError(String(e))
+      const msg = String(e)
+      setError(msg)
+      toastError({ title: sk.toast.actionFailed, description: msg })
     } finally {
       setDeleteAllBusy(false)
     }
@@ -666,11 +682,15 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
   }
 
   const handleSetFolder = async (id: string, folder: string) => {
+    const trimmed = folder.trim()
     try {
-      const meta = await updateRecordingMeta(id, { folder: folder.trim() })
+      const meta = await updateRecordingMeta(id, { folder: trimmed })
       setEntries((prev) => prev.map((e) => (e.meta.id === id ? { ...e, meta } : e)))
+      toastSuccess({ title: sk.toast.folderSet(trimmed) })
     } catch (e) {
-      setError(String(e))
+      const msg = String(e)
+      setError(msg)
+      toastError({ title: sk.toast.actionFailed, description: msg })
     }
   }
 
@@ -684,8 +704,11 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
       const meta = await updateRecordingMeta(id, { tags })
       setEntries((prev) => prev.map((e) => (e.meta.id === id ? { ...e, meta } : e)))
       setTagDraft((d) => ({ ...d, [id]: "" }))
+      toastSuccess({ title: sk.toast.tagAdded(raw) })
     } catch (e) {
-      setError(String(e))
+      const msg = String(e)
+      setError(msg)
+      toastError({ title: sk.toast.actionFailed, description: msg })
     }
   }
 
@@ -703,8 +726,18 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
     try {
       const res = await validateRecording(id)
       setValidations((prev) => ({ ...prev, [id]: res }))
+      if (res.is_valid) {
+        toastSuccess({ title: sk.toast.validateOk })
+      } else {
+        toastError({
+          title: sk.toast.validateFail,
+          description: res.error ?? undefined,
+        })
+      }
     } catch (e) {
-      setError(String(e))
+      const msg = String(e)
+      setError(msg)
+      toastError({ title: sk.toast.validateFail, description: msg })
     } finally {
       setBusyId(null)
     }

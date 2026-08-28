@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useState } from "react"
-import { Check, CircleAlert, X } from "lucide-react"
+import { Check, CircleAlert, Info, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { sk } from "@/lib/i18n/sk"
 
 export type ToastVariant = "success" | "error" | "info"
 
@@ -20,20 +21,27 @@ interface ToastContextValue {
   toast: (input: ToastInput & { variant?: ToastVariant }) => void
   success: (input: ToastInput) => void
   error: (input: ToastInput) => void
+  info: (input: ToastInput) => void
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null)
 
 const VARIANT_STYLES: Record<ToastVariant, string> = {
-  success: "border-[var(--status-success-border)] bg-[var(--status-success-bg)] text-[var(--status-success-fg)]",
-  error: "border-[var(--status-error-border)] bg-[var(--status-error-bg)] text-[var(--status-error-fg)]",
-  info: "border-[var(--status-info-border)] bg-[var(--status-info-bg)] text-[var(--status-info-fg)]",
+  success: "bloom-toast-success border-[var(--status-success-border)] bg-[var(--status-success-bg)]",
+  error: "bloom-toast-error border-[var(--status-error-border)] bg-[var(--status-error-bg)]",
+  info: "bloom-toast-info border-[var(--status-info-border)] bg-[var(--status-info-bg)]",
+}
+
+const VARIANT_TITLE: Record<ToastVariant, string> = {
+  success: "text-[var(--status-success-fg)]",
+  error: "text-[var(--status-error-fg)]",
+  info: "text-[var(--status-info-fg)]",
 }
 
 const VARIANT_ICONS = {
   success: Check,
   error: CircleAlert,
-  info: CircleAlert,
+  info: Info,
 } as const
 
 function ToastViewport({
@@ -57,23 +65,27 @@ function ToastViewport({
           <div
             key={t.id}
             className={cn(
-              "pointer-events-auto flex items-start gap-2.5 rounded-xl border px-3.5 py-3 shadow-xl backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2",
+              "bloom-toast pointer-events-auto flex items-start gap-2.5 rounded-xl border px-3.5 py-3 shadow-xl backdrop-blur-md animate-in fade-in slide-in-from-bottom-2",
               VARIANT_STYLES[t.variant],
             )}
             role="status"
           >
-            <Icon className="mt-0.5 size-4 shrink-0" />
+            <Icon className={cn("mt-0.5 size-4 shrink-0", VARIANT_TITLE[t.variant])} />
             <div className="min-w-0 flex-1">
-              <p className="text-[13px] font-semibold text-foreground">{t.title}</p>
+              <p className={cn("text-[13px] font-semibold leading-snug", VARIANT_TITLE[t.variant])}>
+                {t.title}
+              </p>
               {t.description && (
-                <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{t.description}</p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                  {t.description}
+                </p>
               )}
             </div>
             <button
               type="button"
               onClick={() => onDismiss(t.id)}
               className="shrink-0 rounded-md p-0.5 text-muted-foreground transition-colors hover:text-foreground"
-              aria-label="Dismiss"
+              aria-label={sk.toast.dismiss}
             >
               <X className="size-3.5" />
             </button>
@@ -99,14 +111,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       description: input.description,
       variant: input.variant ?? "info",
     }
-    setToasts((prev) => [...prev, item])
-    window.setTimeout(() => dismiss(id), 4000)
+    setToasts((prev) => [...prev.slice(-4), item])
+    window.setTimeout(() => dismiss(id), 4500)
   }, [dismiss])
 
   const value: ToastContextValue = {
     toast: push,
     success: (input) => push({ ...input, variant: "success" }),
     error: (input) => push({ ...input, variant: "error" }),
+    info: (input) => push({ ...input, variant: "info" }),
   }
 
   return (

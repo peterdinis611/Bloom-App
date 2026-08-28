@@ -9,6 +9,8 @@ import {
 } from "react"
 import type { OptimizeOptions } from "@/types"
 import { cancelOptimize, onOptimizeProgress, optimizeVideo } from "@/hooks/useBloomBackend"
+import { useToast } from "@/hooks/useToast"
+import { sk } from "@/lib/i18n/sk"
 
 export type QueueItemStatus = "pending" | "running" | "done" | "error" | "cancelled"
 
@@ -45,6 +47,7 @@ function newId(): string {
 
 export function ExportQueueProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ExportQueueItem[]>([])
+  const { success, error, info } = useToast()
   const itemsRef = useRef(items)
   const processingRef = useRef(false)
   const jobResolversRef = useRef(new Map<string, (done: boolean) => void>())
@@ -67,6 +70,7 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
         try {
           jobId = await optimizeVideo(next.options)
         } catch (e) {
+          error({ title: sk.toast.exportFailed, description: String(e) })
           setItems((prev) =>
             prev.map((i) =>
               i.id === next.id ? { ...i, status: "error", error: String(e), percent: 0 } : i,
@@ -84,7 +88,7 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
     } finally {
       processingRef.current = false
     }
-  }, [])
+  }, [error])
 
   useEffect(() => {
     let unlisten: (() => void) | undefined
@@ -96,8 +100,15 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
           const resolver = jobResolversRef.current.get(p.job_id)
           resolver?.(true)
           jobResolversRef.current.delete(p.job_id)
-          if (p.cancelled) return { ...item, status: "cancelled", percent: 0 }
-          if (p.error) return { ...item, status: "error", error: p.error, percent: 0 }
+          if (p.cancelled) {
+            info({ title: sk.toast.exportCancelled, description: item.label })
+            return { ...item, status: "cancelled", percent: 0 }
+          }
+          if (p.error) {
+            error({ title: sk.toast.exportFailed, description: `${item.label}: ${p.error}` })
+            return { ...item, status: "error", error: p.error, percent: 0 }
+          }
+          success({ title: sk.toast.exportDone, description: item.label })
           return {
             ...item,
             status: "done",
@@ -109,7 +120,7 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
       )
     }).then((fn) => { unlisten = fn })
     return () => { unlisten?.() }
-  }, [])
+  }, [success, error, info])
 
   useEffect(() => {
     if (items.some((i) => i.status === "pending")) void pump()
@@ -117,6 +128,10 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
 
   const enqueue = useCallback((jobs: EnqueueJob | EnqueueJob[]) => {
     const list = Array.isArray(jobs) ? jobs : [jobs]
+    info({
+      title: sk.toast.exportQueued(list.length),
+      description: sk.toast.exportQueuedBody,
+    })
     setItems((prev) => [
       ...prev,
       ...list.map((job) => ({
@@ -127,7 +142,7 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
         percent: 0,
       })),
     ])
-  }, [])
+  }, [info])
 
   const cancelItem = useCallback((id: string) => {
     const item = itemsRef.current.find((i) => i.id === id)

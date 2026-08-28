@@ -76,6 +76,7 @@ pub struct ValidationResult {
 /// How share_recording delivered the file on this platform.
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[allow(dead_code)]
 pub enum ShareMode {
     MacosSheet,
     WindowsClipboard,
