@@ -214,3 +214,16 @@ export interface ValidationResult {
   is_valid: boolean
   error: string | null
 }
+
+export type ShareMode =
+  | "macos_sheet"
+  | "windows_clipboard"
+  | "linux_email"
+  | "linux_clipboard"
+  | "linux_file_manager"
+
+/** Result of share_recording — mode tells the UI which toast to show. */
+export interface ShareResult {
+  path: string
+  mode: ShareMode
+}

@@ -73,6 +73,23 @@ pub struct ValidationResult {
     pub error: Option<String>,
 }
 
+/// How share_recording delivered the file on this platform.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ShareMode {
+    MacosSheet,
+    WindowsClipboard,
+    LinuxEmail,
+    LinuxClipboard,
+    LinuxFileManager,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ShareResult {
+    pub path: String,
+    pub mode: ShareMode,
+}
+
 /// Payload JS sends when opening a recording session.
 #[derive(Debug, Deserialize)]
 pub struct SessionMeta {

@@ -247,8 +247,15 @@ export const sk = {
   library: {
     title: "Knižnica",
     subtitle: "Vaše nahrávky",
-    shareOpened: "Otvor sa panel zdieľania.",
+    shareOpened: "Otvoril sa panel zdieľania.",
     shareFailed: "Zdieľanie sa nepodarilo.",
+    shareSuccess: {
+      macos_sheet: "Otvoril sa panel zdieľania.",
+      windows_clipboard: "Súbor je v schránke. Vložte ho do chatu alebo e-mailu (Ctrl+V).",
+      linux_email: "Otvoril sa e-mail s prílohou.",
+      linux_clipboard: "Odkaz na súbor je v schránke.",
+      linux_file_manager: "Súbor je zvýraznený v správcovi súborov.",
+    },
     recordingCount: (count: number) =>
       count === 1 ? "1 nahrávka" : count >= 2 && count <= 4 ? `${count} nahrávky` : `${count} nahrávok`,
     loading: "Načítavam…",

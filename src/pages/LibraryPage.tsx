@@ -923,8 +923,10 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
                 onReveal={() => revealInFinder(entry.path).catch((e) => setError(String(e)))}
                 onShare={async () => {
                   try {
-                    await shareRecording(entry.meta.id)
-                    toastSuccess({ title: sk.library.shareOpened })
+                    const result = await shareRecording(entry.meta.id)
+                    const title =
+                      sk.library.shareSuccess[result.mode] ?? sk.library.shareOpened
+                    toastSuccess({ title })
                   } catch (e) {
                     toastError({ title: sk.library.shareFailed, description: String(e) })
                   }

@@ -137,15 +137,13 @@ Fronta na frontende (`useExportQueue`) spúšťa exporty **sekvenčne** — jede
 
 ## Zdieľanie (`share.rs`)
 
-Na macOS:
+| Platforma | Správanie | `ShareMode` |
+|-----------|-----------|-------------|
+| **macOS** | `NSSharingServicePicker` — systémový panel | `macos_sheet` |
+| **Windows** | PowerShell `Set-Clipboard -Path` — súbor v schránke (Ctrl+V) | `windows_clipboard` |
+| **Linux** | 1. `xdg-email --attach` → 2. URI do schránky (`wl-copy` / `xclip`) → 3. Nautilus/Dolphin `--select` | `linux_email` / `linux_clipboard` / `linux_file_manager` |
 
-- Nájde hlavné okno `main`
-- Vytvorí `NSSharingServicePicker` s `NSURL` súboru
-- Zobrazí systémový panel zdieľania
-
-Na ostatných platformách fallback: `reveal_in_finder`.
-
-Závislosti (len macOS): `objc2`, `objc2-app-kit`, `objc2-foundation`, `objc2-core-foundation`.
+Príkaz `share_recording` vracia `{ path, mode }` — frontend zobrazí toast podľa `mode`.
 
 ## Bezpečnosť
 

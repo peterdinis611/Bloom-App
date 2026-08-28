@@ -5,7 +5,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::share;
-use crate::types::{LibraryStats, RecordingEntry, RecordingMeta, ValidationResult};
+use crate::types::{LibraryStats, RecordingEntry, RecordingMeta, ShareResult, ValidationResult};
 use crate::util::{bloom_dir, find_recording, load_all_recordings};
 
 // ── Snapshot ────────────────────────────────────────────────────────────────
@@ -156,11 +156,10 @@ pub(crate) fn delete_all_recordings(app: tauri::AppHandle) -> Result<u32, String
 }
 
 #[tauri::command]
-pub(crate) fn share_recording(app: tauri::AppHandle, id: String) -> Result<String, String> {
+pub(crate) fn share_recording(app: tauri::AppHandle, id: String) -> Result<ShareResult, String> {
     let dir = bloom_dir(&app)?;
     let entry = find_recording(&dir, &id).ok_or_else(|| format!("Recording {id} not found"))?;
-    share::share_file(&app, &entry.path)?;
-    Ok(entry.path)
+    share::share_file(&app, &entry.path)
 }
 
 #[tauri::command]

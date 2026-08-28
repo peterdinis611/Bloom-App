@@ -21,6 +21,7 @@ import type {
   RecordingEntry,
   RecordingMeta,
   SessionMeta,
+  ShareResult,
   ValidationResult,
   VideoAnalyze,
   VideoInfo,
@@ -143,9 +144,9 @@ export async function deleteAllRecordings(): Promise<number> {
   return invoke<number>("delete_all_recordings")
 }
 
-/** Opens the native macOS share sheet for a recording (AirDrop, Mail, …). */
-export async function shareRecording(id: string): Promise<string> {
-  return invoke<string>("share_recording", { id })
+/** Opens platform-specific sharing (macOS sheet, Windows clipboard, Linux mail/URI/FM). */
+export async function shareRecording(id: string): Promise<ShareResult> {
+  return invoke<ShareResult>("share_recording", { id })
 }
 
 /**
