@@ -154,6 +154,16 @@ export interface OptimizeOptions {
   speed?: number
   output_name?: string | null
   add_to_library?: boolean
+  /** Overwrite the source file in the library instead of creating a copy. */
+  replace_original?: boolean
+}
+
+/** Mirrors ExportEstimate in Rust. */
+export interface ExportEstimate {
+  duration_secs: number
+  size_bytes: number
+  resolution_label: string
+  format_label: string
 }
 
 /** Mirrors OptimizeProgress event payload in Rust. */

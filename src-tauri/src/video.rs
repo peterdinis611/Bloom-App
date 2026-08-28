@@ -21,7 +21,7 @@ use std::{
     process::{Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
     },
     time::Instant,
 };
@@ -92,6 +92,9 @@ pub struct OptimizeOptions {
     /// Add the result to the Bloom library (write a .bloom.json sidecar).
     #[serde(default = "default_true")]
     pub add_to_library: bool,
+    /// Overwrite the source file instead of creating a new library entry.
+    #[serde(default)]
+    pub replace_original: bool,
 }
 
 fn default_true() -> bool {
@@ -100,6 +103,14 @@ fn default_true() -> bool {
 
 fn default_speed() -> f64 {
     1.0
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExportEstimate {
+    pub duration_secs: f64,
+    pub size_bytes: u64,
+    pub resolution_label: String,
+    pub format_label: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -247,6 +258,10 @@ fn find_binary(stem: &str) -> Option<PathBuf> {
 
 fn find_ffmpeg() -> Option<PathBuf> {
     find_binary("ffmpeg").or_else(find_ffmpeg_via_package_manager)
+}
+
+pub(crate) fn find_ffmpeg_path() -> Option<PathBuf> {
+    find_ffmpeg()
 }
 
 /// After a fresh Homebrew install, binaries may only be discoverable via `brew --prefix`.
@@ -642,7 +657,7 @@ fn parse_frame_rate(s: &str) -> f64 {
     s.parse().unwrap_or(0.0)
 }
 
-fn probe(ffprobe: &Path, path: &str) -> Result<VideoInfo, String> {
+pub(crate) fn probe(ffprobe: &Path, path: &str) -> Result<VideoInfo, String> {
     let output = Command::new(ffprobe)
         .args([
             "-v", "quiet",
@@ -727,14 +742,34 @@ struct PresetValues {
     x264_crf: &'static str,
     vp9_crf: &'static str,
     audio_bitrate: &'static str,
+    /// h264_videotoolbox -q:v (lower = better quality).
+    vt_quality: &'static str,
 }
 
 fn preset_values(preset: &str) -> PresetValues {
     match preset {
-        "small" => PresetValues { x264_preset: "veryfast", x264_crf: "30", vp9_crf: "37", audio_bitrate: "96k" },
-        "high" => PresetValues { x264_preset: "slow", x264_crf: "20", vp9_crf: "27", audio_bitrate: "192k" },
+        "small" => PresetValues {
+            x264_preset: "veryfast",
+            x264_crf: "30",
+            vp9_crf: "37",
+            audio_bitrate: "96k",
+            vt_quality: "72",
+        },
+        "high" => PresetValues {
+            x264_preset: "medium",
+            x264_crf: "20",
+            vp9_crf: "27",
+            audio_bitrate: "192k",
+            vt_quality: "45",
+        },
         // "medium" and any unknown value
-        _ => PresetValues { x264_preset: "medium", x264_crf: "25", vp9_crf: "32", audio_bitrate: "128k" },
+        _ => PresetValues {
+            x264_preset: "faster",
+            x264_crf: "25",
+            vp9_crf: "32",
+            audio_bitrate: "128k",
+            vt_quality: "58",
+        },
     }
 }
 
@@ -778,13 +813,51 @@ fn build_atempo_chain(speed: f64) -> String {
     filters.join(",")
 }
 
+fn scale_filter(height: u32, preset: &str) -> String {
+    let flags = if preset == "high" {
+        "lanczos"
+    } else {
+        "fast_bilinear"
+    };
+    format!("scale=-2:{height}:flags={flags}")
+}
+
+static VT_ENCODER: OnceLock<bool> = OnceLock::new();
+
+/// Whether ffmpeg exposes Apple VideoToolbox H.264 encoder.
+pub(crate) fn videotoolbox_available(ffmpeg: &Path) -> bool {
+    *VT_ENCODER.get_or_init(|| {
+        Command::new(ffmpeg)
+            .args(["-hide_banner", "-encoders"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains("h264_videotoolbox"))
+            .unwrap_or(false)
+    })
+}
+
+fn hwaccel_input_args() -> Vec<String> {
+    #[cfg(target_os = "macos")]
+    {
+        vec!["-hwaccel".into(), "videotoolbox".into()]
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        vec![]
+    }
+}
+
 fn build_args(
     opts: &OptimizeOptions,
     input: &str,
     output: &str,
     has_audio: bool,
+    hw_encode: bool,
 ) -> Vec<String> {
-    let mut a: Vec<String> = vec!["-y".into(), "-hide_banner".into()];
+    let mut a: Vec<String> = vec!["-y".into(), "-hide_banner".into(), "-loglevel".into(), "error".into()];
+
+    a.extend(hwaccel_input_args());
 
     // Fast input-side seek for trimming.
     if let Some(start) = opts.trim_start {
@@ -811,9 +884,9 @@ fn build_args(
     let mut vf: Vec<String> = Vec::new();
     if format == "gif" {
         vf.push("fps=12".into());
-        vf.push(format!("scale=-2:{}:flags=lanczos", height.unwrap_or(480)));
+        vf.push(scale_filter(height.unwrap_or(480), &opts.preset));
     } else if let Some(h) = height {
-        vf.push(format!("scale=-2:{h}"));
+        vf.push(scale_filter(h, &opts.preset));
     }
     if speed != 1.0 {
         vf.push(format!("setpts=PTS/{speed}"));
@@ -846,14 +919,28 @@ fn build_args(
             a.extend(["-loop", "0", "-an"].map(String::from));
         }
         _ => {
-            a.extend([
-                "-c:v", "libx264",
-                "-preset", pv.x264_preset,
-                "-crf", pv.x264_crf,
-                "-pix_fmt", "yuv420p",
-                "-movflags", "+faststart",
-            ]
-            .map(String::from));
+            if hw_encode {
+                a.extend([
+                    "-c:v", "h264_videotoolbox",
+                    "-q:v", pv.vt_quality,
+                    "-allow_sw", "1",
+                    "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart",
+                ]
+                .map(String::from));
+            } else {
+                a.extend([
+                    "-c:v", "libx264",
+                    "-preset", pv.x264_preset,
+                    "-crf", pv.x264_crf,
+                    "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart",
+                    "-tune", "fastdecode",
+                ]
+                .map(String::from));
+                a.push("-threads".into());
+                a.push("0".into());
+            }
             if has_audio {
                 a.extend(["-c:a", "aac", "-b:a", pv.audio_bitrate].map(String::from));
             } else {
@@ -903,6 +990,53 @@ fn build_output_path(opts: &OptimizeOptions, input: &Path) -> PathBuf {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Fast MP4 remux (stream copy + moov at start for instant playback)
+// ────────────────────────────────────────────────────────────────────────────
+
+/// Rewrites MP4 in place so the moov atom is at the front — no re-encode.
+pub(crate) fn remux_mp4_faststart(ffmpeg: &Path, path: &Path) -> Result<(), String> {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if ext != "mp4" {
+        return Ok(());
+    }
+
+    let tmp = path.with_extension("bloom-faststart.mp4");
+    let _ = std::fs::remove_file(&tmp);
+
+    let status = Command::new(ffmpeg)
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            &path.to_string_lossy(),
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
+            "-max_muxing_queue_size",
+            "9999",
+            &tmp.to_string_lossy(),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .status()
+        .map_err(|e| format!("ffmpeg remux failed: {e}"))?;
+
+    if !status.success() || !tmp.exists() {
+        let _ = std::fs::remove_file(&tmp);
+        return Err("faststart remux failed".into());
+    }
+
+    std::fs::rename(&tmp, path).map_err(|e| format!("Could not replace recording: {e}"))
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Thumbnail
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -910,16 +1044,28 @@ fn thumbnail_path_for(video: &Path) -> PathBuf {
     video.with_extension("thumb.jpg")
 }
 
-fn make_thumbnail(ffmpeg: &Path, video: &Path, at_secs: f64) -> Result<PathBuf, String> {
-    let out = thumbnail_path_for(video);
+pub(crate) fn make_thumbnail(ffmpeg: &Path, video: &Path, at_secs: f64) -> Result<PathBuf, String> {
+    make_thumbnail_scaled(ffmpeg, video, at_secs, &thumbnail_path_for(video), 360)
+}
+
+fn make_thumbnail_scaled(
+    ffmpeg: &Path,
+    video: &Path,
+    at_secs: f64,
+    out: &Path,
+    height: u32,
+) -> Result<PathBuf, String> {
+    let vf = format!("scale=-2:{height}:flags=fast_bilinear");
     let status = Command::new(ffmpeg)
         .args([
-            "-y", "-hide_banner",
+            "-y",
+            "-hide_banner",
+            "-loglevel", "error",
             "-ss", &format!("{at_secs:.3}"),
             "-i", &video.to_string_lossy(),
             "-frames:v", "1",
-            "-vf", "scale=-2:360",
-            "-q:v", "4",
+            "-vf", &vf,
+            "-q:v", if height >= 200 { "5" } else { "6" },
             &out.to_string_lossy(),
         ])
         .stdout(Stdio::null())
@@ -930,7 +1076,93 @@ fn make_thumbnail(ffmpeg: &Path, video: &Path, at_secs: f64) -> Result<PathBuf, 
     if !status.success() || !out.exists() {
         return Err("Could not generate thumbnail".into());
     }
-    Ok(out)
+    Ok(out.to_path_buf())
+}
+
+fn filmstrip_path_for(video: &Path, index: u32) -> PathBuf {
+    let stem = video
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("video");
+    video.with_file_name(format!("{stem}.strip-{index:02}.jpg"))
+}
+
+pub fn compute_export_estimate(info: &VideoInfo, opts: &OptimizeOptions) -> ExportEstimate {
+    let source_duration = trim_duration(opts).unwrap_or(info.duration_secs).max(0.0);
+    let speed = effective_speed(opts.speed);
+    let out_duration = (source_duration / speed).max(0.0);
+
+    let mut size = info.size_bytes as f64;
+    if info.duration_secs > 0.0 {
+        size *= source_duration / info.duration_secs;
+    }
+    size /= speed;
+
+    let preset_factor = match opts.preset.as_str() {
+        "small" => 0.38,
+        "high" => 0.82,
+        _ => 0.58,
+    };
+    size *= preset_factor;
+
+    if let Some(h) = resolution_height(&opts.resolution) {
+        if info.height > 0 {
+            let scale = (h as f64 / info.height as f64).min(1.0);
+            size *= scale * scale;
+        }
+    }
+
+    size = match opts.format.as_str() {
+        "gif" => size * 0.45,
+        "webm" => size * 0.92,
+        _ => size,
+    };
+
+    ExportEstimate {
+        duration_secs: out_duration,
+        size_bytes: size.max(1024.0) as u64,
+        resolution_label: opts.resolution.clone(),
+        format_label: opts.format.to_uppercase(),
+    }
+}
+
+fn update_sidecar_in_place(
+    path: &Path,
+    opts: &OptimizeOptions,
+    duration_secs: f64,
+    size_bytes: u64,
+) -> Result<(), String> {
+    let meta_path = meta_path_for(path);
+    let raw = std::fs::read_to_string(&meta_path)
+        .map_err(|e| format!("Cannot read sidecar: {e}"))?;
+    let mut meta: RecordingMeta =
+        serde_json::from_str(&raw).map_err(|e| format!("Sidecar parse error: {e}"))?;
+    meta.duration_secs = duration_secs;
+    meta.file_size_bytes = size_bytes;
+    meta.quality = opts.resolution.clone();
+    let json = serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())?;
+    std::fs::write(&meta_path, json).map_err(|e| format!("Cannot update sidecar: {e}"))?;
+    Ok(())
+}
+
+fn replace_original_file(
+    input: &Path,
+    temp_output: &Path,
+    opts: &OptimizeOptions,
+    duration_secs: f64,
+    size_bytes: u64,
+) -> Result<PathBuf, String> {
+    if !temp_output.exists() {
+        return Err("Temporary export file missing".into());
+    }
+    let _ = std::fs::remove_file(input);
+    std::fs::rename(temp_output, input).map_err(|e| format!("Could not replace original: {e}"))?;
+    update_sidecar_in_place(input, opts, duration_secs, size_bytes)?;
+    let _ = std::fs::remove_file(thumbnail_path_for(input));
+    for i in 0..24 {
+        let _ = std::fs::remove_file(filmstrip_path_for(input, i));
+    }
+    Ok(input.to_path_buf())
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -1124,19 +1356,43 @@ fn run_optimize(
     let size = std::fs::metadata(&output).map(|m| m.len()).unwrap_or(0);
     let out_duration = if total_secs > 0.0 { total_secs } else { 0.0 };
 
-    // GIFs aren't real "recordings"; only MP4/WebM get a library sidecar.
-    if add_to_library && opts.format != "gif" {
-        write_output_sidecar(&input, &output, &opts, out_duration, size);
-        let _ = make_thumbnail(&ffmpeg_thumb, &output, (out_duration * 0.1).max(0.0));
-    }
+    let final_path = if opts.replace_original {
+        match replace_original_file(&input, &output, &opts, out_duration, size) {
+            Ok(p) => {
+                let _ = make_thumbnail(&ffmpeg_thumb, &p, (out_duration * 0.1).max(0.0));
+                p
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&output);
+                emit(OptimizeProgress {
+                    job_id: job_id.clone(),
+                    percent: 0.0,
+                    done: true,
+                    cancelled: false,
+                    output_path: None,
+                    output_size_bytes: None,
+                    error: Some(e),
+                });
+                return;
+            }
+        }
+    } else {
+        if add_to_library && opts.format != "gif" {
+            write_output_sidecar(&input, &output, &opts, out_duration, size);
+            let _ = make_thumbnail(&ffmpeg_thumb, &output, (out_duration * 0.1).max(0.0));
+        }
+        output
+    };
+
+    let final_size = std::fs::metadata(&final_path).map(|m| m.len()).unwrap_or(size);
 
     emit(OptimizeProgress {
         job_id: job_id.clone(),
         percent: 100.0,
         done: true,
         cancelled: false,
-        output_path: Some(output.to_string_lossy().into_owned()),
-        output_size_bytes: Some(size),
+        output_path: Some(final_path.to_string_lossy().into_owned()),
+        output_size_bytes: Some(final_size),
         error: None,
     });
 }
@@ -1201,15 +1457,30 @@ pub fn optimize_video(
     let total_secs = trim_duration(&options).unwrap_or(info.duration_secs)
         / effective_speed(options.speed);
 
-    let output = build_output_path(&options, &input);
-    let args = build_args(&options, &options.input_path, &output.to_string_lossy(), has_audio);
+    if options.replace_original && options.format != "mp4" {
+        return Err("Nahradenie originálu je podporované len pre MP4.".into());
+    }
+
+    let output = if options.replace_original {
+        input.with_extension("bloom-replace.tmp.mp4")
+    } else {
+        build_output_path(&options, &input)
+    };
+    let hw_encode = videotoolbox_available(&ffmpeg);
+    let args = build_args(
+        &options,
+        &options.input_path,
+        &output.to_string_lossy(),
+        has_audio,
+        hw_encode,
+    );
 
     let job_id = Uuid::new_v4().to_string();
     let cancel = Arc::new(AtomicBool::new(false));
     state.0.lock().unwrap().insert(job_id.clone(), cancel.clone());
 
     let app_clone = app.clone();
-    let add_to_library = options.add_to_library;
+    let add_to_library = options.add_to_library && !options.replace_original;
     let ffmpeg_thumb = ffmpeg.clone();
     let worker_job_id = job_id.clone();
 
@@ -1230,6 +1501,44 @@ pub fn optimize_video(
     });
 
     Ok(job_id)
+}
+
+#[tauri::command]
+pub fn get_filmstrip(path: String, frame_count: Option<u32>) -> Result<Vec<String>, String> {
+    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg not found".to_string())?;
+    let ffprobe = find_ffprobe(Some(&ffmpeg)).ok_or_else(|| "ffprobe not found".to_string())?;
+    let info = probe(&ffprobe, &path)?;
+    let video = PathBuf::from(&path);
+    if !video.exists() {
+        return Err("Video file does not exist".into());
+    }
+
+    let count = frame_count.unwrap_or(12).clamp(6, 20);
+    let duration = info.duration_secs.max(0.1);
+    let mut paths = Vec::with_capacity(count as usize);
+
+    for i in 0..count {
+        let t = if count <= 1 {
+            0.0
+        } else {
+            duration * i as f64 / (count - 1) as f64
+        };
+        let thumb = filmstrip_path_for(&video, i);
+        if !thumb.exists() {
+            make_thumbnail_scaled(&ffmpeg, &video, t, &thumb, 72)?;
+        }
+        paths.push(thumb.to_string_lossy().into_owned());
+    }
+
+    Ok(paths)
+}
+
+#[tauri::command]
+pub fn estimate_export(options: OptimizeOptions) -> Result<ExportEstimate, String> {
+    let ffprobe = find_ffprobe(find_ffmpeg().as_deref())
+        .ok_or_else(|| "ffprobe not found".to_string())?;
+    let info = probe(&ffprobe, &options.input_path)?;
+    Ok(compute_export_estimate(&info, &options))
 }
 
 #[tauri::command]

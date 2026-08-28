@@ -49,8 +49,8 @@ pub(crate) fn open_session(
         .open(&path)
         .map_err(|e| format!("Cannot create {path_str}: {e}"))?;
 
-    // 256 KB buffer – amortises many small write() syscalls
-    let writer = BufWriter::with_capacity(256 * 1024, file);
+    // 1 MiB buffer – fewer syscalls for MediaRecorder chunk writes
+    let writer = BufWriter::with_capacity(1024 * 1024, file);
 
     let meta_template = RecordingMeta {
         id: Uuid::new_v4().to_string(),
@@ -122,14 +122,12 @@ pub(crate) fn close_session(
     session.writer.flush().map_err(|e| format!("Flush error: {e}"))?;
     drop(session.writer); // close file handle
 
-    let duration_secs = session.started_at.elapsed().as_secs_f64();
-    let file_size_bytes = fs::metadata(&session.path)
-        .map(|m| m.len())
-        .unwrap_or(session.bytes_written);
+    let wall_duration_secs = session.started_at.elapsed().as_secs_f64();
+    let finalized = crate::finalize::finalize_recording(&session.path, wall_duration_secs);
 
     let mut meta = session.meta_template;
-    meta.duration_secs = duration_secs;
-    meta.file_size_bytes = file_size_bytes;
+    meta.duration_secs = finalized.duration_secs;
+    meta.file_size_bytes = finalized.file_size_bytes;
 
     // Write sidecar JSON
     let meta_path = meta_path_for(&session.path);

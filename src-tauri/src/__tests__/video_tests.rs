@@ -12,6 +12,7 @@ fn opts(preset: &str, resolution: &str, format: &str) -> OptimizeOptions {
         speed: 1.0,
         output_name: None,
         add_to_library: true,
+        replace_original: false,
     }
 }
 
@@ -72,19 +73,27 @@ fn progress_seconds_parsing() {
 #[test]
 fn build_args_mp4_with_scale_and_progress() {
     let o = opts("medium", "720p", "mp4");
-    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mp4", true);
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mp4", true, false);
 
     assert!(args.windows(2).any(|w| w == ["-c:v", "libx264"]));
-    assert!(args.windows(2).any(|w| w == ["-c:a", "aac"]));
-    assert!(args.iter().any(|a| a == "scale=-2:720"));
+    assert!(args.iter().any(|a| a.contains("scale=-2:720")));
+    assert!(args.iter().any(|a| a.contains("fast_bilinear")));
     assert!(args.windows(2).any(|w| w == ["-progress", "pipe:1"]));
     assert_eq!(args.last().unwrap(), "/tmp/out.mp4");
 }
 
 #[test]
+fn build_args_videotoolbox_when_hw_enabled() {
+    let o = opts("medium", "720p", "mp4");
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mp4", true, true);
+    assert!(args.windows(2).any(|w| w == ["-c:v", "h264_videotoolbox"]));
+    assert!(args.windows(2).any(|w| w == ["-q:v", "58"]));
+}
+
+#[test]
 fn build_args_no_audio_uses_an() {
     let o = opts("small", "original", "mp4");
-    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mp4", false);
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mp4", false, false);
     assert!(args.iter().any(|a| a == "-an"));
     assert!(!args.iter().any(|a| a.starts_with("scale=")));
 }
@@ -93,7 +102,7 @@ fn build_args_no_audio_uses_an() {
 fn build_args_speed_applies_setpts_and_atempo() {
     let mut o = opts("medium", "720p", "mp4");
     o.speed = 2.0;
-    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mp4", true);
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mp4", true, false);
     assert!(args.iter().any(|a| a.contains("setpts=PTS/2")));
     assert!(args.windows(2).any(|w| w == ["-af", "atempo=2.0000"]));
 }
@@ -101,7 +110,7 @@ fn build_args_speed_applies_setpts_and_atempo() {
 #[test]
 fn build_args_gif_has_fps_and_no_audio() {
     let o = opts("medium", "480p", "gif");
-    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.gif", true);
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.gif", true, false);
     assert!(args.iter().any(|a| a.contains("fps=12")));
     assert!(args.iter().any(|a| a == "-an"));
 }

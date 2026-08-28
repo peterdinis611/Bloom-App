@@ -3,7 +3,6 @@ import { X, Scissors, Play, Pause, Zap, Check, CircleAlert, FolderOpen, LoaderCi
 import { useCloseOnEscape } from "@/hooks/useCloseOnEscape"
 import type { RecordingEntry } from "@/types"
 import {
-  fileSrc,
   formatBytes,
   formatDurationSecs,
   getVideoInfo,
@@ -11,6 +10,7 @@ import {
   onOptimizeProgress,
   revealInFinder,
 } from "@/hooks/useBloomBackend"
+import { BloomVideoPlayer, type BloomVideoPlayerHandle } from "@/components/video/BloomVideoPlayer"
 
 type Phase = "edit" | "running" | "done" | "error"
 
@@ -90,7 +90,7 @@ function DualRangeTimeline({ duration, start, end, playhead, onChange, onSeek }:
 }
 
 export function TrimModal({ entry, onClose, onComplete }: TrimModalProps) {
-  const videoRef = useRef<HTMLVideoElement>(null)
+  const playerRef = useRef<BloomVideoPlayerHandle>(null)
   const [duration, setDuration] = useState(entry.meta.duration_secs)
   const [trimStart, setTrimStart] = useState(0)
   const [trimEnd, setTrimEnd] = useState(entry.meta.duration_secs)
@@ -120,42 +120,35 @@ export function TrimModal({ entry, onClose, onComplete }: TrimModalProps) {
     return () => { disposed = true }
   }, [entry.path])
 
-  useEffect(() => {
-    const v = videoRef.current
-    if (!v) return
-    const tick = () => setPlayhead(v.currentTime)
-    v.addEventListener("timeupdate", tick)
-    return () => v.removeEventListener("timeupdate", tick)
-  }, [])
-
   useCloseOnEscape(onClose, phase !== "running")
 
   const seek = useCallback((t: number) => {
-    const v = videoRef.current
-    if (!v) return
-    v.currentTime = t
+    playerRef.current?.seek(t)
     setPlayhead(t)
   }, [])
 
-  const togglePlay = () => {
-    const v = videoRef.current
-    if (!v) return
-    if (playing) { v.pause(); setPlaying(false) }
-    else {
-      if (v.currentTime < trimStart || v.currentTime >= trimEnd) v.currentTime = trimStart
-      v.play().then(() => setPlaying(true)).catch(() => {})
+  const togglePlay = useCallback(async () => {
+    const player = playerRef.current
+    if (!player) return
+    if (playing) {
+      player.pause()
+      setPlaying(false)
+      return
     }
-  }
-
-  useEffect(() => {
-    const v = videoRef.current
-    if (!v || !playing) return
-    const check = () => {
-      if (v.currentTime >= trimEnd) { v.pause(); v.currentTime = trimStart; setPlaying(false) }
-    }
-    v.addEventListener("timeupdate", check)
-    return () => v.removeEventListener("timeupdate", check)
+    const t = player.getCurrentTime()
+    if (t < trimStart || t >= trimEnd) player.seek(trimStart)
+    await player.play()
+    setPlaying(true)
   }, [playing, trimStart, trimEnd])
+
+  const handleTimeUpdate = useCallback((t: number) => {
+    setPlayhead(t)
+    if (playing && t >= trimEnd) {
+      playerRef.current?.pause()
+      playerRef.current?.seek(trimStart)
+      setPlaying(false)
+    }
+  }, [playing, trimEnd, trimStart])
 
   const exportTrim = async () => {
     setPhase("running")
@@ -197,19 +190,24 @@ export function TrimModal({ entry, onClose, onComplete }: TrimModalProps) {
         <div className="flex flex-col gap-4 p-4">
           {phase === "edit" && (
             <>
-              <div className="relative aspect-video overflow-hidden rounded-xl border border-border/60 bg-black">
-                <video
-                  ref={videoRef}
-                  src={fileSrc(entry.path)}
-                  className="h-full w-full object-contain"
-                  onClick={togglePlay}
+              <div className="relative aspect-video overflow-hidden rounded-xl border border-border/60">
+                <BloomVideoPlayer
+                  ref={playerRef}
+                  path={entry.path}
+                  showControls={false}
+                  showPlayOverlay={false}
+                  onClick={() => { void togglePlay() }}
+                  onTimeUpdate={handleTimeUpdate}
+                  onPlayStateChange={setPlaying}
+                  className="h-full rounded-none"
                 />
                 <button
-                  onClick={togglePlay}
+                  type="button"
+                  onClick={() => { void togglePlay() }}
                   className="absolute bottom-3 left-3 flex items-center gap-1.5 rounded-lg bg-black/60 px-2.5 py-1.5 text-xs font-bold text-white backdrop-blur"
                 >
                   {playing ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
-                  Preview
+                  Náhľad
                 </button>
               </div>
 

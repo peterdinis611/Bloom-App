@@ -53,8 +53,8 @@ import {
   formatBytes,
   formatDurationSecs,
 } from "@/hooks/useBloomBackend"
-import { OptimizeModal } from "@/components/OptimizeModal"
-import { TrimModal } from "@/components/TrimModal"
+import { VideoPlayerModal } from "@/components/video/VideoPlayerModal"
+import { EditorModal } from "@/components/editor/EditorModal"
 import { BatchOptimizeModal } from "@/components/BatchOptimizeModal"
 import { ConfirmDeleteAll } from "@/components/library/ConfirmDeleteAll"
 import { PageScrollArea } from "@/components/layout/PageScrollArea"
@@ -228,45 +228,15 @@ function ConfirmDelete({ title, open, onCancel, onConfirm }: {
   )
 }
 
-// ── Player modal ─────────────────────────────────────────────────────────────
-function PlayerModal({ entry, open, onClose }: { entry: RecordingEntry; open: boolean; onClose: () => void }) {
-  const meta = entry.meta
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="flex h-[90vh] max-w-4xl flex-col gap-0 border-white/10 bg-black/95 p-0 [&>button]:text-white/60 [&>button]:hover:text-white">
-        <div className="flex items-center justify-between px-4 py-3">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-bold text-white">{meta.title}</p>
-            <p className="text-[11px] text-white/50">
-              {formatDurationSecs(meta.duration_secs)} · {formatBytes(meta.file_size_bytes)} · {meta.quality}
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-1 items-center justify-center px-4 pb-5 min-h-0">
-          <video
-            key={entry.path}
-            src={fileSrc(entry.path)}
-            controls
-            autoPlay
-            className="max-h-full max-w-full rounded-xl border border-white/10 bg-black shadow-2xl"
-          />
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 // ── Recording card ─────────────────────────────────────────────────────────
-function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, onOptimize, onTrim, onToggleStar, onShare, validation, busy, ffmpegReady, batchMode, selected, onSelect, tagValue, onTagChange, onTagCommit, onFolderChange, showMetaInputs }: {
+function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, onEdit, onToggleStar, onShare, validation, busy, ffmpegReady, batchMode, selected, onSelect, tagValue, onTagChange, onTagCommit, onFolderChange, showMetaInputs }: {
   entry: RecordingEntry
   onPlay: () => void
   onDelete: () => void
   onReveal: () => void
   onRename: (title: string) => void
   onValidate: () => void
-  onOptimize: () => void
-  onTrim: () => void
+  onEdit: () => void
   onToggleStar: () => void
   onShare: () => void
   validation?: ValidationResult
@@ -419,8 +389,7 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
       <div className="flex flex-col gap-2 border-t border-border/40 pt-2">
         <div className="flex flex-wrap gap-1">
           <ActionBtn icon={Play} label={sk.library.actions.play} onClick={onPlay} primary />
-          {ffmpegReady && <ActionBtn icon={Sparkles} label={sk.library.optimise} onClick={onOptimize} accent />}
-          {ffmpegReady && <ActionBtn icon={Scissors} label={sk.library.actions.trim} onClick={onTrim} />}
+          {ffmpegReady && <ActionBtn icon={Scissors} label={sk.library.actions.edit} onClick={onEdit} accent />}
           <ActionBtn icon={ScanSearch} label={sk.library.actions.verify} onClick={onValidate} disabled={busy} />
           <ActionBtn icon={FolderOpen} label={sk.library.actions.reveal} onClick={onReveal} />
           <ActionBtn icon={Share2} label={sk.library.actions.share} onClick={onShare} />
@@ -502,8 +471,7 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
   const [ffmpeg, setFfmpeg] = useState<FfmpegStatus | null>(null)
   const [checkingFfmpeg, setCheckingFfmpeg] = useState(false)
   const [installingFfmpeg, setInstallingFfmpeg] = useState(false)
-  const [optimizing, setOptimizing] = useState<RecordingEntry | null>(null)
-  const [trimming, setTrimming] = useState<RecordingEntry | null>(null)
+  const [editing, setEditing] = useState<RecordingEntry | null>(null)
   const [batchOptimizing, setBatchOptimizing] = useState<RecordingEntry[] | null>(null)
   const [copied, setCopied] = useState(false)
   const [starredOnly, setStarredOnly] = useState(false)
@@ -944,8 +912,7 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
                 onShare={() => shareRecording(entry.meta.id).catch((e) => setError(String(e)))}
                 onRename={(title) => handleRename(entry.meta.id, title)}
                 onValidate={() => handleValidate(entry.meta.id)}
-                onOptimize={() => setOptimizing(entry)}
-                onTrim={() => setTrimming(entry)}
+                onEdit={() => setEditing(entry)}
                 onToggleStar={() => handleToggleStar(entry.meta.id, entry.meta.starred ?? false)}
                 showMetaInputs
                 tagValue={tagDraft[entry.meta.id] ?? ""}
@@ -963,7 +930,7 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
       </PageScrollArea>
 
       {playing && (
-        <PlayerModal entry={playing} open onClose={() => setPlaying(null)} />
+        <VideoPlayerModal entry={playing} open onClose={() => setPlaying(null)} />
       )}
       {confirmEntry && (
         <ConfirmDelete
@@ -973,17 +940,10 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
           onConfirm={() => handleDelete(confirmEntry.meta.id)}
         />
       )}
-      {optimizing && (
-        <OptimizeModal
-          entry={optimizing}
-          onClose={() => setOptimizing(null)}
-          onComplete={load}
-        />
-      )}
-      {trimming && (
-        <TrimModal
-          entry={trimming}
-          onClose={() => setTrimming(null)}
+      {editing && (
+        <EditorModal
+          entry={editing}
+          onClose={() => setEditing(null)}
           onComplete={load}
         />
       )}

@@ -11,6 +11,7 @@ import { invoke, convertFileSrc } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import type {
   DiskInfo,
+  ExportEstimate,
   FfmpegStatus,
   FfmpegInstallResult,
   LibraryStats,
@@ -162,6 +163,12 @@ export async function revealInFinder(path: string): Promise<void> {
   return invoke<void>("reveal_in_finder", { path })
 }
 
+/** Otvorí súbor v predvolenej systémovej aplikácii (QuickTime, VLC…). */
+export async function openWithSystemApp(path: string): Promise<void> {
+  const { openPath } = await import("@tauri-apps/plugin-opener")
+  await openPath(path)
+}
+
 // ── Video optimisation (ffmpeg) ─────────────────────────────────────────────
 
 /** Detect a system ffmpeg/ffprobe install. */
@@ -177,6 +184,16 @@ export async function installFfmpeg(): Promise<FfmpegInstallResult> {
 /** Probe a video file for resolution, fps, codec, bitrate and duration. */
 export async function getVideoInfo(path: string): Promise<VideoInfo> {
   return invoke<VideoInfo>("get_video_info", { path })
+}
+
+/** Generate or return cached filmstrip thumbnail paths for a video file. */
+export async function getFilmstrip(path: string, frameCount?: number): Promise<string[]> {
+  return invoke<string[]>("get_filmstrip", { path, frameCount })
+}
+
+/** Estimate output size and duration before export. */
+export async function estimateExport(options: OptimizeOptions): Promise<ExportEstimate> {
+  return invoke<ExportEstimate>("estimate_export", { options })
 }
 
 /**

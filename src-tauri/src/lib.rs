@@ -3,6 +3,7 @@
  */
 
 mod cursor;
+mod finalize;
 mod library;
 mod session;
 mod system;
@@ -51,6 +52,8 @@ pub fn run() {
             video::install_ffmpeg,
             video::get_video_info,
             video::get_thumbnail,
+            video::get_filmstrip,
+            video::estimate_export,
             video::optimize_video,
             video::cancel_optimize,
             cursor::start_cursor_tracker,
