@@ -267,9 +267,13 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
     setPlayError("")
     v.srcObject = stream
     const tryPlay = () => {
-      v.play().catch((e: unknown) => {
-        setPlayError(e instanceof Error ? e.message : String(e))
-      })
+      v.play()
+        .then(() => setPlayError(""))
+        .catch((e: unknown) => {
+          const name = e instanceof DOMException ? e.name : ""
+          if (name === "AbortError") return
+          setPlayError(e instanceof Error ? e.message : String(e))
+        })
     }
     tryPlay()
     v.addEventListener("loadeddata", tryPlay)
@@ -291,6 +295,9 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
     || fault.kind === "track_ended"
     || (streamReady && (fault.kind === "no_frames" || fault.kind === "play_blocked"))
   ) && !(hasFrames && fault.kind === "no_frames")
+
+  const showCompactFault = showFault && fault != null && isActive && fault.recordingMayWork
+  const showFullFault = showFault && fault != null && !showCompactFault
 
   const showVideo = !!stream && hasFrames
 
@@ -322,7 +329,16 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
         )}
       </div>
 
-      {showFault && fault && <PreviewFaultPanel fault={fault} details={details} />}
+      {showFullFault && fault && <PreviewFaultPanel fault={fault} details={details} />}
+
+      {showCompactFault && fault && (
+        <div className="absolute inset-x-3 bottom-14 z-20 flex items-start gap-2 rounded-lg border border-white/10 bg-black/70 px-3 py-2 backdrop-blur-md">
+          <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-400/90" />
+          <p className="text-[11px] leading-snug text-white/80">
+            {fault.title}. Nahrávanie pokračuje — skontroluj súbor v Knižnici po ukončení.
+          </p>
+        </div>
+      )}
 
       {status === "preparing" && !showFault && (
         <div className="relative z-[2] flex flex-col items-center gap-2">

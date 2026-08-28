@@ -2,6 +2,11 @@ import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, Monitor, Video } fro
 import { useState } from "react"
 import { cn } from "@/lib/utils"
 import type { PreviewFault, PreviewTechDetails } from "@/lib/previewDiagnostics"
+import {
+  localizePlayError,
+  localizeRecordingSource,
+  localizeRecordingStatus,
+} from "@/lib/previewDiagnostics"
 
 interface PreviewFaultPanelProps {
   fault: PreviewFault
@@ -19,32 +24,39 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 }
 
 export function PreviewFaultPanel({ fault, details, compact }: PreviewFaultPanelProps) {
-  const [showTech, setShowTech] = useState(true)
+  const [showTech, setShowTech] = useState(false)
   const isInfo = fault.kind === "idle_screen"
+  const isSoftWarning = fault.recordingMayWork
 
   return (
     <div
       className={cn(
         "absolute inset-0 z-20 flex items-center justify-center p-4",
-        isInfo ? "bg-black/50" : "bg-black/75 backdrop-blur-[2px]",
+        isInfo ? "bg-black/50" : isSoftWarning ? "bg-black/40" : "bg-black/70 backdrop-blur-[1px]",
       )}
     >
       <div
         className={cn(
           "flex max-h-full w-full max-w-md flex-col overflow-hidden rounded-xl border shadow-2xl",
-          isInfo
-            ? "border-white/15 bg-[#1c1c1e]/95"
-            : "border-amber-500/35 bg-[#1a1408]/95",
+          isInfo || isSoftWarning
+            ? "border-white/12 bg-[#1c1c1e]/95"
+            : "border-[var(--accent)]/25 bg-[#1c1c1e]/95",
         )}
       >
-        <div className={cn("flex items-start gap-3 px-4 py-3.5", !isInfo && "border-b border-amber-500/20 bg-amber-500/8")}>
+        <div className={cn(
+          "flex items-start gap-3 px-4 py-3.5",
+          !isInfo && !isSoftWarning && "border-b border-white/8",
+        )}>
           {isInfo ? (
             <Monitor className="mt-0.5 size-5 shrink-0 text-white/60" />
           ) : (
-            <AlertCircle className="mt-0.5 size-5 shrink-0 text-amber-400" />
+            <AlertCircle className={cn(
+              "mt-0.5 size-5 shrink-0",
+              isSoftWarning ? "text-white/55" : "text-[var(--accent)]",
+            )} />
           )}
           <div className="min-w-0 flex-1">
-            <h3 className={cn("text-[13px] font-bold", isInfo ? "text-white/90" : "text-amber-100")}>
+            <h3 className={cn("text-[13px] font-bold", isInfo ? "text-white/90" : "text-white/90")}>
               {fault.title}
             </h3>
             <p className="mt-1 text-[12px] leading-relaxed text-white/70">{fault.body}</p>
@@ -88,8 +100,8 @@ export function PreviewFaultPanel({ fault, details, compact }: PreviewFaultPanel
             </button>
             {showTech && (
               <div className="space-y-1.5 border-t border-white/8 px-4 py-3">
-                <DetailRow label="Stav" value={details.status} />
-                <DetailRow label="Zdroj" value={details.source} />
+                <DetailRow label="Stav" value={localizeRecordingStatus(details.status)} />
+                <DetailRow label="Zdroj" value={localizeRecordingSource(details.source)} />
                 <DetailRow label="Stream" value={details.hasStream ? `áno (${details.streamId}…)` : "nie"} />
                 <DetailRow label="Video stopy" value={String(details.videoTracks)} />
                 <DetailRow label="Stopa" value={details.trackLabel} />
@@ -99,7 +111,9 @@ export function PreviewFaultPanel({ fault, details, compact }: PreviewFaultPanel
                 <DetailRow label="Veľkosť stopy" value={details.trackSize} />
                 <DetailRow label="Video prvok" value={details.videoElementSize} />
                 <DetailRow label="Stav prehrávania" value={details.readyState} />
-                {details.playError && <DetailRow label="Chyba prehrávania" value={details.playError} />}
+                {details.playError && (
+                  <DetailRow label="Chyba prehrávania" value={localizePlayError(details.playError)} />
+                )}
               </div>
             )}
           </div>

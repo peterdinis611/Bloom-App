@@ -3,6 +3,7 @@ import {
   buildPreviewFault,
   collectPreviewTechDetails,
   expectsPreviewStream,
+  localizePlayError,
 } from "@/lib/previewDiagnostics"
 
 describe("expectsPreviewStream", () => {
@@ -45,5 +46,37 @@ describe("buildPreviewFault", () => {
       readyState: "HAVE_ENOUGH_DATA",
     }
     expect(buildPreviewFault("screen", "recording", details)).toBeNull()
+  })
+
+  it("localizes play errors to Slovak", () => {
+    expect(localizePlayError("The operation was aborted.")).toContain("prerušené")
+  })
+
+  it("suppresses play_blocked during active recording with live stream", () => {
+    const details = {
+      ...base,
+      hasStream: true,
+      videoTracks: 1,
+      trackState: "live",
+      videoElementSize: "0×0",
+      playError: "The operation was aborted.",
+    }
+    expect(buildPreviewFault("screen", "recording", details)).toEqual(
+      expect.objectContaining({ kind: "no_frames" }),
+    )
+  })
+
+  it("shows localized play_blocked when idle with play error", () => {
+    const details = {
+      ...collectPreviewTechDetails("camera", "idle", null, null, ""),
+      hasStream: true,
+      videoTracks: 1,
+      trackState: "live",
+      playError: "The operation was aborted.",
+    }
+    const fault = buildPreviewFault("camera", "idle", details)
+    expect(fault?.kind).toBe("play_blocked")
+    expect(fault?.body).toContain("prerušené")
+    expect(fault?.body).not.toContain("aborted")
   })
 })

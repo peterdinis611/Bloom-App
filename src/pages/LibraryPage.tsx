@@ -76,22 +76,22 @@ import { useToast } from "@/hooks/useToast"
 // ── Helpers ────────────────────────────────────────────────────────────────
 function relativeDate(iso: string): string {
   const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return "Unknown date"
+  if (Number.isNaN(d.getTime())) return sk.library.dates.unknown
   const now = Date.now()
   const diffMs = now - d.getTime()
   const day = 24 * 60 * 60 * 1000
   const days = Math.floor(diffMs / day)
-  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
-  if (days <= 0 && new Date(now).getDate() === d.getDate()) return `Today, ${time}`
-  if (days <= 1) return `Yesterday, ${time}`
-  if (days < 7) return `${days} days ago`
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+  const time = d.toLocaleTimeString("sk-SK", { hour: "numeric", minute: "2-digit" })
+  if (days <= 0 && new Date(now).getDate() === d.getDate()) return sk.library.dates.today(time)
+  if (days <= 1) return sk.library.dates.yesterday(time)
+  if (days < 7) return sk.library.dates.daysAgo(days)
+  return d.toLocaleDateString("sk-SK", { month: "short", day: "numeric", year: "numeric" })
 }
 
 const SOURCE_META: Record<string, { icon: React.FC<{ className?: string }>; label: string; tint: string }> = {
-  screen: { icon: Monitor, label: "Screen", tint: "text-accent bg-primary/12" },
-  camera: { icon: Camera, label: "Camera", tint: "text-emerald-400 bg-emerald-500/12" },
-  both: { icon: Layers, label: "Screen + Cam", tint: "text-sky-400 bg-sky-500/12" },
+  screen: { icon: Monitor, label: sk.library.sources.screen, tint: "text-accent bg-primary/12" },
+  camera: { icon: Camera, label: sk.library.sources.camera, tint: "text-emerald-400 bg-emerald-500/12" },
+  both: { icon: Layers, label: sk.library.sources.both, tint: "text-sky-400 bg-sky-500/12" },
 }
 
 // ── Empty library hero ───────────────────────────────────────────────────────
@@ -145,13 +145,13 @@ function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, onInstallFfmp
           {ffmpeg.available ? (
             <div className="flex items-center justify-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/8 px-3 py-2 text-[11px] font-semibold text-emerald-300">
               <Check className="size-3.5" />
-              ffmpeg ready · optimise &amp; thumbnails enabled
+              {sk.library.ffmpeg.ready}
             </div>
           ) : (
             <div className="rounded-xl border border-border/60 bg-[var(--surface)] px-3.5 py-3 text-left">
-              <p className="text-[11px] font-bold text-muted-foreground">Optional: install ffmpeg</p>
+              <p className="text-[11px] font-bold text-muted-foreground">{sk.library.ffmpeg.optionalTitle}</p>
               <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground/70">
-                Needed for video optimisation and thumbnails.
+                {sk.library.ffmpeg.optionalBody}
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <code className="min-w-0 flex-1 truncate rounded-md bg-black/40 px-2 py-1 font-mono text-[10px] text-foreground/70">
@@ -165,7 +165,7 @@ function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, onInstallFfmp
                     className="flex shrink-0 items-center gap-1 rounded-md border border-primary/40 bg-primary/15 px-2 py-1 text-[10px] font-semibold text-primary transition-colors hover:bg-primary/25 disabled:opacity-40"
                   >
                     <Download className={cn("size-3", installingFfmpeg && "animate-pulse")} />
-                    {installingFfmpeg ? "Installing…" : "Install"}
+                    {installingFfmpeg ? sk.library.ffmpeg.installing : sk.library.ffmpeg.install}
                   </button>
                 )}
                 <button
@@ -175,7 +175,7 @@ function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, onInstallFfmp
                   className="flex shrink-0 items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-[10px] font-semibold text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
                 >
                   <RefreshCw className={cn("size-3", checkingFfmpeg && "animate-spin")} />
-                  Recheck
+                  {sk.library.ffmpeg.recheck}
                 </button>
               </div>
             </div>
@@ -214,14 +214,14 @@ function ConfirmDelete({ title, open, onCancel, onConfirm }: {
           <div className="flex size-11 items-center justify-center rounded-xl bg-red-500/15">
             <Trash2 className="size-5 text-red-400" />
           </div>
-          <DialogTitle className="mt-3">Delete recording?</DialogTitle>
+          <DialogTitle className="mt-3">{sk.library.deleteOneTitle}</DialogTitle>
           <DialogDescription>
-            <span className="font-semibold text-foreground/80">{title}</span> and its metadata will be permanently removed from disk. This can&apos;t be undone.
+            {sk.library.deleteOneBody(title)}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="mt-2">
-          <Button variant="outline" className="flex-1" onClick={onCancel}>Cancel</Button>
-          <Button variant="destructive" className="flex-1" onClick={onConfirm}>Delete</Button>
+          <Button variant="outline" className="flex-1" onClick={onCancel}>{sk.library.cancel}</Button>
+          <Button variant="destructive" className="flex-1" onClick={onConfirm}>{sk.library.delete}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -258,7 +258,7 @@ function PlayerModal({ entry, open, onClose }: { entry: RecordingEntry; open: bo
 }
 
 // ── Recording card ─────────────────────────────────────────────────────────
-function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, onOptimize, onTrim, onToggleStar, onShare, validation, busy, ffmpegReady, batchMode, selected, onSelect }: {
+function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, onOptimize, onTrim, onToggleStar, onShare, validation, busy, ffmpegReady, batchMode, selected, onSelect, tagValue, onTagChange, onTagCommit, onFolderChange, showMetaInputs }: {
   entry: RecordingEntry
   onPlay: () => void
   onDelete: () => void
@@ -275,6 +275,11 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
   batchMode?: boolean
   selected?: boolean
   onSelect?: () => void
+  tagValue?: string
+  onTagChange?: (value: string) => void
+  onTagCommit?: () => void
+  onFolderChange?: (folder: string) => void
+  showMetaInputs?: boolean
 }) {
   const meta = entry.meta
   const starred = meta.starred ?? false
@@ -356,15 +361,15 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
             />
           ) : (
             <div className="flex items-center gap-1.5">
-              <button onClick={() => setEditing(true)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left" title="Click to rename">
+              <button onClick={() => setEditing(true)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left" title={sk.library.renameHint}>
                 <span className="truncate text-sm font-bold text-foreground">{meta.title}</span>
                 <Pencil className="size-3 shrink-0 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground/60" />
               </button>
               <button
                 type="button"
                 onClick={onToggleStar}
-                className="shrink-0"
-                title={starred ? "Unstar" : "Star"}
+                className="shrink-0 rounded-md p-1 hover:bg-secondary"
+                title={starred ? sk.library.unstar : sk.library.star}
               >
                 <Star className={cn("size-3.5", starred ? "fill-amber-400 text-amber-400" : "text-muted-foreground/40 hover:text-amber-400")} />
               </button>
@@ -404,44 +409,66 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
               validation.is_valid ? "bg-emerald-500/10 text-emerald-300" : "bg-red-500/10 text-red-300"
             )}>
               {validation.is_valid ? <Check className="size-3" /> : <CircleAlert className="size-3" />}
-              {validation.is_valid ? "File healthy" : validation.error ?? "Invalid"}
+              {validation.is_valid ? sk.library.validation.ok : validation.error ?? sk.library.validation.invalid}
             </div>
           )}
         </div>
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-1 border-t border-border/40 pt-2">
-        <ActionBtn icon={Play} label="Play" onClick={onPlay} />
-        {ffmpegReady && <ActionBtn icon={Sparkles} label={sk.library.optimise} onClick={onOptimize} accent />}
-        {ffmpegReady && <ActionBtn icon={Scissors} label="Trim" onClick={onTrim} />}
-        <ActionBtn icon={ScanSearch} label="Verify" onClick={onValidate} disabled={busy} />
-        <ActionBtn icon={FolderOpen} label="Reveal" onClick={onReveal} />
-        <ActionBtn icon={Share2} label="Share" onClick={onShare} />
-        <div className="flex-1" />
-        <ActionBtn icon={Trash2} label="Delete" onClick={onDelete} danger />
+      <div className="flex flex-col gap-2 border-t border-border/40 pt-2">
+        <div className="flex flex-wrap gap-1">
+          <ActionBtn icon={Play} label={sk.library.actions.play} onClick={onPlay} primary />
+          {ffmpegReady && <ActionBtn icon={Sparkles} label={sk.library.optimise} onClick={onOptimize} accent />}
+          {ffmpegReady && <ActionBtn icon={Scissors} label={sk.library.actions.trim} onClick={onTrim} />}
+          <ActionBtn icon={ScanSearch} label={sk.library.actions.verify} onClick={onValidate} disabled={busy} />
+          <ActionBtn icon={FolderOpen} label={sk.library.actions.reveal} onClick={onReveal} />
+          <ActionBtn icon={Share2} label={sk.library.actions.share} onClick={onShare} />
+          <ActionBtn icon={Trash2} label={sk.library.delete} onClick={onDelete} danger />
+        </div>
+
+        {showMetaInputs && !batchMode && (
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={tagValue ?? ""}
+              onChange={(e) => onTagChange?.(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") onTagCommit?.() }}
+              placeholder={sk.library.addTag}
+              className="min-h-[36px] min-w-[140px] flex-1 rounded-lg border border-border/50 bg-[var(--surface)] px-3 py-2 text-[12px] outline-none focus:border-primary/40"
+            />
+            <input
+              defaultValue={folder}
+              onBlur={(e) => onFolderChange?.(e.target.value.trim())}
+              placeholder={sk.library.folder}
+              className="min-h-[36px] w-32 rounded-lg border border-border/50 bg-[var(--surface)] px-3 py-2 text-[12px] outline-none focus:border-primary/40"
+            />
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-function ActionBtn({ icon: Icon, label, onClick, danger, accent, disabled }: {
-  icon: React.FC<{ className?: string }>; label: string; onClick: () => void; danger?: boolean; accent?: boolean; disabled?: boolean
+function ActionBtn({ icon: Icon, label, onClick, danger, accent, primary, disabled }: {
+  icon: React.FC<{ className?: string }>; label: string; onClick: () => void; danger?: boolean; accent?: boolean; primary?: boolean; disabled?: boolean
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors disabled:opacity-40",
+        "inline-flex min-h-[36px] items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium transition-colors disabled:opacity-40",
         danger
           ? "text-muted-foreground hover:bg-red-500/15 hover:text-red-400"
+          : primary
+            ? "bg-primary/15 text-primary hover:bg-primary/22"
           : accent
             ? "text-primary hover:bg-primary/15 hover:text-primary"
             : "text-muted-foreground hover:bg-secondary hover:text-foreground",
       )}
     >
-      <Icon className="size-3.5" />
+      <Icon className="size-3.5 shrink-0" />
       {label}
     </button>
   )
@@ -493,20 +520,20 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
       if (showToast) {
         if (status.available) {
           toastSuccess({
-            title: "ffmpeg installed",
-            description: status.version ?? "Video optimisation and thumbnails are ready.",
+            title: sk.library.ffmpeg.toastInstalled,
+            description: status.version ?? sk.library.ffmpeg.toastInstalledBody,
           })
         } else {
           toastError({
-            title: "ffmpeg not found",
-            description: "Install ffmpeg, then tap Recheck again.",
+            title: sk.library.ffmpeg.toastNotFound,
+            description: sk.library.ffmpeg.toastNotFoundBody,
           })
         }
       }
     } catch (e) {
       if (showToast) {
         toastError({
-          title: "Could not check ffmpeg",
+          title: sk.library.ffmpeg.toastCheckFailed,
           description: String(e),
         })
       }
@@ -518,26 +545,26 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
   const runInstallFfmpeg = useCallback(async () => {
     setInstallingFfmpeg(true)
     toastInfo({
-      title: "Installing ffmpeg…",
-      description: "This can take a few minutes. Please keep Bloom open.",
+      title: sk.library.ffmpeg.toastInstalling,
+      description: sk.library.ffmpeg.toastInstallingBody,
     })
     try {
       const result = await installFfmpeg()
       setFfmpeg(result.status)
       if (result.success) {
         toastSuccess({
-          title: "ffmpeg installed",
+          title: sk.library.ffmpeg.toastInstalled,
           description: result.message,
         })
       } else {
         toastError({
-          title: "Install failed",
+          title: sk.library.ffmpeg.toastInstallFailed,
           description: result.message,
         })
       }
     } catch (e) {
       toastError({
-        title: "Install failed",
+        title: sk.library.ffmpeg.toastInstallFailed,
         description: String(e),
       })
     } finally {
@@ -712,7 +739,7 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
     <div className="flex h-full flex-col">
       <MacPageHeader
         title={sk.library.title}
-        subtitle={loading ? "Načítavam…" : stats ? `${stats.total_recordings} nahrávok` : "Vaše nahrávky"}
+        subtitle={loading ? sk.library.loading : stats ? sk.library.recordingCount(stats.total_recordings) : sk.library.subtitle}
         actions={
           <>
             {entries.length > 0 && (
@@ -722,7 +749,7 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
                 onClick={() => setConfirmDeleteAll(true)}
                 className="hidden border-red-500/30 bg-red-500/8 text-[10px] font-bold text-red-300 hover:bg-red-500/15 hover:text-red-200 sm:flex"
               >
-                <Trash2 className="size-3" /> Delete all
+                <Trash2 className="size-3" /> {sk.library.deleteAllBtn}
               </Button>
             )}
             {entries.length > 0 && (
@@ -732,7 +759,7 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
                 onClick={() => { setBatchMode((b) => !b); setSelectedIds(new Set()) }}
                 className="hidden text-[10px] font-bold sm:flex"
               >
-                <CheckSquare className="size-3" /> Select
+                <CheckSquare className="size-3" /> {sk.library.select}
               </Button>
             )}
             {ffmpeg?.available && (
@@ -744,7 +771,7 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
               variant="outline"
               size="icon"
               onClick={load}
-              title="Refresh"
+              title={sk.library.refresh}
             >
               <RefreshCw className={cn("size-4", loading && "animate-spin")} />
             </Button>
@@ -757,9 +784,9 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
       {/* Stats */}
       {stats && stats.total_recordings > 0 && (
         <div className="flex gap-2">
-          <StatPill icon={Film} label="Clips" value={String(stats.total_recordings)} />
-          <StatPill icon={Clock} label="Duration" value={formatDurationSecs(stats.total_duration_secs)} />
-          <StatPill icon={HardDrive} label="Size" value={formatBytes(stats.total_size_bytes)} />
+          <StatPill icon={Film} label={sk.library.stats.clips} value={String(stats.total_recordings)} />
+          <StatPill icon={Clock} label={sk.library.stats.duration} value={formatDurationSecs(stats.total_duration_secs)} />
+          <StatPill icon={HardDrive} label={sk.library.stats.size} value={formatBytes(stats.total_size_bytes)} />
         </div>
       )}
 
@@ -768,9 +795,9 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
         <div className="flex items-start gap-3 rounded-xl border border-border/60 bg-[var(--surface)] px-3.5 py-3">
           <Sparkles className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold text-foreground">Install ffmpeg to optimise videos</p>
+            <p className="text-xs font-bold text-foreground">{sk.library.ffmpeg.installTitle}</p>
             <p className="mt-0.5 text-[11px] text-muted-foreground">
-              Resizing, compression and thumbnails need ffmpeg on your system.
+              {sk.library.ffmpeg.installBody}
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <code className="flex min-w-0 flex-1 items-center gap-1.5 truncate rounded-md bg-black/40 px-2 py-1 font-mono text-[11px] text-foreground/80">
@@ -785,7 +812,7 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
                   className="flex shrink-0 items-center gap-1 rounded-md border border-primary/40 bg-primary/15 px-2 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/25 disabled:opacity-40"
                 >
                   <Download className={cn("size-3", installingFfmpeg && "animate-pulse")} />
-                  {installingFfmpeg ? "Installing…" : "Install"}
+                  {installingFfmpeg ? sk.library.ffmpeg.installing : sk.library.ffmpeg.install}
                 </button>
               )}
               <button
@@ -794,17 +821,17 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
                 className="flex shrink-0 items-center gap-1 rounded-md border border-border/60 bg-[var(--surface)] px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
               >
                 {copied ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
-                {copied ? "Copied" : "Copy"}
+                {copied ? sk.library.ffmpeg.copied : sk.library.ffmpeg.copy}
               </button>
               <button
                 type="button"
                 onClick={() => void recheckFfmpeg(true)}
                 disabled={checkingFfmpeg || installingFfmpeg}
-                title="Recheck ffmpeg"
+                title={sk.library.ffmpeg.recheck}
                 className="flex shrink-0 items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
               >
                 <RefreshCw className={cn("size-3", checkingFfmpeg && "animate-spin")} />
-                Recheck
+                {sk.library.ffmpeg.recheck}
               </button>
             </div>
           </div>
@@ -815,20 +842,21 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
       {entries.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           <button
+            type="button"
             onClick={() => setStarredOnly((s) => !s)}
             className={cn(
-              "flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition-colors",
+              "flex min-h-[36px] items-center gap-1.5 rounded-lg border px-3 py-2 text-[12px] font-medium transition-colors",
               starredOnly ? "border-amber-500/40 bg-amber-500/10 text-amber-300" : "border-border/60 text-muted-foreground hover:text-foreground",
             )}
           >
-            <Star className={cn("size-3", starredOnly && "fill-current")} /> Starred
+            <Star className={cn("size-3", starredOnly && "fill-current")} /> {sk.library.starred}
           </button>
           <select
             value={folderFilter}
             onChange={(e) => setFolderFilter(e.target.value)}
-            className="rounded-lg border border-border/60 bg-[var(--surface)] px-2.5 py-1.5 text-[11px] font-semibold text-foreground outline-none"
+            className="min-h-[36px] rounded-lg border border-border/60 bg-[var(--surface)] px-3 py-2 text-[12px] font-medium text-foreground outline-none"
           >
-            <option value="">All folders</option>
+            <option value="">{sk.library.allFolders}</option>
             {folders.map((f) => <option key={f} value={f}>{f}</option>)}
           </select>
           {batchMode && selectedIds.size > 0 && ffmpeg?.available && (
@@ -839,15 +867,15 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
               }}
               className="flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-[11px] font-bold text-primary hover:bg-primary/15"
             >
-              <Sparkles className="size-3" /> {sk.library.optimise} {selectedIds.size}
+              <Sparkles className="size-3" /> {sk.library.optimiseSelected(selectedIds.size)}
             </button>
           )}
           {batchMode && selectedIds.size > 0 && (
             <button
               onClick={handleBatchDelete}
-              className="ml-auto flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[11px] font-bold text-red-300 hover:bg-red-500/20"
+              className="ml-auto flex min-h-[36px] items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] font-bold text-red-300 hover:bg-red-500/20"
             >
-              <Trash2 className="size-3" /> Delete {selectedIds.size}
+              <Trash2 className="size-3" /> {sk.library.batchDelete(selectedIds.size)}
             </button>
           )}
         </div>
@@ -860,8 +888,8 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search recordings…"
-            className={cn("pl-9", searchPending && "opacity-80")}
+            placeholder={sk.library.searchPlaceholder}
+            className={cn("min-h-[40px] pl-9", searchPending && "opacity-80")}
           />
         </div>
       )}
@@ -882,7 +910,7 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
         {loading ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
             <div className="size-8 animate-spin rounded-full border-2 border-border border-t-primary" />
-            <p className="text-sm">Loading library…</p>
+            <p className="text-sm">{sk.library.loadingLibrary}</p>
           </div>
         ) : entries.length === 0 ? (
           <EmptyLibrary
@@ -896,51 +924,37 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
         ) : filtered.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-muted-foreground">
             <Search className="size-6 opacity-40" />
-            <p className="text-sm">No matches for “{query}”</p>
+            <p className="text-sm">{sk.library.noMatches(query)}</p>
           </div>
         ) : (
           <div className="flex flex-col gap-2.5">
             {filtered.map((entry) => (
-              <div key={entry.meta.id} className="flex flex-col gap-1">
-                <RecordingCard
-                  entry={entry}
-                  busy={busyId === entry.meta.id}
-                  ffmpegReady={!!ffmpeg?.available}
-                  validation={validations[entry.meta.id]}
-                  batchMode={batchMode}
-                  selected={selectedIds.has(entry.meta.id)}
-                  onSelect={() => toggleSelect(entry.meta.id)}
-                  onPlay={() => setPlaying(entry)}
-                  onDelete={() => setConfirmId(entry.meta.id)}
-                  onReveal={() => revealInFinder(entry.path).catch((e) => setError(String(e)))}
-                  onShare={() => shareRecording(entry.meta.id).catch((e) => setError(String(e)))}
-                  onRename={(title) => handleRename(entry.meta.id, title)}
-                  onValidate={() => handleValidate(entry.meta.id)}
-                  onOptimize={() => setOptimizing(entry)}
-                  onTrim={() => setTrimming(entry)}
-                  onToggleStar={() => handleToggleStar(entry.meta.id, entry.meta.starred ?? false)}
-                />
-                {!batchMode && (
-                  <div className="flex flex-wrap items-center gap-2 px-1">
-                    <input
-                      value={tagDraft[entry.meta.id] ?? ""}
-                      onChange={(e) => setTagDraft((d) => ({ ...d, [entry.meta.id]: e.target.value }))}
-                      onKeyDown={(e) => { if (e.key === "Enter") handleAddTag(entry.meta.id) }}
-                      placeholder="Add tag…"
-                      className="min-w-0 flex-1 rounded-lg border border-border/50 bg-[var(--surface)] px-2 py-1 text-[10px] outline-none focus:border-primary/40"
-                    />
-                    <input
-                      defaultValue={entry.meta.folder ?? ""}
-                      onBlur={(e) => {
-                        const v = e.target.value.trim()
-                        if (v !== (entry.meta.folder ?? "")) handleSetFolder(entry.meta.id, v)
-                      }}
-                      placeholder="Folder"
-                      className="w-24 rounded-lg border border-border/50 bg-[var(--surface)] px-2 py-1 text-[10px] outline-none focus:border-primary/40"
-                    />
-                  </div>
-                )}
-              </div>
+              <RecordingCard
+                key={entry.meta.id}
+                entry={entry}
+                busy={busyId === entry.meta.id}
+                ffmpegReady={!!ffmpeg?.available}
+                validation={validations[entry.meta.id]}
+                batchMode={batchMode}
+                selected={selectedIds.has(entry.meta.id)}
+                onSelect={() => toggleSelect(entry.meta.id)}
+                onPlay={() => setPlaying(entry)}
+                onDelete={() => setConfirmId(entry.meta.id)}
+                onReveal={() => revealInFinder(entry.path).catch((e) => setError(String(e)))}
+                onShare={() => shareRecording(entry.meta.id).catch((e) => setError(String(e)))}
+                onRename={(title) => handleRename(entry.meta.id, title)}
+                onValidate={() => handleValidate(entry.meta.id)}
+                onOptimize={() => setOptimizing(entry)}
+                onTrim={() => setTrimming(entry)}
+                onToggleStar={() => handleToggleStar(entry.meta.id, entry.meta.starred ?? false)}
+                showMetaInputs
+                tagValue={tagDraft[entry.meta.id] ?? ""}
+                onTagChange={(value) => setTagDraft((d) => ({ ...d, [entry.meta.id]: value }))}
+                onTagCommit={() => handleAddTag(entry.meta.id)}
+                onFolderChange={(folder) => {
+                  if (folder !== (entry.meta.folder ?? "")) handleSetFolder(entry.meta.id, folder)
+                }}
+              />
             ))}
           </div>
         )}

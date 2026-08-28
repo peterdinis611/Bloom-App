@@ -34,13 +34,69 @@ export interface PreviewTechDetails {
   streamId: string
 }
 
-const READY_STATE = [
+const READY_STATE: Record<string, string> = {
+  HAVE_NOTHING: "Žiadne dáta",
+  HAVE_METADATA: "Metadáta",
+  HAVE_CURRENT_DATA: "Aktuálny snímok",
+  HAVE_FUTURE_DATA: "Pripravuje sa",
+  HAVE_ENOUGH_DATA: "Pripravené",
+}
+
+/** Preloží bežné chyby prehrávania z WebKit do slovenčiny. */
+export function localizePlayError(message: string): string {
+  const lower = message.trim().toLowerCase()
+  if (!lower) return ""
+
+  if (lower.includes("aborted") || lower.includes("interrupted")) {
+    return "Prehrávanie bolo prerušené. Náhľad nemusí bežať, ale nahrávanie môže pokračovať."
+  }
+  if (lower.includes("notallowed") || lower.includes("permission")) {
+    return "Prehrávanie nie je povolené. Skontroluj oprávnenia v Systémových nastaveniach."
+  }
+  if (lower.includes("not supported")) {
+    return "Tento formát videa nie je podporovaný v náhľade."
+  }
+  if (lower.includes("autoplay")) {
+    return "Automatické prehrávanie bolo zablokované."
+  }
+  return "Náhľad sa nepodarilo spustiť. Nahrávanie môže stále fungovať."
+}
+
+const READY_STATE_KEYS = [
   "HAVE_NOTHING",
   "HAVE_METADATA",
   "HAVE_CURRENT_DATA",
   "HAVE_FUTURE_DATA",
   "HAVE_ENOUGH_DATA",
-]
+] as const
+
+const STATUS_LABELS: Record<RecordingStatus, string> = {
+  idle: "Nečinný",
+  preparing: "Pripravuje sa",
+  countdown: "Odpočítavanie",
+  recording: "Nahráva sa",
+  paused: "Pozastavené",
+  processing: "Spracováva sa",
+  done: "Hotovo",
+}
+
+const SOURCE_LABELS: Record<RecordingSource, string> = {
+  screen: "Obrazovka",
+  camera: "Kamera",
+  both: "Obrazovka + kamera",
+}
+
+export function localizeRecordingStatus(status: RecordingStatus): string {
+  return STATUS_LABELS[status] ?? status
+}
+
+export function localizeRecordingSource(source: RecordingSource): string {
+  return SOURCE_LABELS[source] ?? source
+}
+
+export function localizeReadyState(state: string): string {
+  return READY_STATE[state] ?? state
+}
 
 export function expectsPreviewStream(source: RecordingSource, status: RecordingStatus): boolean {
   if (status === "idle") return source === "camera" || source === "both"
@@ -101,12 +157,20 @@ export function buildPreviewFault(
   }
 
   if (details.playError) {
-    return {
-      kind: "play_blocked",
-      title: "Video sa nepodarilo prehrať",
-      body: details.playError,
-      steps: ["Reštartuj Bloom a skús znova."],
-      recordingMayWork: true,
+    const transientDuringCapture =
+      (status === "recording" || status === "paused")
+      && details.hasStream
+      && details.videoTracks > 0
+      && details.trackState !== "ended"
+
+    if (!transientDuringCapture) {
+      return {
+        kind: "play_blocked",
+        title: "Náhľad sa nepodarilo spustiť",
+        body: localizePlayError(details.playError),
+        steps: ["Reštartuj Bloom a skús znova."],
+        recordingMayWork: false,
+      }
     }
   }
 
@@ -115,7 +179,7 @@ export function buildPreviewFault(
     const screenLike = source === "screen" || source === "both"
     return {
       kind: "no_frames",
-      title: "Preview je čierne",
+      title: "Náhľad je čierny",
       body: screenLike
         ? "Stream beží, ale prehliadač nezobrazuje snímky. Na macOS sa to stáva, keď nahrávaš monitor, na ktorom beží Bloom."
         : "Stream beží, ale prehliadač nezobrazuje snímky z kamery.",
@@ -159,7 +223,9 @@ export function collectPreviewTechDetails(
     displaySurface: String(settings.displaySurface ?? "—"),
     trackSize: settings.width && settings.height ? `${settings.width}×${settings.height}` : "—",
     videoElementSize: `${w}×${h}`,
-    readyState: video ? READY_STATE[video.readyState] ?? String(video.readyState) : "—",
+    readyState: video
+      ? localizeReadyState(READY_STATE_KEYS[video.readyState] ?? String(video.readyState))
+      : "—",
     playError,
     streamId: stream?.id?.slice(0, 8) ?? "—",
   }
