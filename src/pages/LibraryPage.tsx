@@ -92,8 +92,8 @@ function relativeDate(iso: string): string {
 
 const SOURCE_META: Record<string, { icon: React.FC<{ className?: string }>; label: string; tint: string }> = {
   screen: { icon: Monitor, label: sk.library.sources.screen, tint: "text-accent bg-primary/12" },
-  camera: { icon: Camera, label: sk.library.sources.camera, tint: "text-emerald-400 bg-emerald-500/12" },
-  both: { icon: Layers, label: sk.library.sources.both, tint: "text-sky-400 bg-sky-500/12" },
+  camera: { icon: Camera, label: sk.library.sources.camera, tint: "tone-fg-success bg-[var(--status-success-bg)]" },
+  both: { icon: Layers, label: sk.library.sources.both, tint: "tone-fg-info bg-[var(--status-info-bg)]" },
 }
 
 // ── Empty library hero ───────────────────────────────────────────────────────
@@ -107,8 +107,8 @@ function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, onInstallFfmp
 }) {
   const hints = [
     { icon: Monitor, label: sk.library.screenCapture, tint: "text-accent bg-primary/12 border-primary/20" },
-    { icon: Camera, label: sk.library.webcam, tint: "text-emerald-400 bg-emerald-500/12 border-emerald-500/20" },
-    { icon: Sparkles, label: sk.library.optimiseTrim, tint: "text-sky-400 bg-sky-500/12 border-sky-500/20" },
+    { icon: Camera, label: sk.library.webcam, tint: "tone-fg-success tone-soft-success border" },
+    { icon: Sparkles, label: sk.library.optimiseTrim, tint: "tone-fg-info tone-soft-info border" },
   ]
 
   return (
@@ -135,7 +135,7 @@ function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, onInstallFfmp
 
       <button
         onClick={onStartRecording}
-        className="group mt-8 flex items-center gap-2.5 rounded-2xl bg-primary px-6 py-3.5 text-sm font-bold text-white shadow-xl shadow-primary/25 transition-all hover:bg-accent hover:shadow-primary/35 active:scale-[0.98]"
+        className="group mt-8 flex items-center gap-2.5 rounded-2xl bg-primary px-6 py-3.5 text-sm font-bold text-primary-foreground shadow-xl shadow-primary/25 transition-[color,background-color,box-shadow,transform] hover:bg-accent hover:shadow-primary/35 active:scale-[0.98]"
       >
         <Video className="size-4 transition-transform group-hover:scale-110" />
         {sk.library.startFirst}
@@ -145,7 +145,7 @@ function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, onInstallFfmp
       {ffmpeg && (
         <div className="mt-8 w-full max-w-sm">
           {ffmpeg.available ? (
-            <div className="flex items-center justify-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/8 px-3 py-2 text-[11px] font-semibold text-emerald-300">
+            <div className="flex items-center justify-center gap-2 rounded-xl border tone-soft-success px-3 py-2 text-[11px] font-semibold">
               <Check className="size-3.5" />
               {sk.library.ffmpeg.ready}
             </div>
@@ -213,8 +213,8 @@ function ConfirmDelete({ title, open, onCancel, onConfirm }: {
     <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
       <DialogContent className="[&>button]:hidden">
         <DialogHeader>
-          <div className="flex size-11 items-center justify-center rounded-xl bg-red-500/15">
-            <Trash2 className="size-5 text-red-400" />
+          <div className="flex size-11 items-center justify-center rounded-xl tone-icon-error">
+            <Trash2 className="size-5" />
           </div>
           <DialogTitle className="mt-3">{sk.library.deleteOneTitle}</DialogTitle>
           <DialogDescription>
@@ -343,7 +343,7 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
                 className="shrink-0 rounded-md p-1 hover:bg-secondary"
                 title={starred ? sk.library.unstar : sk.library.star}
               >
-                <Star className={cn("size-3.5", starred ? "fill-amber-400 text-amber-400" : "text-muted-foreground/40 hover:text-amber-400")} />
+                <Star className={cn("size-3.5", starred ? "fill-[var(--status-warning-fg)] tone-fg-warning" : "text-muted-foreground/40 hover:tone-fg-warning")} />
               </button>
             </div>
           )}
@@ -378,7 +378,7 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
           {validation && (
             <div className={cn(
               "mt-2 flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-semibold",
-              validation.is_valid ? "bg-emerald-500/10 text-emerald-300" : "bg-red-500/10 text-red-300"
+              validation.is_valid ? "tone-soft-success" : "tone-soft-error"
             )}>
               {validation.is_valid ? <Check className="size-3" /> : <CircleAlert className="size-3" />}
               {validation.is_valid ? sk.library.validation.ok : validation.error ?? sk.library.validation.invalid}
@@ -431,7 +431,7 @@ function ActionBtn({ icon: Icon, label, onClick, danger, accent, primary, disabl
       className={cn(
         "inline-flex min-h-[36px] items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium transition-colors disabled:opacity-40",
         danger
-          ? "text-muted-foreground hover:bg-red-500/15 hover:text-red-400"
+          ? "text-muted-foreground tone-hover-error"
           : primary
             ? "bg-primary/15 text-primary hover:bg-primary/22"
           : accent
@@ -758,7 +758,7 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
                 variant="outline"
                 size="sm"
                 onClick={() => setConfirmDeleteAll(true)}
-                className="hidden border-red-500/30 bg-red-500/8 text-[10px] font-bold text-red-300 hover:bg-red-500/15 hover:text-red-200 sm:flex"
+                className="hidden border tone-soft-error text-[10px] font-bold hover:opacity-90 sm:flex"
               >
                 <Trash2 className="size-3" /> {sk.library.deleteAllBtn}
               </Button>
@@ -774,7 +774,7 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
               </Button>
             )}
             {ffmpeg?.available && (
-              <Badge variant="secondary" className="hidden border-emerald-500/20 bg-emerald-500/8 text-[10px] font-bold text-emerald-300 sm:flex">
+              <Badge variant="secondary" className="hidden border tone-soft-success text-[10px] font-bold sm:flex">
                 <Sparkles className="size-3" /> ffmpeg
               </Badge>
             )}
@@ -831,7 +831,7 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
                 onClick={copyInstall}
                 className="flex shrink-0 items-center gap-1 rounded-md border border-border/60 bg-[var(--surface)] px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
               >
-                {copied ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
+                {copied ? <Check className="size-3 tone-fg-success" /> : <Copy className="size-3" />}
                 {copied ? sk.library.ffmpeg.copied : sk.library.ffmpeg.copy}
               </button>
               <button
@@ -857,7 +857,7 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
             onClick={() => setStarredOnly((s) => !s)}
             className={cn(
               "flex min-h-[36px] items-center gap-1.5 rounded-lg border px-3 py-2 text-[12px] font-medium transition-colors",
-              starredOnly ? "border-amber-500/40 bg-amber-500/10 text-amber-300" : "border-border/60 text-muted-foreground hover:text-foreground",
+              starredOnly ? "border tone-soft-warning" : "border-border/60 text-muted-foreground hover:text-foreground",
             )}
           >
             <Star className={cn("size-3", starredOnly && "fill-current")} /> {sk.library.starred}
@@ -886,7 +886,7 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
           {batchMode && selectedIds.size > 0 && (
             <button
               onClick={handleBatchDelete}
-              className="ml-auto flex min-h-[36px] items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] font-bold text-red-300 hover:bg-red-500/20"
+              className="ml-auto flex min-h-[36px] items-center gap-1 rounded-lg border tone-soft-error px-3 py-2 text-[12px] font-bold hover:opacity-90"
             >
               <Trash2 className="size-3" /> {sk.library.batchDelete(selectedIds.size)}
             </button>

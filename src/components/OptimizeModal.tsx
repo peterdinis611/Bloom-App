@@ -235,7 +235,7 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
 
               <button
                 onClick={start}
-                className="flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-accent active:scale-[0.98]"
+                className="flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground shadow-lg shadow-primary/25 transition-[color,background-color,box-shadow,transform] hover:bg-accent active:scale-[0.98]"
               >
                 <Zap className="size-4" /> {sk.optimize.optimize}
               </button>
@@ -259,7 +259,7 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
               </p>
               <button
                 onClick={cancel}
-                className="rounded-xl border border-border/60 bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-muted-foreground transition-colors hover:border-red-500/40 hover:text-red-400"
+                className="rounded-xl border border-border/60 bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-muted-foreground transition-colors hover:border-[var(--status-error-border)] hover:tone-fg-error"
               >
                 {sk.optimize.cancel}
               </button>
@@ -268,15 +268,15 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
 
           {phase === "done" && (
             <div className="flex flex-col items-center gap-3 py-3 text-center">
-              <div className="flex size-14 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15">
-                <Check className="size-7 text-emerald-400" />
+              <div className="flex size-14 items-center justify-center rounded-full border tone-soft-success">
+                <Check className="size-7 tone-fg-success" />
               </div>
               <div>
-                <p className="text-sm font-bold text-emerald-300">{sk.optimize.done}</p>
+                <p className="text-sm font-bold tone-fg-success">{sk.optimize.done}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {formatBytes(result?.size ?? 0)}
                   {reduction !== null && (
-                    <span className={cn("ml-1 font-semibold", reduction >= 0 ? "text-emerald-400" : "text-amber-400")}>
+                    <span className={cn("ml-1 font-semibold", reduction >= 0 ? "tone-fg-success" : "tone-fg-warning")}>
                       ({reduction >= 0 ? sk.optimize.smaller(reduction) : sk.optimize.larger(-reduction)})
                     </span>
                   )}
@@ -301,11 +301,11 @@ export function OptimizeModal({ entry, onClose, onComplete }: OptimizeModalProps
 
           {phase === "error" && (
             <div className="flex flex-col items-center gap-3 py-3 text-center">
-              <div className="flex size-14 items-center justify-center rounded-full border border-red-500/30 bg-red-500/15">
-                <CircleAlert className="size-7 text-red-400" />
+              <div className="flex size-14 items-center justify-center rounded-full border tone-soft-error">
+                <CircleAlert className="size-7 tone-fg-error" />
               </div>
               <div>
-                <p className="text-sm font-bold text-red-300">{sk.optimize.failed}</p>
+                <p className="text-sm font-bold tone-fg-error">{sk.optimize.failed}</p>
                 <p className="mt-1 max-h-24 overflow-y-auto text-xs text-muted-foreground">{errorMsg}</p>
               </div>
               <button

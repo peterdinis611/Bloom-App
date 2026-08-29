@@ -65,7 +65,7 @@ function ToastViewport({
           <div
             key={t.id}
             className={cn(
-              "bloom-toast pointer-events-auto flex items-start gap-2.5 rounded-xl border px-3.5 py-3 shadow-xl backdrop-blur-md animate-in fade-in slide-in-from-bottom-2",
+              "bloom-toast pointer-events-auto flex items-start gap-2.5 rounded-xl border px-3.5 py-3 backdrop-blur-md animate-in fade-in slide-in-from-bottom-2",
               VARIANT_STYLES[t.variant],
             )}
             role="status"

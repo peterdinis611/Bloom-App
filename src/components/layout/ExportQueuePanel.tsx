@@ -36,8 +36,8 @@ export function ExportQueuePanel() {
           <li key={item.id} className="rounded-lg px-2 py-1.5">
             <div className="flex items-center gap-1.5">
               {item.status === "running" && <LoaderCircle className="size-3 shrink-0 animate-spin text-accent" />}
-              {item.status === "done" && <Check className="size-3 shrink-0 text-emerald-400" />}
-              {item.status === "error" && <CircleAlert className="size-3 shrink-0 text-red-400" />}
+              {item.status === "done" && <Check className="size-3 shrink-0 tone-fg-success" />}
+              {item.status === "error" && <CircleAlert className="size-3 shrink-0 tone-fg-error" />}
               {item.status === "pending" && <span className="size-3 shrink-0 rounded-full bg-secondary" />}
               {item.status === "cancelled" && <X className="size-3 shrink-0 text-muted-foreground" />}
               <span className={cn("min-w-0 flex-1 truncate text-[10px]", item.status === "running" && "font-semibold text-foreground")}>
@@ -63,7 +63,7 @@ export function ExportQueuePanel() {
               </div>
             )}
             {item.status === "error" && item.error && (
-              <p className="mt-0.5 truncate text-[9px] text-red-400">{item.error}</p>
+              <p className="mt-0.5 truncate text-[9px] tone-fg-error">{item.error}</p>
             )}
           </li>
         ))}

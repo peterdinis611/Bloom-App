@@ -63,7 +63,7 @@ export function RecordingHudPage() {
             ) : (
               <button
                 onClick={() => emit("hud-resume")}
-                className="flex size-8 items-center justify-center rounded-lg text-amber-400 transition-colors hover:bg-amber-500/15"
+                className="flex size-8 items-center justify-center rounded-lg tone-fg-warning transition-colors hover:bg-[var(--status-warning-bg)]"
                 title="Resume"
               >
                 <Play className="size-3.5" />

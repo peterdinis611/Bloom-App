@@ -219,7 +219,7 @@ function AudioToggle({ active, onIcon: OnIcon, offIcon: OffIcon, label, onChange
     <button
       onClick={onChange}
       className={cn(
-        "flex flex-1 items-center gap-2.5 rounded-xl border px-3.5 py-3.5 text-sm font-medium transition-all min-h-[52px] cursor-pointer",
+        "flex flex-1 items-center gap-2.5 rounded-xl border px-3.5 py-3.5 text-sm font-medium transition-[color,background-color,border-color,box-shadow] duration-150 min-h-[52px] cursor-pointer",
         active
           ? "border-primary/50 bg-primary/10 text-primary ring-1 ring-primary/25"
           : "border-border/60 bg-[var(--surface)] text-muted-foreground hover:border-border hover:bg-secondary/40 hover:text-foreground",
@@ -328,7 +328,7 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
 
       {showCompactFault && fault && (
         <div className="absolute inset-x-3 bottom-14 z-20 flex items-start gap-2 rounded-lg border border-white/10 bg-black/70 px-3 py-2 backdrop-blur-md">
-          <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-400/90" />
+          <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 tone-fg-success" />
           <p className="text-[11px] leading-snug text-white/80">
             {fault.title}. Nahrávanie pokračuje — skontroluj súbor v Knižnici po ukončení.
           </p>
@@ -1026,7 +1026,7 @@ export function RecordPage({ active = true, onRecordingChange }: RecordPageProps
 
       {/* Config panel (idle only) */}
       {showConfig && (
-        <div className="fade-up bay-enter bay-enter-delay-3 flex flex-col gap-5">
+        <div className="bay-enter bay-enter-delay-3 flex flex-col gap-5">
           {/* Quick presets */}
           <section className="flex flex-col gap-2.5">
             <SectionLabel>{sk.record.quickStart}</SectionLabel>
@@ -1057,7 +1057,7 @@ export function RecordPage({ active = true, onRecordingChange }: RecordPageProps
             </div>
             <button
               onClick={() => startWithPreset(appSettings.recording.activePresetId)}
-              className="flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/8 py-2.5 text-xs font-bold text-primary transition-all hover:bg-primary/15"
+              className="flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/8 py-2.5 text-xs font-bold text-primary transition-colors hover:bg-primary/15"
             >
               <Zap className="size-3.5" />
               {sk.record.recordWithPreset(findPreset(appSettings.recording.activePresetId, appSettings.recording.presets)?.name ?? "predvoľba")}
@@ -1271,7 +1271,7 @@ export function RecordPage({ active = true, onRecordingChange }: RecordPageProps
           <button
             onClick={toggleDrawingMode}
             className={cn(
-              "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-all",
+              "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors",
               drawingMode
                 ? "border-primary/40 bg-primary/15 text-primary hover:bg-primary/25"
                 : "border-border/60 bg-secondary text-foreground hover:bg-secondary/60",

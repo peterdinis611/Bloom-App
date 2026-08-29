@@ -28,7 +28,7 @@ export function NavBar({ view, onChange, locked = false }: NavBarProps) {
             onClick={() => !disabled && onChange(tab.id)}
             disabled={disabled}
             className={cn(
-              "flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all",
+              "flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold transition-colors",
               active
                 ? "bg-primary/15 text-primary"
                 : disabled

@@ -39,7 +39,7 @@ function PresetForm({ preset, onUpdate, onDelete, canDelete }: {
           placeholder="Názov predvoľby"
         />
         {canDelete && (
-          <button type="button" onClick={onDelete} className="rounded-lg p-2.5 text-muted-foreground hover:bg-red-500/10 hover:text-red-400">
+          <button type="button" onClick={onDelete} className="rounded-lg p-2.5 text-muted-foreground tone-hover-error">
             <Trash2 className="size-4" />
           </button>
         )}

@@ -101,7 +101,7 @@ function StepIndicator({ step }: { step: Step }) {
               className={cn(
                 "flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold",
                 active && "bg-primary text-white",
-                done && !active && "bg-emerald-500/20 text-emerald-400",
+                done && !active && "tone-soft-success",
                 !active && !done && "bg-secondary text-muted-foreground",
               )}
             >
@@ -386,7 +386,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
               <p className="text-xs text-muted-foreground">{sk.editor.compare.hint}</p>
               <button
                 onClick={() => setStep("trim")}
-                className="flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-accent active:scale-[0.98]"
+                className="flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground shadow-lg shadow-primary/25 transition-[color,background-color,box-shadow,transform] hover:bg-accent active:scale-[0.98]"
               >
                 {sk.editor.continueToTrim}
                 <ChevronRight className="size-4" />
@@ -462,12 +462,12 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
                       onChange={(e) => { setStartText(e.target.value); setStartError(false) }}
                       onBlur={applyStartField}
                       onKeyDown={(e) => e.key === "Enter" && applyStartField()}
-                      className={cn("min-w-0 flex-1 rounded-lg border bg-background px-2.5 py-2 font-mono text-sm tabular-nums", startError ? "border-red-500/60" : "border-border/60")}
+                      className={cn("min-w-0 flex-1 rounded-lg border bg-background px-2.5 py-2 font-mono text-sm tabular-nums", startError ? "border-[var(--status-error-border)]" : "border-border/60")}
                       spellCheck={false}
                     />
                     <button type="button" onClick={setInAtPlayhead} className="rounded-lg border border-border/60 bg-secondary px-2.5 text-[11px] font-semibold">{sk.editor.setIn}</button>
                   </div>
-                  {startError && <p className="text-[10px] text-red-400">{sk.editor.invalidTime}</p>}
+                  {startError && <p className="text-[10px] tone-fg-error">{sk.editor.invalidTime}</p>}
                 </div>
                 <div className="flex flex-col gap-2 rounded-xl border border-border/50 bg-[var(--surface)] p-3">
                   <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">{sk.editor.endField}</label>
@@ -477,12 +477,12 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
                       onChange={(e) => { setEndText(e.target.value); setEndError(false) }}
                       onBlur={applyEndField}
                       onKeyDown={(e) => e.key === "Enter" && applyEndField()}
-                      className={cn("min-w-0 flex-1 rounded-lg border bg-background px-2.5 py-2 font-mono text-sm tabular-nums", endError ? "border-red-500/60" : "border-border/60")}
+                      className={cn("min-w-0 flex-1 rounded-lg border bg-background px-2.5 py-2 font-mono text-sm tabular-nums", endError ? "border-[var(--status-error-border)]" : "border-border/60")}
                       spellCheck={false}
                     />
                     <button type="button" onClick={setOutAtPlayhead} className="rounded-lg border border-border/60 bg-secondary px-2.5 text-[11px] font-semibold">{sk.editor.setOut}</button>
                   </div>
-                  {endError && <p className="text-[10px] text-red-400">{sk.editor.invalidTime}</p>}
+                  {endError && <p className="text-[10px] tone-fg-error">{sk.editor.invalidTime}</p>}
                 </div>
               </div>
 
@@ -557,7 +557,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
                 <p className="text-[11px] text-muted-foreground">{sk.editor.multiClipExport(segments.length)}</p>
               )}
               {replaceOriginal && format !== "mp4" && (
-                <p className="text-[11px] text-amber-400">{sk.editor.replaceMp4Only}</p>
+                <p className="text-[11px] tone-fg-warning">{sk.editor.replaceMp4Only}</p>
               )}
 
               <div className="rounded-xl border border-border/50 bg-[var(--surface)] p-3">
@@ -638,7 +638,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
                       )}
                 </p>
                 {estimate?.stream_copy && (
-                  <p className="mt-1 text-[11px] text-emerald-400">{sk.editor.streamCopyHint}</p>
+                  <p className="mt-1 text-[11px] tone-fg-success">{sk.editor.streamCopyHint}</p>
                 )}
               </div>
 
@@ -656,11 +656,11 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
 
           {step === "queued" && (
             <div className="flex flex-col items-center gap-3 py-6 text-center">
-              <div className="flex size-14 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15">
-                <Check className="size-7 text-emerald-400" />
+              <div className="flex size-14 items-center justify-center rounded-full border tone-soft-success">
+                <Check className="size-7 tone-fg-success" />
               </div>
               <div>
-                <p className="text-sm font-bold text-emerald-300">{sk.editor.queuedTitle}</p>
+                <p className="text-sm font-bold tone-fg-success">{sk.editor.queuedTitle}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{sk.editor.queuedBody(queuedCount)}</p>
               </div>
               <button

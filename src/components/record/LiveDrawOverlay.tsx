@@ -170,7 +170,7 @@ export function LiveDrawOverlay({
           type="button"
           title="Clear all"
           onClick={() => { layer.clear(); scheduleRepaint() }}
-          className="flex size-8 items-center justify-center rounded-lg text-white/60 hover:bg-red-400/20 hover:text-red-300"
+          className="flex size-8 items-center justify-center rounded-lg text-white/60 tone-hover-error"
         >
           <Trash2 className="size-3.5" />
         </button>

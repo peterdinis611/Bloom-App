@@ -93,7 +93,7 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
                 type="button"
                 onClick={() => handleThemeChange(t.id)}
                 className={cn(
-                  "bloom-card relative rounded-lg p-2.5 text-left transition-all min-h-[72px] cursor-pointer",
+                  "bloom-card relative rounded-lg p-2.5 text-left transition-[background-color,box-shadow] duration-150 min-h-[72px] cursor-pointer",
                   active && "bloom-card-active ring-2 ring-accent/30",
                 )}
               >
@@ -260,7 +260,7 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
               size="sm"
               onClick={() => setConfirmDeleteAll(true)}
               disabled={libraryCount === 0}
-              className="border-red-500/30 bg-red-500/8 text-[12px] font-semibold text-red-300 hover:bg-red-500/15 hover:text-red-200"
+              className="border tone-soft-error text-[12px] font-semibold hover:opacity-90"
             >
               <Trash2 className="size-3.5" /> {sk.settings.deleteAllBtn}
             </Button>

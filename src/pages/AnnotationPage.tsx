@@ -284,7 +284,7 @@ export function AnnotationPage() {
             title={`${t.label}${t.shortcut ? ` (${t.shortcut})` : ""}`}
             onClick={() => pickTool(t.id)}
             className={cn(
-              "group relative flex size-10 items-center justify-center rounded-xl transition-all",
+              "group relative flex size-10 items-center justify-center rounded-xl transition-colors",
               drawState.tool === t.id
                 ? "bg-primary text-primary-foreground shadow-md shadow-primary/30"
                 : "text-muted-foreground hover:bg-secondary hover:text-foreground",
@@ -296,23 +296,23 @@ export function AnnotationPage() {
 
         <div className="my-1 h-px bg-border/60" />
 
-        <button onClick={undo} title={`Späť (${undoLabel})`} className="flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-all hover:bg-secondary hover:text-foreground">
+        <button onClick={undo} title={`Späť (${undoLabel})`} className="flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
           <Undo2 className="size-4" />
         </button>
-        <button onClick={clearAll} title="Vymazať všetko" className="flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-all hover:bg-red-500/15 hover:text-red-400">
+        <button onClick={clearAll} title="Vymazať všetko" className="flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-colors tone-hover-error">
           <Trash2 className="size-4" />
         </button>
         <button
           onClick={saveSnapshot}
           title={`Uložiť snímku (${saveLabel})`}
           className={cn(
-            "flex size-10 items-center justify-center rounded-xl transition-all",
-            saved ? "bg-emerald-500/20 text-emerald-400" : "text-muted-foreground hover:bg-primary/15 hover:text-primary",
+            "flex size-10 items-center justify-center rounded-xl transition-colors",
+            saved ? "tone-soft-success" : "text-muted-foreground hover:bg-primary/15 hover:text-primary",
           )}
         >
           {saved ? <Check className="size-4" /> : <ImageDown className="size-4" />}
         </button>
-        <button onClick={closeWindow} title="Zavrieť (Esc)" className="flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-all hover:bg-red-500/15 hover:text-red-400">
+        <button onClick={closeWindow} title="Zavrieť (Esc)" className="flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-colors tone-hover-error">
           <X className="size-4" />
         </button>
       </div>
@@ -335,7 +335,7 @@ export function AnnotationPage() {
                     title={c.label}
                     onClick={() => setDrawState((s) => ({ ...s, color: c.hex, tool: s.tool === "eraser" ? "pen" : s.tool }))}
                     className={cn(
-                      "size-7 rounded-full border-2 transition-all hover:scale-110",
+                      "size-7 rounded-full border-2 transition-[transform,box-shadow] hover:scale-110",
                       drawState.color === c.hex && drawState.tool !== "eraser"
                         ? "scale-110 border-primary ring-2 ring-primary/40"
                         : "border-border/50",

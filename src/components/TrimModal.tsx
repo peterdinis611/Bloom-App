@@ -241,8 +241,8 @@ export function TrimModal({ entry, onClose, onComplete }: TrimModalProps) {
 
           {phase === "done" && (
             <div className="flex flex-col items-center gap-3 py-4 text-center">
-              <Check className="size-10 text-emerald-400" />
-              <p className="text-sm font-bold text-emerald-300">Trim saved to library</p>
+              <Check className="size-10 tone-fg-success" />
+              <p className="text-sm font-bold tone-fg-success">Trim saved to library</p>
               <p className="text-xs text-muted-foreground">{formatBytes(result?.size ?? 0)}</p>
               <div className="flex w-full gap-2">
                 <button onClick={() => result?.path && revealInFinder(result.path).catch(() => {})} className="flex-1 rounded-xl border border-border/60 py-2.5 text-sm font-semibold">
@@ -255,8 +255,8 @@ export function TrimModal({ entry, onClose, onComplete }: TrimModalProps) {
 
           {phase === "error" && (
             <div className="flex flex-col items-center gap-3 py-4 text-center">
-              <CircleAlert className="size-10 text-red-400" />
-              <p className="text-sm text-red-300">{errorMsg}</p>
+              <CircleAlert className="size-10 tone-fg-error" />
+              <p className="text-sm tone-fg-error">{errorMsg}</p>
               <button onClick={() => setPhase("edit")} className="rounded-xl border border-border/60 px-4 py-2 text-sm">Try again</button>
             </div>
           )}

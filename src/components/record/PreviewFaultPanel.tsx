@@ -81,8 +81,8 @@ export function PreviewFaultPanel({ fault, details, compact }: PreviewFaultPanel
 
         {fault.recordingMayWork && !isInfo && (
           <div className="flex items-start gap-2 border-b border-white/8 px-4 py-2.5">
-            <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-400/90" />
-            <p className="text-[11px] leading-relaxed text-emerald-200/80">
+            <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 tone-fg-success" />
+            <p className="text-[11px] leading-relaxed tone-fg-success opacity-90">
               Nahrávanie môže stále fungovať — skontroluj súbor v Knižnici po ukončení.
             </p>
           </div>

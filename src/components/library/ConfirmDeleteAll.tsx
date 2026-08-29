@@ -25,8 +25,8 @@ export function ConfirmDeleteAll({ count, sizeLabel, busy, open, onCancel, onCon
     <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
       <DialogContent className="[&>button]:hidden">
         <DialogHeader>
-          <div className="flex size-11 items-center justify-center rounded-xl bg-red-500/15">
-            <Trash2 className="size-5 text-red-400" />
+          <div className="flex size-11 items-center justify-center rounded-xl tone-icon-error">
+            <Trash2 className="size-5" />
           </div>
           <DialogTitle className="mt-3">{sk.library.deleteAllTitle}</DialogTitle>
           <DialogDescription>
