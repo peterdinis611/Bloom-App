@@ -17,6 +17,7 @@ export const sk = {
     settingsResetBody: "Predvolené hodnoty boli obnovené.",
     recordingSaved: (title: string) => `Uložené: ${title}`,
     recordingSavedBody: "Nahrávka je v knižnici.",
+    noLastRecording: "Zatiaľ žiadna nahrávka",
     exportQueued: (count: number) =>
       count === 1 ? "Export pridaný do fronty" : `${count} exporty pridané do fronty`,
     exportQueuedBody: "Priebeh sleduj v sidebar-e.",
@@ -95,6 +96,7 @@ export const sk = {
     stop: "Stop",
     saving: "Ukladám…",
     saved: "Uložené",
+    openLast: "Otvoriť nahrávku",
     show: "Zobraziť",
     preparing: "Pripravujem…",
     starting: "Spúšťam…",
@@ -135,6 +137,11 @@ export const sk = {
     deleteAllHint: (count: number, size: string) =>
       count > 0 ? `${count} ${count === 1 ? "súbor" : count < 5 ? "súbory" : "súborov"} · ${size} na disku` : "V knižnici nie sú nahrávky",
     deleteAllBtn: "Vymazať všetko",
+    libraryFolder: "Priečinok knižnice",
+    libraryFolderHint: "Kam sa ukladajú nahrávky a importy",
+    libraryFolderDefault: "Predvolený",
+    libraryFolderChoose: "Vybrať…",
+    libraryFolderReset: "Obnoviť predvolený",
     tools: {
       pen: "Pero",
       highlighter: "Zvýrazňovač",
@@ -143,6 +150,80 @@ export const sk = {
       rect: "Obdĺžnik",
       circle: "Kruh",
     },
+  },
+  shortcuts: {
+    title: "Klávesové skratky",
+    sections: [
+      {
+        title: "Nahrávanie",
+        items: [
+          { keys: "⌘⇧R", label: "Spustiť nahrávanie (z tray menu)" },
+          { keys: "⌘⇧P", label: "Pauza / pokračovať" },
+          { keys: "⌘⇧S", label: "Ukončiť a uložiť" },
+        ],
+      },
+      {
+        title: "Prehrávač",
+        items: [
+          { keys: "Medzerník", label: "Prehrať / pauza" },
+          { keys: "← / →", label: "Posun ±5 s" },
+          { keys: "J / L", label: "Posun ±10 s" },
+          { keys: "M", label: "Stlmiť zvuk" },
+        ],
+      },
+      {
+        title: "Editor",
+        items: [
+          { keys: "I", label: "Nastaviť začiatok orezu" },
+          { keys: "O", label: "Nastaviť koniec orezu" },
+          { keys: "Esc", label: "Zavrieť modal" },
+        ],
+      },
+      {
+        title: "Kreslenie",
+        items: [
+          { keys: "P", label: "Pero" },
+          { keys: "H", label: "Zvýrazňovač" },
+          { keys: "L", label: "Čiara" },
+          { keys: "A", label: "Šípka" },
+          { keys: "R", label: "Obdĺžnik" },
+          { keys: "C", label: "Kruh" },
+          { keys: "E", label: "Guma" },
+          { keys: "⌘Z", label: "Späť" },
+        ],
+      },
+    ],
+  },
+  onboarding: {
+    eyebrow: "Vitaj v Bloom",
+    title: "Rýchly úvod",
+    skip: "Preskočiť",
+    back: "Späť",
+    next: "Ďalej",
+    done: "Začať",
+    steps: [
+      {
+        title: "Kam sa ukladajú nahrávky",
+        body: "Všetky klipy a importované videá nájdeš v knižnici. Predvolená cesta je nižšie — môžeš ju zmeniť v Nastaveniach.",
+      },
+      {
+        title: "ffmpeg pre export a miniatúry",
+        body: "Nahrávanie funguje aj bez ffmpeg. Pre editor, filmstrip a optimalizáciu ho nainštaluj cez Homebrew priamo z knižnice.",
+      },
+      {
+        title: "Globálne skratky",
+        body: "Ovládaj nahrávanie aj keď je Bloom v tray menu. Fungujú počas nahrávania na pozadí.",
+      },
+      {
+        title: "Fronta exportov",
+        body: "Export z editora beží na pozadí — priebeh sleduj v ľavom paneli. Po dokončení sa knižnica automaticky obnoví.",
+      },
+    ],
+    shortcuts: [
+      { keys: "⌘⇧R", label: "Spustiť nahrávanie" },
+      { keys: "⌘⇧P", label: "Pauza / pokračovať" },
+      { keys: "⌘⇧S", label: "Ukončiť a uložiť" },
+    ],
   },
   optimize: {
     title: "Optimalizovať video",
@@ -323,10 +404,17 @@ export const sk = {
       duration: "Trvanie",
       size: "Veľkosť",
     },
+    import: "Import",
+    importBtn: "Pridať video",
+    importHint: "Presuň súbor sem alebo vyber z disku",
+    importDone: "Video pridané do knižnice",
+    importFailed: "Import zlyhal",
+    importDrop: "Pusti súbor pre import",
     sources: {
       screen: "Obrazovka",
       camera: "Kamera",
       both: "Obrazovka + kamera",
+      import: "Import",
     },
     actions: {
       play: "Prehrať",

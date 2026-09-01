@@ -41,14 +41,18 @@ pub fn register_shortcuts(app: &AppHandle) -> Result<(), Box<dyn std::error::Err
 }
 
 pub fn build_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let show_i = MenuItem::with_id(app, "show", "Show Bloom", true, None::<&str>)?;
-    let start_i = MenuItem::with_id(app, "start", "Start Recording…", true, None::<&str>)?;
-    let pause_i = MenuItem::with_id(app, "pause", "Pause / Resume", true, None::<&str>)?;
-    let stop_i = MenuItem::with_id(app, "stop", "Stop & Save", true, None::<&str>)?;
+    let show_i = MenuItem::with_id(app, "show", "Zobraziť Bloom", true, None::<&str>)?;
+    let start_i = MenuItem::with_id(app, "start", "Spustiť nahrávanie…", true, None::<&str>)?;
+    let last_i = MenuItem::with_id(app, "last", "Posledná nahrávka", true, None::<&str>)?;
+    let pause_i = MenuItem::with_id(app, "pause", "Pauza / pokračovať", true, None::<&str>)?;
+    let stop_i = MenuItem::with_id(app, "stop", "Ukončiť a uložiť", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
-    let quit_i = MenuItem::with_id(app, "quit", "Quit Bloom", true, None::<&str>)?;
+    let quit_i = MenuItem::with_id(app, "quit", "Ukončiť Bloom", true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[&show_i, &start_i, &pause_i, &stop_i, &sep, &quit_i])?;
+    let menu = Menu::with_items(
+        app,
+        &[&show_i, &start_i, &last_i, &pause_i, &stop_i, &sep, &quit_i],
+    )?;
 
     let icon = app.default_window_icon().cloned();
 
@@ -66,6 +70,14 @@ pub fn build_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             }
             "start" => {
                 let _ = app.emit("rec-arm", ());
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.unminimize();
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                }
+            }
+            "last" => {
+                let _ = app.emit("open-last-recording", ());
                 if let Some(win) = app.get_webview_window("main") {
                     let _ = win.unminimize();
                     let _ = win.show();

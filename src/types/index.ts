@@ -86,6 +86,12 @@ export interface DiskInfo {
   bloom_dir_size_bytes: number
 }
 
+export interface LibraryDirectoryInfo {
+  path: string
+  is_custom: boolean
+  default_path: string
+}
+
 /** Mirrors MonitorInfo in Rust */
 export interface MonitorInfo {
   id: string

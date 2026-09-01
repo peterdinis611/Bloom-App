@@ -18,7 +18,7 @@ import {
 } from "lucide-react"
 import { getSafeWebviewWindow } from "@/lib/windowControl"
 import { emit } from "@tauri-apps/api/event"
-import { ANNOTATION_COLORS, applyTheme, readStoredSettings, type AnnotationTool } from "@/hooks/useSettings"
+import { ANNOTATION_COLORS, applyTheme, DEFAULTS, readStoredSettings, type AnnotationTool } from "@/hooks/useSettings"
 import { ANNOTATION_TOOL_HOTKEYS } from "@/lib/hotkeys"
 
 type Tool = AnnotationTool
@@ -126,16 +126,24 @@ export function AnnotationPage() {
   const strokes = useRef<Stroke[]>([])
   const liveStroke = useRef<Stroke | null>(null)
 
-  const stored = readStoredSettings()
-  applyTheme(stored.theme)
-
   const [drawState, setDrawState] = useState<DrawState>({
-    tool: stored.annotation.defaultTool,
-    color: stored.annotation.defaultColor,
-    width: stored.annotation.defaultWidth,
+    tool: DEFAULTS.annotation.defaultTool,
+    color: DEFAULTS.annotation.defaultColor,
+    width: DEFAULTS.annotation.defaultWidth,
   })
   const [saved, setSaved] = useState(false)
   const [expanded, setExpanded] = useState(true)
+
+  useEffect(() => {
+    void readStoredSettings().then((stored) => {
+      applyTheme(stored.theme)
+      setDrawState({
+        tool: stored.annotation.defaultTool,
+        color: stored.annotation.defaultColor,
+        width: stored.annotation.defaultWidth,
+      })
+    })
+  }, [])
 
   useEffect(() => {
     function resize() {

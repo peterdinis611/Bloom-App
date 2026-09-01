@@ -5,23 +5,25 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use tauri::Manager;
-
+use crate::config;
 use crate::types::{RecordingEntry, RecordingMeta};
 
 // ── Bloom directory ─────────────────────────────────────────────────────────
 
-/// Returns (creating if needed) the platform Bloom directory:
-/// `~/Movies/Bloom` on macOS, `~/Videos/Bloom` elsewhere.
+/// Returns (creating if needed) the Bloom library directory.
+/// Uses a custom path from config when set, otherwise the platform default.
 pub(crate) fn bloom_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let home = app.path().home_dir().map_err(|e| e.to_string())?;
+    if let Ok(cfg) = config::load_config(app) {
+        if let Some(custom) = cfg.library_dir {
+            let path = PathBuf::from(&custom);
+            if path.is_absolute() {
+                fs::create_dir_all(&path).map_err(|e| e.to_string())?;
+                return Ok(path);
+            }
+        }
+    }
 
-    #[cfg(target_os = "macos")]
-    let dir = home.join("Movies").join("Bloom");
-
-    #[cfg(not(target_os = "macos"))]
-    let dir = home.join("Videos").join("Bloom");
-
+    let dir = config::default_bloom_dir(app)?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
-import { RotateCcw, Trash2, Check } from "lucide-react"
+import { RotateCcw, Trash2, Check, FolderOpen } from "lucide-react"
+import { open } from "@tauri-apps/plugin-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -7,11 +8,13 @@ import { sk } from "@/lib/i18n/sk"
 import { RECORDING_QUALITIES } from "@/lib/videoOptions"
 import { THEMES } from "@/lib/themes"
 import { ANNOTATION_COLORS, useSettings, type AnnotationTool } from "@/hooks/useSettings"
-import { deleteAllRecordings, formatBytes, getLibraryStats } from "@/hooks/useBloomBackend"
+import { deleteAllRecordings, formatBytes, getLibraryDirectory, getLibraryStats, setLibraryDirectory } from "@/hooks/useBloomBackend"
+import type { LibraryDirectoryInfo } from "@/types"
 import { useToast } from "@/hooks/useToast"
 import { ConfirmDeleteAll } from "@/components/library/ConfirmDeleteAll"
 import { PageScrollArea } from "@/components/layout/PageScrollArea"
 import { PresetEditor } from "@/components/settings/PresetEditor"
+import { ShortcutsPanel } from "@/components/settings/ShortcutsPanel"
 import { MacGroup, MacGroupHeader, MacPageHeader, MacRow, MacToggle, ChoiceGroup } from "@/components/mac/MacUIKit"
 
 const TOOLS: { id: AnnotationTool; label: string }[] = [
@@ -30,6 +33,16 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
   const [librarySize, setLibrarySize] = useState(0)
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false)
   const [deleteAllBusy, setDeleteAllBusy] = useState(false)
+  const [libraryDir, setLibraryDir] = useState<LibraryDirectoryInfo | null>(null)
+  const [libraryDirBusy, setLibraryDirBusy] = useState(false)
+
+  const refreshLibraryDir = useCallback(async () => {
+    try {
+      setLibraryDir(await getLibraryDirectory())
+    } catch {
+      setLibraryDir(null)
+    }
+  }, [])
 
   const refreshLibraryStats = useCallback(async () => {
     try {
@@ -44,7 +57,8 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
 
   useEffect(() => {
     void refreshLibraryStats()
-  }, [refreshLibraryStats])
+    void refreshLibraryDir()
+  }, [refreshLibraryStats, refreshLibraryDir])
 
   const handleDeleteAll = async () => {
     const count = libraryCount
@@ -75,6 +89,39 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
       title: sk.toast.settingsReset,
       description: sk.toast.settingsResetBody,
     })
+  }
+
+  const handleChooseLibraryFolder = async () => {
+    setLibraryDirBusy(true)
+    try {
+      const selected = await open({ directory: true, multiple: false, title: sk.settings.libraryFolder })
+      if (!selected || Array.isArray(selected)) return
+      const info = await setLibraryDirectory(selected)
+      setLibraryDir(info)
+      await refreshLibraryStats()
+      toastSuccess({ title: sk.settings.libraryFolder, description: info.path })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: String(e) })
+    } finally {
+      setLibraryDirBusy(false)
+    }
+  }
+
+  const handleResetLibraryFolder = async () => {
+    setLibraryDirBusy(true)
+    try {
+      const info = await setLibraryDirectory(null)
+      setLibraryDir(info)
+      await refreshLibraryStats()
+      toastSuccess({
+        title: sk.settings.libraryFolderReset,
+        description: info.path,
+      })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: String(e) })
+    } finally {
+      setLibraryDirBusy(false)
+    }
   }
 
   return (
@@ -235,6 +282,8 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
           </div>
         </MacGroup>
 
+        <ShortcutsPanel />
+
         <MacGroupHeader>{sk.settings.presets}</MacGroupHeader>
         <div className="px-6">
           <PresetEditor
@@ -251,6 +300,38 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
 
         <MacGroupHeader>{sk.settings.library}</MacGroupHeader>
         <MacGroup>
+          <MacRow
+            label={sk.settings.libraryFolder}
+            hint={sk.settings.libraryFolderHint}
+          >
+            <div className="flex max-w-[min(100%,18rem)] flex-col items-end gap-1.5">
+              <p className="w-full truncate text-right font-mono text-[10px] text-muted-foreground">
+                {libraryDir?.path ?? "…"}
+              </p>
+              <div className="flex flex-wrap justify-end gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={libraryDirBusy}
+                  onClick={() => { void handleChooseLibraryFolder() }}
+                  className="text-[11px]"
+                >
+                  <FolderOpen className="size-3" /> {sk.settings.libraryFolderChoose}
+                </Button>
+                {libraryDir?.is_custom && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={libraryDirBusy}
+                    onClick={() => { void handleResetLibraryFolder() }}
+                    className="text-[11px] text-muted-foreground"
+                  >
+                    {sk.settings.libraryFolderReset}
+                  </Button>
+                )}
+              </div>
+            </div>
+          </MacRow>
           <MacRow
             label={sk.settings.deleteAll}
             hint={sk.settings.deleteAllHint(libraryCount, formatBytes(librarySize))}

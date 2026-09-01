@@ -62,7 +62,7 @@ Konfigurácia: `src-tauri/tauri.conf.json`, capabilities: `src-tauri/capabilitie
 | Modul | Popis |
 |-------|--------|
 | `useBloomBackend.ts` | Jediný vstupný bod na Tauri príkazy |
-| `useSettings.tsx` | Téma, predvoľby, perzistencia v localStorage |
+| `useSettings.tsx` | Téma, predvoľby, perzistencia v IndexedDB |
 | `useExportQueue.tsx` | Fronta exportov — sériové spracovanie `optimize_video` |
 | `lib/i18n/sk.ts` | Všetky user-facing reťazce |
 | `lib/capture.ts` | MediaRecorder, getDisplayMedia, PiP |

@@ -22,7 +22,8 @@
         "resizable": true,
         "decorations": false,
         "transparent": false,
-        "alwaysOnTop": false
+        "alwaysOnTop": false,
+        "dragDropEnabled": true
       }
     ],
     "security": {
@@ -31,7 +32,8 @@
         "enable": true,
         "scope": [
           "$HOME/Movies/Bloom/**",
-          "$HOME/Videos/Bloom/**"
+          "$HOME/Videos/Bloom/**",
+          "$HOME/**"
         ]
       }
     }

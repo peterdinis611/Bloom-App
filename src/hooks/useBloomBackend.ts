@@ -14,6 +14,7 @@ import type {
   ExportEstimate,
   FfmpegStatus,
   FfmpegInstallResult,
+  LibraryDirectoryInfo,
   LibraryStats,
   MonitorInfo,
   OptimizeOptions,
@@ -29,12 +30,20 @@ import type {
 
 // ── Directory / setup ──────────────────────────────────────────────────────
 
-/** Returns (and creates if needed) the ~/Movies/Bloom path. */
+/** Returns (and creates if needed) the active Bloom library path. */
 export async function getBloomDir(): Promise<string> {
   return invoke<string>("get_bloom_dir")
 }
 
-/** Disk space info for the volume that holds ~/Movies/Bloom. */
+export async function getLibraryDirectory(): Promise<LibraryDirectoryInfo> {
+  return invoke<LibraryDirectoryInfo>("get_library_directory")
+}
+
+export async function setLibraryDirectory(path: string | null): Promise<LibraryDirectoryInfo> {
+  return invoke<LibraryDirectoryInfo>("set_library_directory", { path })
+}
+
+/** Disk space info for the volume that holds the library directory. */
 export async function getDiskSpace(): Promise<DiskInfo> {
   return invoke<DiskInfo>("get_disk_space")
 }
@@ -155,6 +164,11 @@ export async function shareRecording(id: string): Promise<ShareResult> {
  */
 export async function validateRecording(id: string): Promise<ValidationResult> {
   return invoke<ValidationResult>("validate_recording", { id })
+}
+
+/** Copy an external video file into the Bloom library. */
+export async function importRecording(sourcePath: string): Promise<RecordingEntry> {
+  return invoke<RecordingEntry>("import_recording", { sourcePath })
 }
 
 /**

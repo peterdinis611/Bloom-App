@@ -7,12 +7,13 @@ import { applyTheme, readStoredSettings } from "@/hooks/useSettings"
 type HudPhase = "countdown" | "recording" | "paused"
 
 export function RecordingHudPage() {
-  const stored = readStoredSettings()
-  applyTheme(stored.theme)
-
   const [phase, setPhase] = useState<HudPhase>("countdown")
   const [countdown, setCountdown] = useState(3)
   const [elapsed, setElapsed] = useState(0)
+
+  useEffect(() => {
+    void readStoredSettings().then((stored) => applyTheme(stored.theme))
+  }, [])
 
   useEffect(() => {
     document.documentElement.style.background = "transparent"

@@ -2,11 +2,11 @@
 
 use serde::Deserialize;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::share;
 use crate::types::{LibraryStats, RecordingEntry, RecordingMeta, ShareResult, ValidationResult};
-use crate::util::{bloom_dir, find_recording, load_all_recordings};
+use crate::util::{bloom_dir, find_recording, load_all_recordings, meta_path_for, now_iso};
 
 // ── Snapshot ────────────────────────────────────────────────────────────────
 
@@ -232,4 +232,111 @@ pub(crate) fn reveal_in_finder(path: String) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+const VIDEO_EXTENSIONS: &[&str] = &["mp4", "webm", "mov", "mkv", "m4v"];
+
+fn is_video_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| VIDEO_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+fn sanitize_stem(name: &str) -> String {
+    let trimmed: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == ' ' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let collapsed = trimmed
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if collapsed.is_empty() {
+        "import".to_string()
+    } else {
+        collapsed
+    }
+}
+
+/// Copy an external video into the Bloom library and create metadata.
+#[tauri::command]
+pub(crate) fn import_recording(
+    app: tauri::AppHandle,
+    source_path: String,
+) -> Result<RecordingEntry, String> {
+    let source = PathBuf::from(&source_path);
+    if !source.is_absolute() {
+        return Err("Cesta musí byť absolútna".to_string());
+    }
+    if !source.exists() {
+        return Err("Súbor neexistuje".to_string());
+    }
+    if !source.is_file() {
+        return Err("Vybraná položka nie je súbor".to_string());
+    }
+    if !is_video_file(&source) {
+        return Err("Nepodporovaný formát. Podporované: MP4, WebM, MOV, MKV".to_string());
+    }
+
+    let dir = bloom_dir(&app)?;
+    let ext = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("mp4")
+        .to_ascii_lowercase();
+    let id = uuid::Uuid::new_v4().to_string();
+    let stem = source
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("import");
+    let title = sanitize_stem(stem);
+    let filename = format!(
+        "{}-{}.{}",
+        title.replace(' ', "-"),
+        &id[..8],
+        ext
+    );
+    let dest = dir.join(&filename);
+
+    fs::copy(&source, &dest).map_err(|e| format!("Kopírovanie zlyhalo: {e}"))?;
+
+    let finalized = crate::finalize::finalize_recording(&dest, 0.0);
+    let file_size_bytes = fs::metadata(&dest)
+        .map(|m| m.len())
+        .unwrap_or(finalized.file_size_bytes)
+        .max(finalized.file_size_bytes);
+
+    let meta = RecordingMeta {
+        id: id.clone(),
+        title: title.clone(),
+        filename,
+        created_at: now_iso(),
+        duration_secs: finalized.duration_secs,
+        file_size_bytes,
+        source: "import".to_string(),
+        quality: "—".to_string(),
+        has_microphone: false,
+        has_system_audio: false,
+        target_label: "Import".to_string(),
+        starred: false,
+        tags: Vec::new(),
+        folder: String::new(),
+    };
+
+    let meta_path = meta_path_for(&dest);
+    let json = serde_json::to_string_pretty(&meta).map_err(|e| format!("Serialise error: {e}"))?;
+    fs::write(&meta_path, json).map_err(|e| format!("Cannot write sidecar: {e}"))?;
+
+    Ok(RecordingEntry {
+        meta,
+        path: dest.to_string_lossy().into_owned(),
+        meta_path: meta_path.to_string_lossy().into_owned(),
+    })
 }

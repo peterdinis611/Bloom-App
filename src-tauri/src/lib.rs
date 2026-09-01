@@ -2,6 +2,7 @@
  * Bloom – Rust backend
  */
 
+mod config;
 mod cursor;
 mod finalize;
 mod library;
@@ -23,6 +24,7 @@ pub fn run() {
         .manage(video::VideoJobs::default())
         .manage(cursor::CursorTracker::default())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             tray::build_tray(app.handle())?;
@@ -31,6 +33,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             system::get_bloom_dir,
+            system::get_library_directory,
+            system::set_library_directory,
             system::get_disk_space,
             system::list_monitors,
             session::open_session,
@@ -48,6 +52,7 @@ pub fn run() {
             library::delete_all_recordings,
             library::share_recording,
             library::validate_recording,
+            library::import_recording,
             library::reveal_in_finder,
             video::check_ffmpeg,
             video::install_ffmpeg,

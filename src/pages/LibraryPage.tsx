@@ -32,7 +32,10 @@ import {
   Folder,
   Scissors,
   Download,
+  FileUp,
 } from "lucide-react"
+import { open } from "@tauri-apps/plugin-dialog"
+import { getCurrentWindow } from "@tauri-apps/api/window"
 import { cn } from "@/lib/utils"
 import type { FfmpegStatus, LibraryStats, RecordingEntry, ValidationResult } from "@/types"
 import {
@@ -46,6 +49,7 @@ import {
   shareRecording,
   revealInFinder,
   validateRecording,
+  importRecording,
   checkFfmpeg,
   installFfmpeg,
   getThumbnail,
@@ -94,6 +98,7 @@ const SOURCE_META: Record<string, { icon: React.FC<{ className?: string }>; labe
   screen: { icon: Monitor, label: sk.library.sources.screen, tint: "text-accent bg-primary/12" },
   camera: { icon: Camera, label: sk.library.sources.camera, tint: "tone-fg-success bg-[var(--status-success-bg)]" },
   both: { icon: Layers, label: sk.library.sources.both, tint: "tone-fg-info bg-[var(--status-info-bg)]" },
+  import: { icon: FileUp, label: sk.library.sources.import, tint: "tone-fg-info bg-[var(--status-info-bg)]" },
 }
 
 // ── Empty library hero ───────────────────────────────────────────────────────
@@ -449,9 +454,16 @@ function ActionBtn({ icon: Icon, label, onClick, danger, accent, primary, disabl
 interface LibraryPageProps {
   onStartRecording?: () => void
   active?: boolean
+  openRecordingId?: string | null
+  onOpenRecordingHandled?: () => void
 }
 
-export function LibraryPage({ onStartRecording, active = true }: LibraryPageProps) {
+export function LibraryPage({
+  onStartRecording,
+  active = true,
+  openRecordingId = null,
+  onOpenRecordingHandled,
+}: LibraryPageProps) {
   const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
   const [entries, setEntries] = useState<RecordingEntry[]>([])
   const [stats, setStats] = useState<LibraryStats | null>(null)
@@ -481,6 +493,8 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
   const [batchMode, setBatchMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [tagDraft, setTagDraft] = useState<Record<string, string>>({})
+  const [importBusy, setImportBusy] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
 
   const recheckFfmpeg = useCallback(async (showToast = false) => {
     setCheckingFfmpeg(true)
@@ -567,6 +581,69 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
     prevQueueActive.current = activeCount
   }, [activeCount, load])
   useEffect(() => { recheckFfmpeg() }, [recheckFfmpeg])
+
+  useEffect(() => {
+    if (!openRecordingId || loading) return
+    const entry = entries.find((e) => e.meta.id === openRecordingId)
+    if (entry) {
+      setPlaying(entry)
+      onOpenRecordingHandled?.()
+    }
+  }, [openRecordingId, entries, loading, onOpenRecordingHandled])
+
+  const importPaths = useCallback(async (paths: string[]) => {
+    if (paths.length === 0) return
+    setImportBusy(true)
+    try {
+      for (const path of paths) {
+        const entry = await importRecording(path)
+        setEntries((prev) => [entry, ...prev.filter((e) => e.meta.id !== entry.meta.id)])
+      }
+      const st = await getLibraryStats().catch(() => null)
+      if (st) setStats(st)
+      toastSuccess({
+        title: sk.library.importDone,
+        description: paths.length === 1 ? paths[0].split("/").pop() : `${paths.length} súborov`,
+      })
+    } catch (e) {
+      toastError({ title: sk.library.importFailed, description: String(e) })
+    } finally {
+      setImportBusy(false)
+      setDragActive(false)
+    }
+  }, [toastSuccess, toastError])
+
+  const handleImportClick = useCallback(async () => {
+    try {
+      const selected = await open({
+        multiple: true,
+        filters: [{ name: "Video", extensions: ["mp4", "webm", "mov", "mkv", "m4v"] }],
+        title: sk.library.importBtn,
+      })
+      if (!selected) return
+      const paths = Array.isArray(selected) ? selected : [selected]
+      await importPaths(paths)
+    } catch (e) {
+      toastError({ title: sk.library.importFailed, description: String(e) })
+    }
+  }, [importPaths, toastError])
+
+  useEffect(() => {
+    if (!active) return
+    let unlisten: (() => void) | undefined
+    getCurrentWindow()
+      .onDragDropEvent((event) => {
+        if (event.payload.type === "over") {
+          setDragActive(true)
+        } else if (event.payload.type === "leave") {
+          setDragActive(false)
+        } else if (event.payload.type === "drop") {
+          void importPaths(event.payload.paths)
+        }
+      })
+      .then((fn) => { unlisten = fn })
+    return () => { unlisten?.() }
+  }, [active, importPaths])
 
   const copyInstall = useCallback(() => {
     const cmd = ffmpeg?.install_hint.split(/:\s+/).pop() ?? "brew install ffmpeg"
@@ -746,13 +823,30 @@ export function LibraryPage({ onStartRecording, active = true }: LibraryPageProp
   const confirmEntry = entries.find((e) => e.meta.id === confirmId)
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
+      {dragActive && (
+        <div className="pointer-events-none absolute inset-3 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-[var(--accent)] bg-[var(--accent-muted)]/40 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-2 text-center">
+            <FileUp className="size-8 text-accent" />
+            <p className="text-sm font-semibold">{sk.library.importDrop}</p>
+          </div>
+        </div>
+      )}
       <MacPageHeader
         eyebrow={sk.pageEyebrow.library}
         title={sk.library.title}
         subtitle={loading ? sk.library.loading : stats ? sk.library.recordingCount(stats.total_recordings) : sk.library.subtitle}
         actions={
           <>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={importBusy}
+              onClick={() => { void handleImportClick() }}
+              className="text-[10px] font-bold"
+            >
+              <FileUp className="size-3" /> {sk.library.importBtn}
+            </Button>
             {entries.length > 0 && (
               <Button
                 variant="outline"

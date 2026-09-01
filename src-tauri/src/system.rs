@@ -2,10 +2,19 @@
 
 use std::path::Path;
 
+use serde::Serialize;
 use tauri::Manager;
 
+use crate::config;
 use crate::types::{DiskInfo, MonitorInfo};
 use crate::util::{bloom_dir, dir_size};
+
+#[derive(Debug, Serialize)]
+pub struct LibraryDirectoryInfo {
+    pub path: String,
+    pub is_custom: bool,
+    pub default_path: String,
+}
 
 // ── Disk space (cross-platform) ─────────────────────────────────────────────
 
@@ -52,6 +61,30 @@ fn available_space_bytes(_path: &Path) -> Option<(u64, u64)> {
 #[tauri::command]
 pub(crate) fn get_bloom_dir(app: tauri::AppHandle) -> Result<String, String> {
     bloom_dir(&app).map(|p| p.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub(crate) fn get_library_directory(app: tauri::AppHandle) -> Result<LibraryDirectoryInfo, String> {
+    let default = config::default_bloom_dir(&app)?;
+    let current = bloom_dir(&app)?;
+    Ok(LibraryDirectoryInfo {
+        path: current.to_string_lossy().into_owned(),
+        is_custom: current != default,
+        default_path: default.to_string_lossy().into_owned(),
+    })
+}
+
+#[tauri::command]
+pub(crate) fn set_library_directory(
+    app: tauri::AppHandle,
+    path: Option<String>,
+) -> Result<LibraryDirectoryInfo, String> {
+    let mut cfg = config::load_config(&app).unwrap_or_default();
+    cfg.library_dir = path
+        .map(|p| p.trim().to_owned())
+        .filter(|p| !p.is_empty());
+    config::save_config(&app, &cfg)?;
+    get_library_directory(app)
 }
 
 #[tauri::command]

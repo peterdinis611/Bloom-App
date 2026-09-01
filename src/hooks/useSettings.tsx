@@ -7,6 +7,7 @@ import {
   isThemeId,
   type ThemeId,
 } from "@/lib/themes"
+import { idbGet, idbSet } from "@/lib/idb"
 import { PACER } from "@/lib/pacer"
 import type { PipPosition, PipSize } from "@/lib/capture"
 import { BUILTIN_PRESETS, type RecordingPreset } from "@/lib/presets"
@@ -42,7 +43,7 @@ export interface AppSettings {
 
 const STORAGE_KEY = "bloom-settings-v3"
 
-const DEFAULTS: AppSettings = {
+export const DEFAULTS: AppSettings = {
   theme: DEFAULT_THEME,
   annotation: {
     defaultTool: "pen",
@@ -64,10 +65,9 @@ const DEFAULTS: AppSettings = {
   },
 }
 
-function loadSettings(): AppSettings {
+function parseSettings(raw: string | null): AppSettings {
+  if (!raw) return DEFAULTS
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return DEFAULTS
     const parsed = JSON.parse(raw) as Partial<AppSettings>
     const theme = isThemeId(parsed.theme) ? parsed.theme : DEFAULT_THEME
     return {
@@ -75,11 +75,20 @@ function loadSettings(): AppSettings {
       ...parsed,
       theme,
       annotation: { ...DEFAULTS.annotation, ...parsed.annotation },
-      recording: { ...DEFAULTS.recording, ...parsed.recording, presets: parsed.recording?.presets ?? DEFAULTS.recording.presets },
+      recording: {
+        ...DEFAULTS.recording,
+        ...parsed.recording,
+        presets: parsed.recording?.presets ?? DEFAULTS.recording.presets,
+      },
     }
   } catch {
     return DEFAULTS
   }
+}
+
+async function loadSettings(): Promise<AppSettings> {
+  const raw = await idbGet(STORAGE_KEY)
+  return parseSettings(raw)
 }
 
 export function applyTheme(theme: ThemeId) {
@@ -91,12 +100,13 @@ export function applyTheme(theme: ThemeId) {
 }
 
 /** Load persisted settings (usable outside React – e.g. annotation overlay window). */
-export function readStoredSettings(): AppSettings {
+export async function readStoredSettings(): Promise<AppSettings> {
   return loadSettings()
 }
 
 interface SettingsCtx {
   settings: AppSettings
+  ready: boolean
   setTheme: (theme: ThemeId) => void
   updateSettings: (patch: Partial<AppSettings>) => void
   updateAnnotation: (patch: Partial<AppSettings["annotation"]>) => void
@@ -107,19 +117,32 @@ interface SettingsCtx {
 const SettingsContext = createContext<SettingsCtx | null>(null)
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<AppSettings>(loadSettings)
+  const [settings, setSettings] = useState<AppSettings>(DEFAULTS)
+  const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    applyTheme(settings.theme)
-  }, [settings.theme])
+    let cancelled = false
+    loadSettings().then((loaded) => {
+      if (cancelled) return
+      setSettings(loaded)
+      applyTheme(loaded.theme)
+      setReady(true)
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (ready) applyTheme(settings.theme)
+  }, [settings.theme, ready])
 
   const persistSettings = useDebouncedCallback((next: AppSettings) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+    void idbSet(STORAGE_KEY, JSON.stringify(next))
   }, { wait: PACER.persist })
 
   useEffect(() => {
+    if (!ready) return
     persistSettings(settings)
-  }, [settings, persistSettings])
+  }, [settings, persistSettings, ready])
 
   const setTheme = useCallback((theme: ThemeId) => {
     setSettings((s) => ({ ...s, theme }))
@@ -140,9 +163,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const resetSettings = useCallback(() => setSettings(DEFAULTS), [])
 
   const value = useMemo(
-    () => ({ settings, setTheme, updateSettings, updateAnnotation, updateRecording, resetSettings }),
-    [settings, setTheme, updateSettings, updateAnnotation, updateRecording, resetSettings],
+    () => ({ settings, ready, setTheme, updateSettings, updateAnnotation, updateRecording, resetSettings }),
+    [settings, ready, setTheme, updateSettings, updateAnnotation, updateRecording, resetSettings],
   )
+
+  if (!ready) return null
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>
 }

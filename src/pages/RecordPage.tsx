@@ -71,6 +71,7 @@ import {
   expectsPreviewStream,
 } from "@/lib/previewDiagnostics"
 import { sk } from "@/lib/i18n/sk"
+import { setLastRecordingId } from "@/lib/lastRecording"
 import { RECORDING_QUALITIES } from "@/lib/videoOptions"
 
 function captureErrorMessage(err: unknown): string {
@@ -421,9 +422,10 @@ function SaveBanner({ path, onDismiss }: { path: string; onDismiss: () => void }
 interface RecordPageProps {
   active?: boolean
   onRecordingChange?: (active: boolean) => void
+  onOpenRecording?: (id: string) => void
 }
 
-export function RecordPage({ active = true, onRecordingChange }: RecordPageProps) {
+export function RecordPage({ active = true, onRecordingChange, onOpenRecording }: RecordPageProps) {
   const { cameras, microphones, monitors, hasLabels, requestPermission, refresh } = useMediaDevices()
   const { settings: appSettings, updateRecording } = useSettings()
   const { success: toastSuccess } = useToast()
@@ -480,7 +482,7 @@ export function RecordPage({ active = true, onRecordingChange }: RecordPageProps
   }))
   const [error,      setError]      = useState<string | null>(null)
   const [diskWarn,   setDiskWarn]   = useState<string | null>(null)
-  const [savedMeta,  setSavedMeta]  = useState<{ title: string; size: string } | null>(null)
+  const [savedMeta,  setSavedMeta]  = useState<{ title: string; size: string; id: string } | null>(null)
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null)
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null)
 
@@ -811,7 +813,8 @@ export function RecordPage({ active = true, onRecordingChange }: RecordPageProps
     if (sid === null) return
     try {
       const meta = await closeSession(sid)
-      setSavedMeta({ title: meta.title, size: formatBytes(meta.file_size_bytes) })
+      void setLastRecordingId(meta.id)
+      setSavedMeta({ title: meta.title, size: formatBytes(meta.file_size_bytes), id: meta.id })
       toastSuccess({
         title: sk.toast.recordingSaved(meta.title),
         description: sk.toast.recordingSavedBody,
@@ -1321,8 +1324,13 @@ export function RecordPage({ active = true, onRecordingChange }: RecordPageProps
           <div className="banner-success flex flex-1 items-center gap-2 rounded-lg px-3 py-2">
             <CheckCircle2 className="size-4 opacity-80" />
             <span className="text-[13px] font-medium">{sk.record.saved}{savedMeta ? ` · ${savedMeta.size}` : ""}</span>
+            {savedMeta && onOpenRecording && (
+              <MacButton variant="ghost" className="ml-auto !py-1" onClick={() => onOpenRecording(savedMeta.id)}>
+                <Play className="size-3.5" /> {sk.record.openLast}
+              </MacButton>
+            )}
             {bloomDir && (
-              <MacButton variant="ghost" className="ml-auto !py-1" onClick={() => revealInFinder(bloomDir)}>
+              <MacButton variant="ghost" className={savedMeta && onOpenRecording ? "!py-1" : "ml-auto !py-1"} onClick={() => revealInFinder(bloomDir)}>
                 <FolderOpen className="size-3.5" /> {sk.record.show}
               </MacButton>
             )}
