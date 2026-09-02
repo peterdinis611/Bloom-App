@@ -3,12 +3,13 @@ export const sk = {
   app: {
     name: "Bloom",
     tagline: "Nahrávanie obrazovky",
-    version: "v0.1.0",
+    version: "v0.2.0",
   },
   pageEyebrow: {
     record: "Záber",
     library: "Archív",
     settings: "Panel",
+    docs: "Príručka",
   },
   toast: {
     dismiss: "Zavrieť",
@@ -42,6 +43,7 @@ export const sk = {
     record: "Nahrávanie",
     library: "Knižnica",
     settings: "Nastavenia",
+    docs: "Dokumentácia",
     recordingLocked: "Najprv ukonči nahrávanie",
     recordingActive: "Nahráva sa",
   },
@@ -150,6 +152,11 @@ export const sk = {
       rect: "Obdĺžnik",
       circle: "Kruh",
     },
+  },
+  docs: {
+    title: "Dokumentácia",
+    subtitle: "Návod, skratky a riešenie problémov",
+    footer: "Podrobné súbory nájdeš aj v priečinku docs/ v repozitári Bloom.",
   },
   shortcuts: {
     title: "Klávesové skratky",

@@ -131,7 +131,7 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
       <PageScrollArea active={active} className="pb-6">
         <MacGroupHeader>{sk.settings.appearance}</MacGroupHeader>
         <MacGroup>
-          <div className="grid max-h-[420px] grid-cols-2 gap-2.5 overflow-y-auto p-3 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="grid max-h-[520px] grid-cols-2 gap-2.5 overflow-y-auto p-3 sm:grid-cols-3 lg:grid-cols-4">
             {THEMES.map((t) => {
               const active = settings.theme === t.id
               return (

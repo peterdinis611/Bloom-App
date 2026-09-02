@@ -10,6 +10,7 @@ import { Sidebar, type AppView } from "@/components/layout/Sidebar"
 import { RecordPage } from "@/pages/RecordPage"
 import { LibraryPage } from "@/pages/LibraryPage"
 import { SettingsPage } from "@/pages/SettingsPage"
+import { DocsPage } from "@/pages/DocsPage"
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal"
 import { getBloomDir } from "@/hooks/useBloomBackend"
 import { getLastRecordingId } from "@/lib/lastRecording"
@@ -87,6 +88,7 @@ function AppShell() {
               />
             )}
             {view === "settings" && <SettingsPage active />}
+            {view === "docs" && <DocsPage active />}
           </main>
         </div>
       </div>

@@ -8,6 +8,7 @@ Nahrávky sa ukladajú do `~/Movies/Bloom` (na iných platformách `~/Videos/Blo
 
 | Súbor | Pre koho |
 |-------|----------|
+| [docs/index.md](docs/index.md) | Index dokumentácie + odkaz na sekciu v appke |
 | [docs/pouzivanie.md](docs/pouzivanie.md) | Používateľ — nahrávanie, knižnica, editor, export |
 | [docs/vyvoj.md](docs/vyvoj.md) | Vývojár — architektúra, príkazy, testy |
 | [docs/backend.md](docs/backend.md) | Backend — session, ffmpeg pipeline, dátový model |

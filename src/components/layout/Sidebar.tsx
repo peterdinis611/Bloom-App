@@ -1,11 +1,11 @@
-import { Circle, Library, Settings, Video } from "lucide-react"
+import { Circle, Library, Settings, Video, BookOpen } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { sk } from "@/lib/i18n/sk"
 import { ExportQueuePanel } from "@/components/layout/ExportQueuePanel"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
-export type AppView = "record" | "library" | "settings"
+export type AppView = "record" | "library" | "settings" | "docs"
 
 interface SidebarProps {
   view: AppView
@@ -17,6 +17,7 @@ interface SidebarProps {
 const ITEMS: { id: AppView; label: string; icon: React.FC<{ className?: string }> }[] = [
   { id: "record", label: sk.nav.record, icon: Video },
   { id: "library", label: sk.nav.library, icon: Library },
+  { id: "docs", label: sk.nav.docs, icon: BookOpen },
   { id: "settings", label: sk.nav.settings, icon: Settings },
 ]
 
