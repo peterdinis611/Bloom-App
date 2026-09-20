@@ -25,7 +25,7 @@ export function BatchOptimizeModal({ entries, preset = "medium", onClose, onComp
         options: {
           input_path: entry.path,
           preset,
-          resolution: "720p",
+          resolution: "original",
           format: "mp4",
           add_to_library: true,
         },

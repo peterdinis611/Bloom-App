@@ -224,8 +224,12 @@ export async function getVideoInfo(path: string): Promise<VideoInfo> {
 }
 
 /** Generate or return cached filmstrip thumbnail paths for a video file. */
-export async function getFilmstrip(path: string, frameCount?: number): Promise<string[]> {
-  return invoke<string[]>("get_filmstrip", { path, frameCount })
+export async function getFilmstrip(
+  path: string,
+  frameCount?: number,
+  durationHint?: number,
+): Promise<string[]> {
+  return invoke<string[]>("get_filmstrip", { path, frameCount, durationHint })
 }
 
 /** Estimate output size and duration before export. */

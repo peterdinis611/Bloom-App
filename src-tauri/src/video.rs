@@ -40,6 +40,38 @@ use crate::{meta_path_for, now_iso, RecordingMeta};
 #[derive(Default)]
 pub struct VideoJobs(pub Mutex<HashMap<String, Arc<AtomicBool>>>);
 
+// ── Tool / probe caches (large-file hot path) ───────────────────────────────
+
+type ToolCache = Mutex<Option<Option<PathBuf>>>;
+
+fn ffmpeg_tool_cache() -> &'static ToolCache {
+    static C: OnceLock<ToolCache> = OnceLock::new();
+    C.get_or_init(|| Mutex::new(None))
+}
+
+fn ffprobe_tool_cache() -> &'static ToolCache {
+    static C: OnceLock<ToolCache> = OnceLock::new();
+    C.get_or_init(|| Mutex::new(None))
+}
+
+struct ProbeCacheEntry {
+    size: u64,
+    modified: SystemTime,
+    info: VideoInfo,
+}
+
+fn probe_result_cache() -> &'static Mutex<HashMap<String, ProbeCacheEntry>> {
+    static C: OnceLock<Mutex<HashMap<String, ProbeCacheEntry>>> = OnceLock::new();
+    C.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Clear resolved binary paths after install / PATH changes.
+pub(crate) fn clear_media_tool_cache() {
+    *ffmpeg_tool_cache().lock().unwrap() = None;
+    *ffprobe_tool_cache().lock().unwrap() = None;
+    probe_result_cache().lock().unwrap().clear();
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Data types
 // ────────────────────────────────────────────────────────────────────────────
@@ -311,7 +343,13 @@ fn find_binary(stem: &str) -> Option<PathBuf> {
 }
 
 fn find_ffmpeg() -> Option<PathBuf> {
-    find_binary("ffmpeg").or_else(find_ffmpeg_via_package_manager)
+    let mut slot = ffmpeg_tool_cache().lock().unwrap();
+    if let Some(cached) = slot.as_ref() {
+        return cached.clone();
+    }
+    let found = find_binary("ffmpeg").or_else(find_ffmpeg_via_package_manager);
+    *slot = Some(found.clone());
+    found
 }
 
 pub(crate) fn find_ffmpeg_path() -> Option<PathBuf> {
@@ -352,17 +390,28 @@ fn find_ffmpeg_via_package_manager() -> Option<PathBuf> {
 
 /// Prefer ffprobe next to the resolved ffmpeg binary (same Cellar / install prefix).
 pub(crate) fn find_ffprobe(ffmpeg: Option<&Path>) -> Option<PathBuf> {
+    // When caller already resolved ffmpeg, prefer sibling without poisoning the cache
+    // with a wrong absolute lookup on first call.
     if let Some(ffmpeg_path) = ffmpeg {
         if let Some(parent) = ffmpeg_path.parent() {
             for name in ["ffprobe", "ffprobe.exe"] {
                 let cand = parent.join(name);
                 if is_executable(&cand) {
+                    let mut slot = ffprobe_tool_cache().lock().unwrap();
+                    *slot = Some(Some(cand.clone()));
                     return Some(cand);
                 }
             }
         }
     }
-    find_binary("ffprobe")
+
+    let mut slot = ffprobe_tool_cache().lock().unwrap();
+    if let Some(cached) = slot.as_ref() {
+        return cached.clone();
+    }
+    let found = find_binary("ffprobe");
+    *slot = Some(found.clone());
+    found
 }
 
 fn read_version_with_timeout(ffmpeg: &Path, timeout_ms: u64) -> Option<String> {
@@ -712,9 +761,33 @@ fn parse_frame_rate(s: &str) -> f64 {
 }
 
 pub(crate) fn probe(ffprobe: &Path, path: &str) -> Result<VideoInfo, String> {
+    // Cap how much of a multi-GB file ffprobe reads before giving up on discovery.
     let output = Command::new(ffprobe)
         .args([
-            "-v", "quiet",
+            "-v", "error",
+            "-probesize", "5M",
+            "-analyzeduration", "2M",
+            "-print_format", "json",
+            "-show_entries",
+            "format=duration,bit_rate,size:stream=codec_type,codec_name,width,height,avg_frame_rate",
+            path,
+        ])
+        .output()
+        .map_err(|e| format!("ffprobe failed: {e}"))?;
+
+    if !output.status.success() {
+        return probe_fallback(ffprobe, path);
+    }
+
+    parse_probe_json(&output.stdout, path)
+}
+
+fn probe_fallback(ffprobe: &Path, path: &str) -> Result<VideoInfo, String> {
+    let output = Command::new(ffprobe)
+        .args([
+            "-v", "error",
+            "-probesize", "32M",
+            "-analyzeduration", "5M",
             "-print_format", "json",
             "-show_format",
             "-show_streams",
@@ -726,9 +799,12 @@ pub(crate) fn probe(ffprobe: &Path, path: &str) -> Result<VideoInfo, String> {
     if !output.status.success() {
         return Err("ffprobe nedokázal prečítať súbor".into());
     }
+    parse_probe_json(&output.stdout, path)
+}
 
+fn parse_probe_json(stdout: &[u8], path: &str) -> Result<VideoInfo, String> {
     let json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).map_err(|e| format!("ffprobe parse error: {e}"))?;
+        serde_json::from_slice(stdout).map_err(|e| format!("ffprobe parse error: {e}"))?;
 
     let empty = Vec::new();
     let streams = json.get("streams").and_then(|s| s.as_array()).unwrap_or(&empty);
@@ -787,6 +863,39 @@ pub(crate) fn probe(ffprobe: &Path, path: &str) -> Result<VideoInfo, String> {
     })
 }
 
+/// Probe with mtime/size cache — avoids re-reading multi-GB files in the same session.
+pub(crate) fn probe_cached(ffprobe: &Path, path: &str) -> Result<VideoInfo, String> {
+    let meta = std::fs::metadata(path).ok();
+    let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+    let modified = meta
+        .and_then(|m| m.modified().ok())
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+
+    {
+        let cache = probe_result_cache().lock().unwrap();
+        if let Some(entry) = cache.get(path) {
+            if entry.size == size && entry.modified == modified {
+                return Ok(entry.info.clone());
+            }
+        }
+    }
+
+    let info = probe(ffprobe, path)?;
+    let mut cache = probe_result_cache().lock().unwrap();
+    if cache.len() > 64 {
+        cache.clear();
+    }
+    cache.insert(
+        path.to_string(),
+        ProbeCacheEntry {
+            size,
+            modified,
+            info: info.clone(),
+        },
+    );
+    Ok(info)
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Argument building
 // ────────────────────────────────────────────────────────────────────────────
@@ -803,14 +912,15 @@ struct PresetValues {
 fn preset_values(preset: &str) -> PresetValues {
     match preset {
         "small" => PresetValues {
-            x264_preset: "veryfast",
+            // Prioritise throughput on long / large captures.
+            x264_preset: "ultrafast",
             x264_crf: "30",
             vp9_crf: "37",
             audio_bitrate: "96k",
             vt_quality: "72",
         },
         "high" => PresetValues {
-            x264_preset: "medium",
+            x264_preset: "faster",
             x264_crf: "20",
             vp9_crf: "27",
             audio_bitrate: "192k",
@@ -818,7 +928,7 @@ fn preset_values(preset: &str) -> PresetValues {
         },
         // "medium" and any unknown value
         _ => PresetValues {
-            x264_preset: "faster",
+            x264_preset: "veryfast",
             x264_crf: "25",
             vp9_crf: "32",
             audio_bitrate: "128k",
@@ -1041,6 +1151,7 @@ fn append_mp4_video_codec(a: &mut Vec<String>, opts: &OptimizeOptions, pv: &Pres
                 "-q:v", pv.vt_quality,
                 "-tag:v", "hvc1",
                 "-allow_sw", "1",
+                "-realtime", "1",
                 "-pix_fmt", "yuv420p",
                 "-movflags", "+faststart",
             ]
@@ -1065,6 +1176,7 @@ fn append_mp4_video_codec(a: &mut Vec<String>, opts: &OptimizeOptions, pv: &Pres
             "-c:v", "h264_videotoolbox",
             "-q:v", pv.vt_quality,
             "-allow_sw", "1",
+            "-realtime", "1",
             "-pix_fmt", "yuv420p",
             "-movflags", "+faststart",
         ]
@@ -1072,9 +1184,14 @@ fn append_mp4_video_codec(a: &mut Vec<String>, opts: &OptimizeOptions, pv: &Pres
         return;
     }
     if nvenc {
+        let nv_preset = match opts.preset.as_str() {
+            "small" => "p1",
+            "high" => "p5",
+            _ => "p4",
+        };
         a.extend([
             "-c:v", "h264_nvenc",
-            "-preset", "p4",
+            "-preset", nv_preset,
             "-rc", "vbr",
             "-cq", pv.x264_crf,
             "-pix_fmt", "yuv420p",
@@ -1094,6 +1211,16 @@ fn append_mp4_video_codec(a: &mut Vec<String>, opts: &OptimizeOptions, pv: &Pres
     .map(String::from));
     a.push("-threads".into());
     a.push("0".into());
+}
+
+/// Stream-copy audio when we are not changing it (big win on long clips).
+fn can_copy_audio(opts: &OptimizeOptions, info: &VideoInfo, speed: f64) -> bool {
+    info.has_audio
+        && !opts.remove_audio
+        && !opts.normalize_audio
+        && effective_speed(speed) == 1.0
+        && opts.format == "mp4"
+        && opts.keep_ranges.len() <= 1
 }
 
 pub fn analyze_video_info(info: &VideoInfo) -> VideoAnalyze {
@@ -1296,6 +1423,7 @@ fn build_args(
     let format = opts.format.as_str();
     let speed = effective_speed(opts.speed);
     let use_audio = info.has_audio && !opts.remove_audio && format != "gif";
+    let copy_audio = can_copy_audio(opts, info, opts.speed) && !multi;
 
     if multi {
         // Join keep-ranges with filter_complex, then apply shared video filters.
@@ -1339,10 +1467,6 @@ fn build_args(
             if af.is_empty() {
                 a.extend(["-map".into(), "[ac]".into()]);
             } else {
-                // Re-map audio through -filter_complex already as [ac]; apply af via -af on mapped stream is trickier.
-                // Bake audio filters into complex:
-                let last = parts.len() - 1;
-                let _ = last;
                 a.extend(["-map".into(), "[ac]".into()]);
                 a.push("-af".into());
                 a.push(af.join(","));
@@ -1356,7 +1480,7 @@ fn build_args(
             a.push(vf.join(","));
         }
 
-        if use_audio {
+        if use_audio && !copy_audio {
             let mut af: Vec<String> = Vec::new();
             append_audio_filters(&mut af, opts, speed);
             if !af.is_empty() {
@@ -1368,7 +1492,19 @@ fn build_args(
 
     match format {
         "webm" => {
-            a.extend(["-c:v", "libvpx-vp9", "-b:v", "0", "-crf", pv.vp9_crf, "-row-mt", "1"].map(String::from));
+            let cpu_used = match opts.preset.as_str() {
+                "small" => "8",
+                "high" => "2",
+                _ => "4",
+            };
+            a.extend([
+                "-c:v", "libvpx-vp9",
+                "-b:v", "0",
+                "-crf", pv.vp9_crf,
+                "-row-mt", "1",
+                "-deadline", "realtime",
+                "-cpu-used", cpu_used,
+            ].map(String::from));
             if use_audio {
                 a.extend(["-c:a", "libopus", "-b:a", pv.audio_bitrate].map(String::from));
             } else {
@@ -1381,7 +1517,11 @@ fn build_args(
         _ => {
             append_mp4_video_codec(&mut a, opts, &pv, hw_h264, hw_hevc, nvenc);
             if use_audio {
-                a.extend(["-c:a", "aac", "-b:a", pv.audio_bitrate].map(String::from));
+                if copy_audio {
+                    a.extend(["-c:a", "copy"].map(String::from));
+                } else {
+                    a.extend(["-c:a", "aac", "-b:a", pv.audio_bitrate].map(String::from));
+                }
             } else {
                 a.push("-an".into());
             }
@@ -1442,6 +1582,7 @@ fn build_output_path(opts: &OptimizeOptions, input: &Path) -> PathBuf {
 // ────────────────────────────────────────────────────────────────────────────
 
 /// Rewrites MP4 in place so the moov atom is at the front — no re-encode.
+/// Skips work when moov already precedes mdat in the file header (already faststarted).
 pub(crate) fn remux_mp4_faststart(ffmpeg: &Path, path: &Path) -> Result<(), String> {
     let ext = path
         .extension()
@@ -1449,6 +1590,10 @@ pub(crate) fn remux_mp4_faststart(ffmpeg: &Path, path: &Path) -> Result<(), Stri
         .unwrap_or("")
         .to_ascii_lowercase();
     if ext != "mp4" {
+        return Ok(());
+    }
+
+    if mp4_moov_is_faststarted(path) {
         return Ok(());
     }
 
@@ -1484,6 +1629,29 @@ pub(crate) fn remux_mp4_faststart(ffmpeg: &Path, path: &Path) -> Result<(), Stri
     std::fs::rename(&tmp, path).map_err(|e| format!("Could not replace recording: {e}"))
 }
 
+/// True when `moov` appears before `mdat` in the first ~1 MiB (instant seek / playback).
+fn mp4_moov_is_faststarted(path: &Path) -> bool {
+    let Ok(mut file) = File::open(path) else {
+        return false;
+    };
+    let mut buf = vec![0u8; 1024 * 1024];
+    let Ok(n) = file.read(&mut buf) else {
+        return false;
+    };
+    let hay = &buf[..n];
+    let moov = find_fourcc(hay, b"moov");
+    let mdat = find_fourcc(hay, b"mdat");
+    match (moov, mdat) {
+        (Some(mv), Some(md)) => mv < md,
+        (Some(_), None) => true,
+        _ => false,
+    }
+}
+
+fn find_fourcc(hay: &[u8], needle: &[u8; 4]) -> Option<usize> {
+    hay.windows(4).position(|w| w == needle)
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Thumbnail
 // ────────────────────────────────────────────────────────────────────────────
@@ -1511,6 +1679,8 @@ fn make_thumbnail_scaled(
             "-loglevel", "error",
             "-ss", &format!("{at_secs:.3}"),
             "-i", &video.to_string_lossy(),
+            "-an",
+            "-sn",
             "-frames:v", "1",
             "-vf", &vf,
             "-q:v", if height >= 200 { "5" } else { "6" },
@@ -1858,9 +2028,8 @@ fn run_optimize(
 
     let final_size = std::fs::metadata(&final_path).map(|m| m.len()).unwrap_or(size);
 
-    if opts.format == "mp4" {
-        let _ = remux_mp4_faststart(&ffmpeg_thumb, &final_path);
-    }
+    // Encode / stream-copy already use -movflags +faststart — skip a second full-file remux
+    // (was rewriting multi-GB outputs after every export).
 
     emit(OptimizeProgress {
         job_id: job_id.clone(),
@@ -1884,33 +2053,49 @@ pub fn check_ffmpeg() -> FfmpegStatus {
 
 #[tauri::command]
 pub async fn install_ffmpeg() -> Result<FfmpegInstallResult, String> {
-    tauri::async_runtime::spawn_blocking(install_ffmpeg_blocking)
-        .await
-        .map_err(|e| format!("Install task failed: {e}"))
+    tauri::async_runtime::spawn_blocking(|| {
+        let result = install_ffmpeg_blocking();
+        clear_media_tool_cache();
+        result
+    })
+    .await
+    .map_err(|e| format!("Install task failed: {e}"))
 }
 
 #[tauri::command]
-pub fn get_video_info(path: String) -> Result<VideoInfo, String> {
-    let ffmpeg = find_ffmpeg();
-    let ffprobe = find_ffprobe(ffmpeg.as_deref()).ok_or_else(|| "ffprobe not found".to_string())?;
-    probe(&ffprobe, &path)
+pub async fn get_video_info(path: String) -> Result<VideoInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let ffmpeg = find_ffmpeg();
+        let ffprobe = find_ffprobe(ffmpeg.as_deref()).ok_or_else(|| "ffprobe not found".to_string())?;
+        probe_cached(&ffprobe, &path)
+    })
+    .await
+    .map_err(|e| format!("Probe task failed: {e}"))?
 }
 
 #[tauri::command]
-pub fn get_thumbnail(app: tauri::AppHandle, id: String, at_secs: Option<f64>) -> Result<String, String> {
-    let dir = crate::bloom_dir(&app)?;
-    let entry = crate::find_recording(&dir, &id).ok_or_else(|| format!("Recording {id} not found"))?;
-    let video = PathBuf::from(&entry.path);
+pub async fn get_thumbnail(
+    app: tauri::AppHandle,
+    id: String,
+    at_secs: Option<f64>,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = crate::bloom_dir(&app)?;
+        let entry = crate::find_recording(&dir, &id).ok_or_else(|| format!("Recording {id} not found"))?;
+        let video = PathBuf::from(&entry.path);
 
-    let thumb = thumbnail_path_for(&video);
-    if thumb.exists() {
-        return Ok(thumb.to_string_lossy().into_owned());
-    }
+        let thumb = thumbnail_path_for(&video);
+        if thumb.exists() {
+            return Ok(thumb.to_string_lossy().into_owned());
+        }
 
-    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg nie je nainštalovaný".to_string())?;
-    let at = at_secs.unwrap_or_else(|| (entry.meta.duration_secs * 0.1).max(0.0));
-    let path = make_thumbnail(&ffmpeg, &video, at)?;
-    Ok(path.to_string_lossy().into_owned())
+        let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg nie je nainštalovaný".to_string())?;
+        let at = at_secs.unwrap_or_else(|| (entry.meta.duration_secs * 0.1).max(0.0));
+        let path = make_thumbnail(&ffmpeg, &video, at)?;
+        Ok(path.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| format!("Thumbnail task failed: {e}"))?
 }
 
 #[tauri::command]
@@ -1928,7 +2113,7 @@ pub fn optimize_video(
     }
 
     // Determine total duration for progress (trimmed window or full clip).
-    let info = probe(&ffprobe, &options.input_path)?;
+    let info = probe_cached(&ffprobe, &options.input_path)?;
     let total_secs = trim_duration(&options).unwrap_or(info.duration_secs)
         / effective_speed(options.speed);
 
@@ -1986,49 +2171,128 @@ pub fn optimize_video(
 }
 
 #[tauri::command]
-pub fn analyze_video(path: String) -> Result<VideoAnalyze, String> {
-    let ffprobe = find_ffprobe(find_ffmpeg().as_deref())
-        .ok_or_else(|| "ffprobe not found".to_string())?;
-    let info = probe(&ffprobe, &path)?;
-    Ok(analyze_video_info(&info))
+pub async fn analyze_video(path: String) -> Result<VideoAnalyze, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let ffprobe = find_ffprobe(find_ffmpeg().as_deref())
+            .ok_or_else(|| "ffprobe not found".to_string())?;
+        let info = probe_cached(&ffprobe, &path)?;
+        Ok(analyze_video_info(&info))
+    })
+    .await
+    .map_err(|e| format!("Analyze task failed: {e}"))?
 }
 
 #[tauri::command]
-pub fn get_filmstrip(path: String, frame_count: Option<u32>) -> Result<Vec<String>, String> {
-    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg nie je nainštalovaný".to_string())?;
-    let ffprobe = find_ffprobe(Some(&ffmpeg)).ok_or_else(|| "ffprobe not found".to_string())?;
-    let info = probe(&ffprobe, &path)?;
-    let video = PathBuf::from(&path);
+pub async fn get_filmstrip(
+    path: String,
+    frame_count: Option<u32>,
+    duration_hint: Option<f64>,
+) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || build_filmstrip(&path, frame_count, duration_hint))
+        .await
+        .map_err(|e| format!("Filmstrip task failed: {e}"))?
+}
+
+fn build_filmstrip(
+    path: &str,
+    frame_count: Option<u32>,
+    duration_hint: Option<f64>,
+) -> Result<Vec<String>, String> {
+    let video = PathBuf::from(path);
     if !video.exists() {
         return Err("Video súbor neexistuje".into());
     }
 
     let count = frame_count.unwrap_or(12).clamp(6, 20);
-    let duration = info.duration_secs.max(0.1);
-    let mut paths = Vec::with_capacity(count as usize);
 
+    // Fast path: all strip frames already on disk — no probe, no ffmpeg.
+    let mut cached = Vec::with_capacity(count as usize);
+    let mut all_cached = true;
     for i in 0..count {
-        let t = if count <= 1 {
-            0.0
-        } else {
-            duration * i as f64 / (count - 1) as f64
-        };
         let thumb = filmstrip_path_for(&video, i);
-        if !thumb.exists() {
-            make_thumbnail_scaled(&ffmpeg, &video, t, &thumb, 72)?;
+        if thumb.exists() {
+            cached.push(thumb.to_string_lossy().into_owned());
+        } else {
+            all_cached = false;
+            break;
         }
-        paths.push(thumb.to_string_lossy().into_owned());
+    }
+    if all_cached {
+        return Ok(cached);
     }
 
-    Ok(paths)
+    let duration = if let Some(d) = duration_hint.filter(|d| *d > 0.05) {
+        d
+    } else {
+        let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg nie je nainštalovaný".to_string())?;
+        let ffprobe = find_ffprobe(Some(&ffmpeg)).ok_or_else(|| "ffprobe not found".to_string())?;
+        probe_cached(&ffprobe, path)?.duration_secs.max(0.1)
+    };
+
+    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg nie je nainštalovaný".to_string())?;
+
+    // Parallel keyframe seeks (bounded) — big win on multi-GB sources.
+    let jobs: Vec<(u32, f64, PathBuf)> = (0..count)
+        .map(|i| {
+            let t = if count <= 1 {
+                0.0
+            } else {
+                duration * i as f64 / (count - 1) as f64
+            };
+            (i, t, filmstrip_path_for(&video, i))
+        })
+        .collect();
+
+    let errors = Mutex::new(Vec::<String>::new());
+    let next = AtomicUsize::new(0);
+    let parallelism = 4usize.min(count as usize).max(1);
+
+    std::thread::scope(|scope| {
+        for _ in 0..parallelism {
+            let ffmpeg = &ffmpeg;
+            let video = &video;
+            let jobs = &jobs;
+            let errors = &errors;
+            let next = &next;
+            scope.spawn(move || {
+                loop {
+                    let idx = next.fetch_add(1, Ordering::Relaxed);
+                    if idx >= jobs.len() {
+                        break;
+                    }
+                    let (_i, t, thumb) = &jobs[idx];
+                    if thumb.exists() {
+                        continue;
+                    }
+                    if let Err(e) = make_thumbnail_scaled(ffmpeg, video, *t, thumb, 72) {
+                        errors.lock().unwrap().push(e);
+                    }
+                }
+            });
+        }
+    });
+
+    let errs = errors.into_inner().unwrap();
+    if !errs.is_empty() && jobs.iter().any(|(_, _, p)| !p.exists()) {
+        return Err(errs.into_iter().next().unwrap_or_else(|| "Filmstrip zlyhal".into()));
+    }
+
+    Ok(jobs
+        .into_iter()
+        .map(|(_, _, p)| p.to_string_lossy().into_owned())
+        .collect())
 }
 
 #[tauri::command]
-pub fn estimate_export(options: OptimizeOptions) -> Result<ExportEstimate, String> {
-    let ffprobe = find_ffprobe(find_ffmpeg().as_deref())
-        .ok_or_else(|| "ffprobe not found".to_string())?;
-    let info = probe(&ffprobe, &options.input_path)?;
-    Ok(compute_export_estimate(&info, &options))
+pub async fn estimate_export(options: OptimizeOptions) -> Result<ExportEstimate, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let ffprobe = find_ffprobe(find_ffmpeg().as_deref())
+            .ok_or_else(|| "ffprobe not found".to_string())?;
+        let info = probe_cached(&ffprobe, &options.input_path)?;
+        Ok(compute_export_estimate(&info, &options))
+    })
+    .await
+    .map_err(|e| format!("Estimate task failed: {e}"))?
 }
 
 #[tauri::command]

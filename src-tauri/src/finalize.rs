@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
-use crate::video::{find_ffprobe, find_ffmpeg_path, make_thumbnail, probe, remux_mp4_faststart};
+use crate::video::{find_ffprobe, find_ffmpeg_path, make_thumbnail, probe_cached, remux_mp4_faststart};
 
 static FFMPEG_OK: OnceLock<bool> = OnceLock::new();
 
@@ -40,12 +40,13 @@ pub(crate) fn finalize_recording(path: &Path, wall_duration_secs: f64) -> Finali
     };
 
     let path_str = path.to_string_lossy();
-    if let Ok(probed) = probe(&ffprobe, &path_str) {
+    if let Ok(probed) = probe_cached(&ffprobe, &path_str) {
         if probed.duration_secs > 0.05 {
             info.duration_secs = probed.duration_secs;
         }
     }
 
+    // Remux only when moov is not already at the front (skips multi-GB rewrites).
     if remux_mp4_faststart(&ffmpeg, path).is_ok() {
         info.file_size_bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(info.file_size_bytes);
     }

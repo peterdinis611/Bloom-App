@@ -157,6 +157,23 @@ fn build_args_denoise_and_normalize() {
 }
 
 #[test]
+fn build_args_copies_audio_when_unchanged() {
+    let o = opts("medium", "720p", "mp4");
+    let info = sample_info();
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mp4", &info, false, false, false);
+    assert!(args.windows(2).any(|w| w == ["-c:a", "copy"]));
+}
+
+#[test]
+fn build_args_reencodes_audio_when_normalized() {
+    let mut o = opts("medium", "720p", "mp4");
+    o.normalize_audio = true;
+    let info = sample_info();
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mp4", &info, false, false, false);
+    assert!(args.windows(2).any(|w| w == ["-c:a", "aac"]));
+}
+
+#[test]
 fn build_args_no_audio_uses_an() {
     let mut o = opts("small", "original", "mp4");
     o.remove_audio = true;
@@ -164,6 +181,13 @@ fn build_args_no_audio_uses_an() {
     info.has_audio = true;
     let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mp4", &info, false, false, false);
     assert!(args.iter().any(|a| a == "-an"));
+}
+
+#[test]
+fn preset_values_favour_speed() {
+    assert_eq!(preset_values("small").x264_preset, "ultrafast");
+    assert_eq!(preset_values("medium").x264_preset, "veryfast");
+    assert_eq!(preset_values("high").x264_preset, "faster");
 }
 
 #[test]
@@ -271,5 +295,37 @@ fn parse_srt_reads_basic_file() {
     let cards = parse_srt(path.to_str().unwrap()).unwrap();
     assert_eq!(cards.len(), 1);
     assert_eq!(cards[0].text, "Ahoj svet");
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn find_fourcc_locates_atoms() {
+    let buf = b"....ftypisom....moov....mdat....";
+    assert_eq!(find_fourcc(buf, b"moov"), Some(16));
+    assert_eq!(find_fourcc(buf, b"mdat"), Some(24));
+    assert!(find_fourcc(buf, b"free").is_none());
+}
+
+#[test]
+fn mp4_faststart_detection_from_header() {
+    let dir = std::env::temp_dir().join(format!("bloom-moov-{}", uuid::Uuid::new_v4()));
+    fs::create_dir_all(&dir).unwrap();
+
+    let fast = dir.join("fast.mp4");
+    let mut head = vec![0u8; 64];
+    head.extend_from_slice(b"moov");
+    head.extend_from_slice(&[0u8; 32]);
+    head.extend_from_slice(b"mdat");
+    fs::write(&fast, &head).unwrap();
+    assert!(mp4_moov_is_faststarted(&fast));
+
+    let slow = dir.join("slow.mp4");
+    let mut tail = vec![0u8; 64];
+    tail.extend_from_slice(b"mdat");
+    tail.extend_from_slice(&[0u8; 32]);
+    tail.extend_from_slice(b"moov");
+    fs::write(&slow, &tail).unwrap();
+    assert!(!mp4_moov_is_faststarted(&slow));
+
     fs::remove_dir_all(&dir).ok();
 }

@@ -159,7 +159,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
   const [framesLoading, setFramesLoading] = useState(false)
 
   const [preset, setPreset] = useState<OptimizePreset>("medium")
-  const [resolution, setResolution] = useState<OptimizeResolution>("720p")
+  const [resolution, setResolution] = useState<OptimizeResolution>("original")
   const [format, setFormat] = useState<OptimizeFormat>("mp4")
   const [speed, setSpeed] = useState<OptimizeSpeed>("1")
   const [saveMode, setSaveMode] = useState<SaveMode>("copy")
@@ -230,11 +230,11 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
   useEffect(() => {
     if (step !== "trim") return
     setFramesLoading(true)
-    getFilmstrip(entry.path, 12)
+    getFilmstrip(entry.path, 12, duration > 0 ? duration : undefined)
       .then(setFrames)
       .catch(() => setFrames([]))
       .finally(() => setFramesLoading(false))
-  }, [entry.path, step])
+  }, [entry.path, step, duration])
 
   useEffect(() => {
     if (step !== "preview" && step !== "export") return
@@ -270,7 +270,18 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
 
   useEffect(() => {
     if (step !== "export") return
-    analyzeVideo(entry.path).then(setAnalysis).catch(() => setAnalysis(null))
+    analyzeVideo(entry.path)
+      .then((a) => {
+        setAnalysis(a)
+        // Prefer fast path for large sources: apply suggestion once per open.
+        setPreset((prev) => (prev === "medium" ? a.suggested_preset : prev))
+        setResolution((prev) => {
+          if (prev !== "original") return prev
+          // Keep original when stream-copy is possible; otherwise use suggestion.
+          return a.can_stream_copy_trim ? "original" : a.suggested_resolution
+        })
+      })
+      .catch(() => setAnalysis(null))
   }, [entry.path, step])
 
   useEffect(() => {
