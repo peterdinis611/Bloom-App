@@ -400,7 +400,7 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
           </MacRow>
           <MacRow
             label={sk.settings.preferNativeShare}
-            hint={sk.settings.preferNativeShareHint}
+            hint={sk.share.nativeHint}
             onClick={() => updateIntegrations({ preferNativeShare: !integ.preferNativeShare })}
           >
             <MacToggle

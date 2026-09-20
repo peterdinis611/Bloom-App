@@ -23,6 +23,20 @@ pub fn copy_file(path: String) -> Result<(), String> {
     copy_file_impl(&path)
 }
 
+/// Copy a file on disk to a new destination path (for “save a copy” share flow).
+#[tauri::command]
+pub fn copy_file_to(src: String, dest: String) -> Result<(), String> {
+    let src_path = Path::new(&src);
+    if !src_path.exists() {
+        return Err("Súbor neexistuje.".into());
+    }
+    if let Some(parent) = Path::new(&dest).parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Cannot create folder: {e}"))?;
+    }
+    std::fs::copy(&src, &dest).map_err(|e| format!("Copy failed: {e}"))?;
+    Ok(())
+}
+
 #[cfg(target_os = "macos")]
 fn copy_text_impl(text: &str) -> Result<(), String> {
     let mut child = Command::new("pbcopy")

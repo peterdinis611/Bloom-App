@@ -1983,7 +1983,11 @@
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* ── What’s new / release notes ───────────────────────────────────────────── */
+.share-sheet-hero {
+  background:
+    radial-gradient(ellipse 80% 120% at 0% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 55%),
+    linear-gradient(165deg, color-mix(in srgb, var(--card) 88%, var(--accent) 12%), var(--card));
+}
 
 .news-hero {
   position: relative;

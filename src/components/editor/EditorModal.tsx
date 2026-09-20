@@ -9,6 +9,9 @@ import {
   FileVideo,
   Zap,
   SplitSquareHorizontal,
+  Trash2,
+  Crop,
+  ArrowLeftRight,
 } from "lucide-react"
 import { useCloseOnEscape } from "@/hooks/useCloseOnEscape"
 import { cn } from "@/lib/utils"
@@ -17,15 +20,22 @@ import { ChoiceGroup } from "@/components/mac/MacUIKit"
 import { OPTIMIZE_SPEEDS, speedToNumber } from "@/lib/videoOptions"
 import { clampTrimRange, formatEditorTime, parseEditorTime } from "@/lib/editorTime"
 import {
+  cutOutRange,
   defaultSegments,
+  deleteSegment,
+  isFullFrameCrop,
+  MAX_SEGMENTS,
   mergeSegment,
+  moveSegment,
   segmentDuration,
   splitSegmentAt,
   totalSegmentsDuration,
   updateSegment,
+  type EditorCrop,
   type EditorSegment,
 } from "@/lib/editorSegments"
 import { FilmstripTimeline } from "@/components/editor/FilmstripTimeline"
+import { EditorCropOverlay } from "@/components/editor/EditorCropOverlay"
 import { CompareSlider } from "@/components/editor/CompareSlider"
 import { BloomVideoPlayer, type BloomVideoPlayerHandle } from "@/components/video/BloomVideoPlayer"
 import { useExportQueue } from "@/hooks/useExportQueue"
@@ -51,8 +61,13 @@ import {
 
 type Step = "preview" | "trim" | "export" | "queued"
 type SaveMode = "copy" | "replace"
+type PartsMode = "separate" | "join"
 
 const STEPS: Step[] = ["preview", "trim", "export"]
+const PARTS_MODES = [
+  { value: "separate" as const, label: sk.editor.separateParts, hint: sk.editor.separatePartsHint },
+  { value: "join" as const, label: sk.editor.joinParts, hint: sk.editor.joinPartsHint },
+]
 const PRESETS = [
   { value: "small" as const, label: sk.optimize.presets.small.label, hint: sk.optimize.presets.small.hint },
   { value: "medium" as const, label: sk.optimize.presets.medium.label, hint: sk.optimize.presets.medium.hint },
@@ -132,6 +147,9 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
   const [duration, setDuration] = useState(entry.meta.duration_secs)
   const [segments, setSegments] = useState<EditorSegment[]>(() => defaultSegments(entry.meta.duration_secs))
   const [activeSegment, setActiveSegment] = useState(0)
+  const [partsMode, setPartsMode] = useState<PartsMode>("separate")
+  const [crop, setCrop] = useState<EditorCrop | null>(null)
+  const [cropMode, setCropMode] = useState(false)
   const [playhead, setPlayhead] = useState(0)
   const [startText, setStartText] = useState("0:00.00")
   const [endText, setEndText] = useState(formatEditorTime(entry.meta.duration_secs))
@@ -161,10 +179,12 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
 
   const active = segments[activeSegment] ?? segments[0]!
   const multiClip = segments.length > 1
-  const replaceOriginal = saveMode === "replace" && !multiClip
+  const joinOutput = multiClip && partsMode === "join"
+  const replaceOriginal = saveMode === "replace" && !multiClip && !crop
+  const hasCrop = Boolean(crop && !isFullFrameCrop(crop))
 
   const baseOptions = useMemo(
-    (): Omit<OptimizeOptions, "trim_start" | "trim_end" | "output_name"> => ({
+    (): Omit<OptimizeOptions, "trim_start" | "trim_end" | "output_name" | "keep_ranges"> => ({
       input_path: entry.path,
       preset,
       resolution,
@@ -180,8 +200,12 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
       normalize_audio: normalizeAudio,
       remove_audio: removeAudio,
       use_hevc: useHevc,
+      crop_x: hasCrop ? crop!.x : null,
+      crop_y: hasCrop ? crop!.y : null,
+      crop_w: hasCrop ? crop!.w : null,
+      crop_h: hasCrop ? crop!.h : null,
     }),
-    [entry.path, preset, resolution, format, speed, replaceOriginal, subtitlesOn, srtPath, cards, denoise, normalizeAudio, removeAudio, useHevc],
+    [entry.path, preset, resolution, format, speed, replaceOriginal, subtitlesOn, srtPath, cards, denoise, normalizeAudio, removeAudio, useHevc, hasCrop, crop],
   )
 
   const syncFieldsFromSegment = useCallback((seg: EditorSegment) => {
@@ -217,11 +241,19 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
     const seg = segments[0]!
     setEstimateLoading(true)
     const timer = window.setTimeout(() => {
-      const opts: OptimizeOptions = {
-        ...baseOptions,
-        trim_start: multiClip ? null : seg.start,
-        trim_end: multiClip ? null : seg.end,
-      }
+      const opts: OptimizeOptions = joinOutput
+        ? {
+            ...baseOptions,
+            trim_start: null,
+            trim_end: null,
+            keep_ranges: segments.map((s) => ({ start: s.start, end: s.end })),
+          }
+        : {
+            ...baseOptions,
+            trim_start: multiClip ? null : seg.start,
+            trim_end: multiClip ? null : seg.end,
+            keep_ranges: [],
+          }
       estimateExport(opts)
         .then((e) => {
           if (step === "preview") setPreviewEstimate(e)
@@ -234,7 +266,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
         .finally(() => setEstimateLoading(false))
     }, 180)
     return () => window.clearTimeout(timer)
-  }, [step, baseOptions, segments, multiClip])
+  }, [step, baseOptions, segments, multiClip, joinOutput])
 
   useEffect(() => {
     if (step !== "export") return
@@ -284,19 +316,45 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
     }
   }, [segments, activeSegment, playhead, syncFieldsFromSegment])
 
+  const cutOutActive = useCallback(() => {
+    const next = cutOutRange(segments, active.start, active.end)
+    if (!next) return
+    setSegments(next)
+    const idx = Math.min(activeSegment, next.length - 1)
+    setActiveSegment(idx)
+    syncFieldsFromSegment(next[idx]!)
+  }, [segments, active, activeSegment, syncFieldsFromSegment])
+
+  const removeActivePart = useCallback(() => {
+    if (segments.length <= 1) return
+    const next = deleteSegment(segments, activeSegment)
+    setSegments(next)
+    const idx = Math.min(activeSegment, next.length - 1)
+    setActiveSegment(idx)
+    syncFieldsFromSegment(next[idx]!)
+  }, [segments, activeSegment, syncFieldsFromSegment])
+
+  const shiftActive = useCallback((dir: -1 | 1) => {
+    const to = activeSegment + dir
+    const next = moveSegment(segments, activeSegment, to)
+    setSegments(next)
+    setActiveSegment(Math.max(0, Math.min(next.length - 1, to)))
+  }, [segments, activeSegment])
+
   const buildExportJobs = useCallback(() => {
     const stem = fileStem(entry.path)
     const subtitleOpts = {
       srt_path: baseOptions.srt_path,
       subtitle_cards: baseOptions.subtitle_cards,
     }
-    if (multiClip) {
+    if (multiClip && partsMode === "separate") {
       return segments.map((seg, i) => ({
         label: `${entry.meta.title} — ${sk.editor.segment(i + 1)}`,
         options: {
           ...baseOptions,
           trim_start: seg.start,
           trim_end: seg.end,
+          keep_ranges: [],
           output_name: `${stem}-cast${i + 1}`,
           add_to_library: true,
           replace_original: false,
@@ -304,16 +362,32 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
         } satisfies OptimizeOptions,
       }))
     }
+    if (joinOutput) {
+      return [{
+        label: entry.meta.title,
+        options: {
+          ...baseOptions,
+          trim_start: null,
+          trim_end: null,
+          keep_ranges: segments.map((s) => ({ start: s.start, end: s.end })),
+          output_name: `${stem}-joined`,
+          add_to_library: true,
+          replace_original: false,
+          ...subtitleOpts,
+        } satisfies OptimizeOptions,
+      }]
+    }
     return [{
       label: entry.meta.title,
       options: {
         ...baseOptions,
         trim_start: active.start,
         trim_end: active.end,
+        keep_ranges: [],
         ...subtitleOpts,
       } satisfies OptimizeOptions,
     }]
-  }, [entry, baseOptions, multiClip, segments, active])
+  }, [entry, baseOptions, multiClip, partsMode, joinOutput, segments, active])
 
   const startExport = useCallback(() => {
     const jobs = buildExportJobs()
@@ -372,12 +446,23 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
           </div>
 
           {step === "trim" && (
-            <BloomVideoPlayer
-              ref={playerRef}
-              path={entry.path}
-              controlsLayout="docked"
-              onTimeUpdate={setPlayhead}
-            />
+            <div className="relative overflow-hidden rounded-xl">
+              <BloomVideoPlayer
+                ref={playerRef}
+                path={entry.path}
+                controlsLayout="docked"
+                onTimeUpdate={setPlayhead}
+              />
+              {cropMode && (
+                <EditorCropOverlay
+                  value={crop}
+                  onChange={(c) => {
+                    setCrop(c)
+                    if (c) setCropMode(false)
+                  }}
+                />
+              )}
+            </div>
           )}
 
           {step === "preview" && (
@@ -412,45 +497,98 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
                 onSeek={(t) => playerRef.current?.seek(t)}
               />
 
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={splitAtPlayhead}
-                  disabled={segments.length >= 3}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-[var(--surface)] px-3 py-2 text-[11px] font-semibold text-foreground transition-colors hover:bg-secondary disabled:opacity-40"
-                >
-                  <SplitSquareHorizontal className="size-3.5" /> {sk.editor.splitAtPlayhead}
-                </button>
-                {segments.map((_, i) => (
+              <div className="flex flex-col gap-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">
+                  {sk.editor.partsTitle}
+                </p>
+                <div className="flex flex-wrap gap-2">
                   <button
-                    key={i}
                     type="button"
-                    onClick={() => {
-                      setActiveSegment(i)
-                      syncFieldsFromSegment(segments[i]!)
-                    }}
+                    onClick={splitAtPlayhead}
+                    disabled={segments.length >= MAX_SEGMENTS}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-[var(--surface)] px-3 py-2 text-[11px] font-semibold text-foreground transition-colors hover:bg-secondary disabled:opacity-40"
+                  >
+                    <SplitSquareHorizontal className="size-3.5" /> {sk.editor.splitAtPlayhead}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cutOutActive}
+                    disabled={segments.length >= MAX_SEGMENTS}
+                    title={sk.editor.cutOutHint}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-[var(--surface)] px-3 py-2 text-[11px] font-semibold text-foreground transition-colors hover:bg-secondary disabled:opacity-40"
+                  >
+                    <Scissors className="size-3.5" /> {sk.editor.cutOutRange}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCropMode((v) => !v)}
                     className={cn(
-                      "rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors",
-                      i === activeSegment ? "bg-primary text-white" : "bg-secondary text-muted-foreground hover:text-foreground",
+                      "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-semibold transition-colors",
+                      cropMode || hasCrop
+                        ? "border-accent/40 bg-accent/15 text-accent"
+                        : "border-border/60 bg-[var(--surface)] text-foreground hover:bg-secondary",
                     )}
                   >
-                    {sk.editor.segment(i + 1)}
+                    <Crop className="size-3.5" /> {sk.editor.cropToggle}
                   </button>
-                ))}
-                {activeSegment > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const merged = mergeSegment(segments, activeSegment)
-                      setSegments(merged)
-                      setActiveSegment(Math.max(0, activeSegment - 1))
-                      syncFieldsFromSegment(merged[Math.max(0, activeSegment - 1)]!)
-                    }}
-                    className="rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground"
-                  >
-                    {sk.editor.mergeSegment}
-                  </button>
-                )}
+                  {segments.map((_, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => {
+                        setActiveSegment(i)
+                        syncFieldsFromSegment(segments[i]!)
+                      }}
+                      className={cn(
+                        "rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors",
+                        i === activeSegment ? "bg-primary text-white" : "bg-secondary text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {sk.editor.segment(i + 1)}
+                    </button>
+                  ))}
+                  {activeSegment > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const merged = mergeSegment(segments, activeSegment)
+                        setSegments(merged)
+                        setActiveSegment(Math.max(0, activeSegment - 1))
+                        syncFieldsFromSegment(merged[Math.max(0, activeSegment - 1)]!)
+                      }}
+                      className="rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    >
+                      {sk.editor.mergeSegment}
+                    </button>
+                  )}
+                  {segments.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => shiftActive(-1)}
+                        disabled={activeSegment === 0}
+                        className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
+                      >
+                        <ArrowLeftRight className="size-3.5" /> {sk.editor.moveLeft}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => shiftActive(1)}
+                        disabled={activeSegment >= segments.length - 1}
+                        className="rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
+                      >
+                        {sk.editor.moveRight}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={removeActivePart}
+                        className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold tone-fg-error hover:bg-[var(--status-error-bg)]"
+                      >
+                        <Trash2 className="size-3.5" /> {sk.editor.deleteSegment}
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
@@ -508,6 +646,9 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
               <ChoiceGroup label={sk.optimize.resolution} layout="wrap" options={RESOLUTIONS} value={resolution} onChange={setResolution} />
               <ChoiceGroup label={sk.optimize.speed} layout="wrap" options={SPEEDS} value={speed} onChange={setSpeed} />
               <ChoiceGroup label={sk.optimize.format} options={FORMATS} value={format} onChange={setFormat} />
+              {multiClip && (
+                <ChoiceGroup label={sk.editor.partsTitle} options={PARTS_MODES} value={partsMode} onChange={setPartsMode} />
+              )}
               {!multiClip && (
                 <ChoiceGroup label={sk.editor.saveMode} options={SAVE_MODES} value={saveMode} onChange={setSaveMode} />
               )}
@@ -554,7 +695,11 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
                 ))}
               </div>
               {multiClip && (
-                <p className="text-[11px] text-muted-foreground">{sk.editor.multiClipExport(segments.length)}</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {joinOutput
+                    ? sk.editor.joinParts
+                    : sk.editor.multiClipExport(segments.length)}
+                </p>
               )}
               {replaceOriginal && format !== "mp4" && (
                 <p className="text-[11px] tone-fg-warning">{sk.editor.replaceMp4Only}</p>
@@ -648,7 +793,11 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
                 </button>
                 <button onClick={startExport} className="flex flex-[2] items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/25 hover:bg-accent">
                   <Zap className="size-4" />
-                  {multiClip ? sk.editor.multiClipExport(segments.length) : sk.editor.startExport}
+                  {joinOutput
+                    ? sk.editor.joinParts
+                    : multiClip
+                      ? sk.editor.multiClipExport(segments.length)
+                      : sk.editor.startExport}
                 </button>
               </div>
             </>

@@ -190,6 +190,11 @@ export async function copyFile(path: string): Promise<void> {
   return invoke<void>("copy_file", { path })
 }
 
+/** Duplicate a file to a new path (Save a copy…). */
+export async function copyFileTo(src: string, dest: string): Promise<void> {
+  return invoke<void>("copy_file_to", { src, dest })
+}
+
 /** Update ⌘⇧ global shortcuts (single letters A–Z). */
 export async function setGlobalShortcuts(arm: string, pause: string, stop: string): Promise<void> {
   return invoke<void>("set_global_shortcuts", { arm, pause, stop })

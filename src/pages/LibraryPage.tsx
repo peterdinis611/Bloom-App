@@ -49,7 +49,6 @@ import {
   updateRecordingMeta,
   batchDeleteRecordings,
   deleteAllRecordings,
-  shareRecording,
   revealInFinder,
   validateRecording,
   importRecording,
@@ -63,11 +62,11 @@ import {
   copyFile,
 } from "@/hooks/useBloomBackend"
 import { useExportQueue } from "@/hooks/useExportQueue"
-import { useSettings } from "@/hooks/useSettings"
 import { VideoPlayerModal } from "@/components/video/VideoPlayerModal"
 import { EditorModal } from "@/components/editor/EditorModal"
 import { BatchOptimizeModal } from "@/components/BatchOptimizeModal"
 import { ConfirmDeleteAll } from "@/components/library/ConfirmDeleteAll"
+import { ShareVideoSheet } from "@/components/library/ShareVideoSheet"
 import { PageScrollArea } from "@/components/layout/PageScrollArea"
 import { MacPageHeader } from "@/components/mac/MacUIKit"
 import { MacSelect } from "@/components/mac/MacSelect"
@@ -526,7 +525,6 @@ export function LibraryPage({
   onEditRecordingHandled,
 }: LibraryPageProps) {
   const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
-  const { settings: appSettings } = useSettings()
   const [entries, setEntries] = useState<RecordingEntry[]>([])
   const [stats, setStats] = useState<LibraryStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -557,6 +555,7 @@ export function LibraryPage({
   const [tagDraft, setTagDraft] = useState<Record<string, string>>({})
   const [importBusy, setImportBusy] = useState(false)
   const [dragActive, setDragActive] = useState(false)
+  const [shareEntry, setShareEntry] = useState<RecordingEntry | null>(null)
 
   const recheckFfmpeg = useCallback(async (showToast = false) => {
     setCheckingFfmpeg(true)
@@ -1133,21 +1132,7 @@ export function LibraryPage({
                 onPlay={() => setPlaying(entry)}
                 onDelete={() => setConfirmId(entry.meta.id)}
                 onReveal={() => revealInFinder(entry.path).catch((e) => setError(localizeError(e)))}
-                onShare={async () => {
-                  try {
-                    if (!appSettings.integrations.preferNativeShare) {
-                      await copyText(entry.path)
-                      toastSuccess({ title: sk.toast.pathCopied })
-                      return
-                    }
-                    const result = await shareRecording(entry.meta.id)
-                    const title =
-                      sk.library.shareSuccess[result.mode] ?? sk.library.shareOpened
-                    toastSuccess({ title })
-                  } catch (e) {
-                    toastError({ title: sk.library.shareFailed, description: localizeError(e) })
-                  }
-                }}
+                onShare={() => setShareEntry(entry)}
                 onCopyPath={() => {
                   void copyText(entry.path)
                     .then(() => toastSuccess({ title: sk.toast.pathCopied }))
@@ -1200,6 +1185,11 @@ export function LibraryPage({
       {playing && (
         <VideoPlayerModal entry={playing} open onClose={() => setPlaying(null)} />
       )}
+      <ShareVideoSheet
+        entry={shareEntry}
+        open={Boolean(shareEntry)}
+        onClose={() => setShareEntry(null)}
+      />
       {confirmEntry && (
         <ConfirmDelete
           title={confirmEntry.meta.title}

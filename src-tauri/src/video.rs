@@ -16,14 +16,15 @@
 
 use std::{
     collections::HashMap,
+    fs::File,
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex, OnceLock,
     },
-    time::Instant,
+    time::{Instant, SystemTime},
 };
 
 use serde::{Deserialize, Serialize};
@@ -80,6 +81,12 @@ pub struct SubtitleCard {
     pub end_secs: f64,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct TimeRange {
+    pub start: f64,
+    pub end: f64,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct OptimizeOptions {
     pub input_path: String,
@@ -91,6 +98,15 @@ pub struct OptimizeOptions {
     pub format: String,
     pub trim_start: Option<f64>,
     pub trim_end: Option<f64>,
+    /// Multiple keep-ranges joined into one output (order preserved).
+    /// When non-empty, overrides trim_start/trim_end.
+    #[serde(default)]
+    pub keep_ranges: Vec<TimeRange>,
+    /// Normalized spatial crop (0–1). All four must be set to apply.
+    pub crop_x: Option<f64>,
+    pub crop_y: Option<f64>,
+    pub crop_w: Option<f64>,
+    pub crop_h: Option<f64>,
     /// Playback speed multiplier (1.0 = normal, 2.0 = 2× faster).
     #[serde(default = "default_speed")]
     pub speed: f64,
@@ -909,7 +925,45 @@ pub(crate) fn can_stream_copy(opts: &OptimizeOptions, info: &VideoInfo) -> bool 
         && !opts.normalize_audio
         && !opts.remove_audio
         && !has_subtitles(opts)
+        && !has_spatial_crop(opts)
+        && opts.keep_ranges.len() <= 1
         && is_h264_codec(&info.codec)
+}
+
+fn has_spatial_crop(opts: &OptimizeOptions) -> bool {
+    matches!(
+        (opts.crop_x, opts.crop_y, opts.crop_w, opts.crop_h),
+        (Some(x), Some(y), Some(w), Some(h))
+            if w > 0.02 && h > 0.02 && (x > 0.001 || y > 0.001 || w < 0.999 || h < 0.999)
+    )
+}
+
+fn crop_filter(opts: &OptimizeOptions) -> Option<String> {
+    let (x, y, w, h) = match (opts.crop_x, opts.crop_y, opts.crop_w, opts.crop_h) {
+        (Some(x), Some(y), Some(w), Some(h)) if w > 0.02 && h > 0.02 => (x, y, w, h),
+        _ => return None,
+    };
+    // ffmpeg crop uses pixels; express as fractions of iw/ih.
+    Some(format!(
+        "crop=iw*{w:.4}:ih*{h:.4}:iw*{x:.4}:ih*{y:.4}"
+    ))
+}
+
+fn effective_keep_ranges(opts: &OptimizeOptions) -> Vec<(f64, f64)> {
+    if !opts.keep_ranges.is_empty() {
+        return opts
+            .keep_ranges
+            .iter()
+            .filter(|r| r.end > r.start + 0.05)
+            .map(|r| (r.start, r.end))
+            .collect();
+    }
+    match (opts.trim_start, opts.trim_end) {
+        (Some(s), Some(e)) if e > s => vec![(s, e)],
+        (Some(s), None) => vec![(s, f64::MAX)],
+        (None, Some(e)) if e > 0.0 => vec![(0.0, e)],
+        _ => vec![],
+    }
 }
 
 fn build_stream_copy_args(opts: &OptimizeOptions, input: &str, output: &str) -> Vec<String> {
@@ -948,6 +1002,9 @@ fn denoise_filter(preset: &str) -> &'static str {
 }
 
 fn append_video_filters(vf: &mut Vec<String>, opts: &OptimizeOptions, height: Option<u32>, format: &str) {
+    if let Some(crop) = crop_filter(opts) {
+        vf.push(crop);
+    }
     if format == "gif" {
         vf.push("fps=12".into());
         vf.push(scale_filter(height.unwrap_or(480), &opts.preset));
@@ -1194,7 +1251,10 @@ fn build_args(
     hw_hevc: bool,
     nvenc: bool,
 ) -> Vec<String> {
-    if can_stream_copy(opts, info) {
+    let ranges = effective_keep_ranges(opts);
+    let multi = ranges.len() > 1;
+
+    if !multi && can_stream_copy(opts, info) {
         return build_stream_copy_args(opts, input, output);
     }
 
@@ -1202,39 +1262,107 @@ fn build_args(
 
     a.extend(hwaccel_input_args());
 
-    if let Some(start) = opts.trim_start {
-        if start > 0.0 {
-            a.push("-ss".into());
-            a.push(format!("{start:.3}"));
+    if !multi {
+        if let Some((start, _)) = ranges.first() {
+            if *start > 0.0 && *start < 1.0e9 {
+                a.push("-ss".into());
+                a.push(format!("{start:.3}"));
+            }
+        } else if let Some(start) = opts.trim_start {
+            if start > 0.0 {
+                a.push("-ss".into());
+                a.push(format!("{start:.3}"));
+            }
         }
     }
+
     a.push("-i".into());
     a.push(input.to_string());
 
-    if let Some(dur) = trim_duration(opts) {
-        a.push("-t".into());
-        a.push(format!("{dur:.3}"));
+    if !multi {
+        if let Some((start, end)) = ranges.first() {
+            if *end < 1.0e9 {
+                a.push("-t".into());
+                a.push(format!("{:.3}", end - start));
+            }
+        } else if let Some(dur) = trim_duration(opts) {
+            a.push("-t".into());
+            a.push(format!("{dur:.3}"));
+        }
     }
 
     let height = resolution_height(&opts.resolution);
     let pv = preset_values(&opts.preset);
     let format = opts.format.as_str();
     let speed = effective_speed(opts.speed);
-    let use_audio = info.has_audio && !opts.remove_audio;
+    let use_audio = info.has_audio && !opts.remove_audio && format != "gif";
 
-    let mut vf: Vec<String> = Vec::new();
-    append_video_filters(&mut vf, opts, height, format);
-    if !vf.is_empty() {
-        a.push("-vf".into());
-        a.push(vf.join(","));
-    }
+    if multi {
+        // Join keep-ranges with filter_complex, then apply shared video filters.
+        let mut parts: Vec<String> = Vec::new();
+        let mut concat_in = String::new();
+        for (i, (start, end)) in ranges.iter().enumerate() {
+            let end_clamped = if *end >= 1.0e9 { *start + 36000.0 } else { *end };
+            parts.push(format!(
+                "[0:v]trim=start={start:.3}:end={end_clamped:.3},setpts=PTS-STARTPTS[v{i}]"
+            ));
+            if use_audio {
+                parts.push(format!(
+                    "[0:a]atrim=start={start:.3}:end={end_clamped:.3},asetpts=PTS-STARTPTS[a{i}]"
+                ));
+                concat_in.push_str(&format!("[v{i}][a{i}]"));
+            } else {
+                concat_in.push_str(&format!("[v{i}]"));
+            }
+        }
+        let n = ranges.len();
+        if use_audio {
+            parts.push(format!("{concat_in}concat=n={n}:v=1:a=1[vc][ac]"));
+        } else {
+            parts.push(format!("{concat_in}concat=n={n}:v=1:a=0[vc]"));
+        }
 
-    if use_audio && format != "gif" {
-        let mut af: Vec<String> = Vec::new();
-        append_audio_filters(&mut af, opts, speed);
-        if !af.is_empty() {
-            a.push("-af".into());
-            a.push(af.join(","));
+        let mut post: Vec<String> = Vec::new();
+        append_video_filters(&mut post, opts, height, format);
+        if post.is_empty() {
+            parts.push("[vc]null[outv]".into());
+        } else {
+            parts.push(format!("[vc]{}[outv]", post.join(",")));
+        }
+
+        a.push("-filter_complex".into());
+        a.push(parts.join(";"));
+        a.extend(["-map".into(), "[outv]".into()]);
+        if use_audio {
+            let mut af: Vec<String> = Vec::new();
+            append_audio_filters(&mut af, opts, speed);
+            if af.is_empty() {
+                a.extend(["-map".into(), "[ac]".into()]);
+            } else {
+                // Re-map audio through -filter_complex already as [ac]; apply af via -af on mapped stream is trickier.
+                // Bake audio filters into complex:
+                let last = parts.len() - 1;
+                let _ = last;
+                a.extend(["-map".into(), "[ac]".into()]);
+                a.push("-af".into());
+                a.push(af.join(","));
+            }
+        }
+    } else {
+        let mut vf: Vec<String> = Vec::new();
+        append_video_filters(&mut vf, opts, height, format);
+        if !vf.is_empty() {
+            a.push("-vf".into());
+            a.push(vf.join(","));
+        }
+
+        if use_audio {
+            let mut af: Vec<String> = Vec::new();
+            append_audio_filters(&mut af, opts, speed);
+            if !af.is_empty() {
+                a.push("-af".into());
+                a.push(af.join(","));
+            }
         }
     }
 
@@ -1266,10 +1394,20 @@ fn build_args(
 }
 
 fn trim_duration(opts: &OptimizeOptions) -> Option<f64> {
-    match (opts.trim_start, opts.trim_end) {
-        (Some(s), Some(e)) if e > s => Some(e - s),
-        (None, Some(e)) if e > 0.0 => Some(e),
-        _ => None,
+    let ranges = effective_keep_ranges(opts);
+    if ranges.is_empty() {
+        return None;
+    }
+    let mut total = 0.0;
+    for (s, e) in ranges {
+        if e < 1.0e9 {
+            total += e - s;
+        }
+    }
+    if total > 0.0 {
+        Some(total)
+    } else {
+        None
     }
 }
 

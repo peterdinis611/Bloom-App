@@ -158,6 +158,13 @@ export interface OptimizeOptions {
   format: OptimizeFormat
   trim_start?: number | null
   trim_end?: number | null
+  /** Multiple keep-ranges joined into one output (overrides single trim). */
+  keep_ranges?: { start: number; end: number }[]
+  /** Normalized spatial crop 0–1. */
+  crop_x?: number | null
+  crop_y?: number | null
+  crop_w?: number | null
+  crop_h?: number | null
   /** Playback speed multiplier (1 = normal, 2 = 2× faster). */
   speed?: number
   output_name?: string | null

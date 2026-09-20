@@ -47,7 +47,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { PipOverlay } from "@/components/record/PipOverlay"
 import { emit, listen } from "@tauri-apps/api/event"
 import { cn, formatDuration } from "@/lib/utils"
-import type { MonitorInfo, RecordingSettings, RecordingSource, RecordingStatus, ScreenTarget } from "@/types"
+import type { MonitorInfo, RecordingEntry, RecordingSettings, RecordingSource, RecordingStatus, ScreenTarget } from "@/types"
 import {
   getBloomDir,
   openSession,
@@ -59,12 +59,12 @@ import {
   formatBytes,
   isLowDiskSpace,
   getRecording,
-  shareRecording,
   copyText,
 } from "@/hooks/useBloomBackend"
 import { useMediaDevices } from "@/hooks/useMediaDevices"
 import { useSettings } from "@/hooks/useSettings"
 import { useToast } from "@/hooks/useToast"
+import { ShareVideoSheet } from "@/components/library/ShareVideoSheet"
 import { startCapture, openCameraStream, type CaptureHandle, type CropRect } from "@/lib/capture"
 import { highlightMonitor, dismissMonitorHighlight } from "@/lib/monitorHighlight"
 import { MonitorPicker } from "@/components/record/MonitorPicker"
@@ -499,6 +499,7 @@ export function RecordPage({
   const [error,      setError]      = useState<string | null>(null)
   const [diskWarn,   setDiskWarn]   = useState<string | null>(null)
   const [savedMeta,  setSavedMeta]  = useState<{ title: string; size: string; id: string } | null>(null)
+  const [shareEntry, setShareEntry] = useState<RecordingEntry | null>(null)
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null)
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null)
 
@@ -835,9 +836,11 @@ export function RecordPage({
       setSavedMeta({ title: meta.title, size: formatBytes(meta.file_size_bytes), id: meta.id })
 
       let path = ""
+      let shareTarget: RecordingEntry | null = null
       try {
         const entry = await getRecording(meta.id)
         path = entry.path
+        shareTarget = entry
       } catch { /* optional */ }
 
       toastSuccess({
@@ -849,23 +852,12 @@ export function RecordPage({
             : onOpenRecording
               ? [{ label: sk.record.openLast, onClick: () => onOpenRecording(meta.id) }]
               : []),
-          {
-            label: sk.toast.share,
-            onClick: () => {
-              void (async () => {
-                try {
-                  if (!appSettings.integrations.preferNativeShare && path) {
-                    await copyText(path)
-                    toastSuccess({ title: sk.toast.pathCopied })
-                    return
-                  }
-                  await shareRecording(meta.id)
-                } catch (e) {
-                  toastError({ title: sk.library.shareFailed, description: localizeError(e) })
-                }
-              })()
-            },
-          },
+          ...(shareTarget
+            ? [{
+                label: sk.toast.share,
+                onClick: () => setShareEntry(shareTarget),
+              }]
+            : []),
           ...(path
             ? [{
                 label: sk.toast.copyPath,
@@ -1450,6 +1442,11 @@ export function RecordPage({
         )}
         </div>
       </div>
+      <ShareVideoSheet
+        entry={shareEntry}
+        open={Boolean(shareEntry)}
+        onClose={() => setShareEntry(null)}
+      />
     </div>
   )
 }

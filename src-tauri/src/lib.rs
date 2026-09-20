@@ -61,6 +61,7 @@ pub fn run() {
             library::reveal_in_finder,
             clipboard::copy_text,
             clipboard::copy_file,
+            clipboard::copy_file_to,
             tray::set_global_shortcuts,
             tray::get_global_shortcuts,
             video::check_ffmpeg,
