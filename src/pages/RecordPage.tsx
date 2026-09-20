@@ -431,6 +431,7 @@ interface RecordPageProps {
   onRecordingChange?: (active: boolean) => void
   onOpenRecording?: (id: string) => void
   onEditRecording?: (id: string) => void
+  onRecordingSaved?: () => void
 }
 
 export function RecordPage({
@@ -438,6 +439,7 @@ export function RecordPage({
   onRecordingChange,
   onOpenRecording,
   onEditRecording,
+  onRecordingSaved,
 }: RecordPageProps) {
   const { cameras, microphones, monitors, hasLabels, requestPermission, refresh } = useMediaDevices()
   const { settings: appSettings, updateRecording } = useSettings()
@@ -870,6 +872,7 @@ export function RecordPage({
             : []),
         ],
       })
+      onRecordingSaved?.()
     } catch { /* non-critical */ }
   }
 

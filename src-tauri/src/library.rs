@@ -238,7 +238,10 @@ pub(crate) fn reveal_in_finder(path: String) -> Result<(), String> {
     Ok(())
 }
 
-const VIDEO_EXTENSIONS: &[&str] = &["mp4", "webm", "mov", "mkv", "m4v"];
+const VIDEO_EXTENSIONS: &[&str] = &[
+    "mp4", "webm", "mov", "mkv", "m4v", "avi", "mpeg", "mpg", "mpe", "wmv", "flv", "ts", "mts", "m2ts",
+    "3gp", "3g2", "ogv", "ogg",
+];
 
 fn is_video_file(path: &Path) -> bool {
     path.extension()

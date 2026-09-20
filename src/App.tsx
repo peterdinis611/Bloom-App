@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { listen } from "@tauri-apps/api/event"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ToastProvider } from "@/hooks/useToast"
-import { SettingsProvider } from "@/hooks/useSettings"
+import { SettingsProvider, useSettings } from "@/hooks/useSettings"
 import { TanStackRoot } from "@/components/TanStackRoot"
 import { ExportQueueProvider } from "@/hooks/useExportQueue"
 import { TitleBar } from "@/components/layout/TitleBar"
@@ -18,10 +18,12 @@ import { getLastRecordingId } from "@/lib/lastRecording"
 import { isOnboardingDone } from "@/lib/onboarding"
 import { hasUnreadNews, markNewsSeen } from "@/lib/whatsNew"
 import { useToast } from "@/hooks/useToast"
+import { getSafeWebviewWindow } from "@/lib/windowControl"
 import { sk } from "@/lib/i18n/sk"
 
 function AppShell() {
   const { info: toastInfo } = useToast()
+  const { settings, ready } = useSettings()
   const [recording, setRecording] = useState(false)
   const [view, setView] = useState<AppView>("record")
   const [showOnboarding, setShowOnboarding] = useState(false)
@@ -38,8 +40,20 @@ function AppShell() {
   }, [])
 
   useEffect(() => {
+    if (!ready) return
+    if (settings.general.startMaximized) {
+      const win = getSafeWebviewWindow()
+      void win?.maximize().catch(() => {})
+    }
+  }, [ready, settings.general.startMaximized])
+
+  useEffect(() => {
+    if (!settings.general.showNewsBadge) {
+      setNewsBadge(false)
+      return
+    }
     void hasUnreadNews().then(setNewsBadge)
-  }, [])
+  }, [settings.general.showNewsBadge])
 
   useEffect(() => {
     if (!showOnboarding) return
@@ -81,6 +95,12 @@ function AppShell() {
     setEditRecordingId(id)
   }
 
+  const handleRecordingSaved = () => {
+    if (settings.general.openLibraryAfterRecord) {
+      setView("library")
+    }
+  }
+
   return (
     <>
       <div className="bloom-shell flex h-screen w-screen flex-col overflow-hidden bg-background">
@@ -100,6 +120,7 @@ function AppShell() {
                 onRecordingChange={setRecording}
                 onOpenRecording={handleOpenRecording}
                 onEditRecording={handleEditRecording}
+                onRecordingSaved={handleRecordingSaved}
               />
             </div>
             {view === "library" && (

@@ -126,7 +126,7 @@ pub struct OptimizeOptions {
     pub preset: String,
     /// "480p" | "720p" | "1080p" | "original"
     pub resolution: String,
-    /// "mp4" | "webm" | "gif"
+    /// "mp4" | "mov" | "mkv" | "avi" | "webm" | "gif"
     pub format: String,
     pub trim_start: Option<f64>,
     pub trim_end: Option<f64>,
@@ -951,8 +951,16 @@ fn ext_for_format(format: &str) -> &'static str {
     match format {
         "webm" => "webm",
         "gif" => "gif",
+        "mov" => "mov",
+        "mkv" => "mkv",
+        "avi" => "avi",
         _ => "mp4",
     }
+}
+
+/// MP4 / MOV share H.264+AAC and can use +faststart / stream-copy.
+fn is_mp4_family(format: &str) -> bool {
+    matches!(format, "mp4" | "mov")
 }
 
 fn effective_speed(speed: f64) -> f64 {
@@ -1027,7 +1035,7 @@ fn is_h264_codec(codec: &str) -> bool {
 
 /// Trim-only export without re-encode when filters/codecs unchanged.
 pub(crate) fn can_stream_copy(opts: &OptimizeOptions, info: &VideoInfo) -> bool {
-    opts.format == "mp4"
+    is_mp4_family(&opts.format)
         && opts.resolution == "original"
         && effective_speed(opts.speed) == 1.0
         && !opts.use_hevc
@@ -1143,7 +1151,21 @@ fn append_audio_filters(af: &mut Vec<String>, opts: &OptimizeOptions, speed: f64
     }
 }
 
-fn append_mp4_video_codec(a: &mut Vec<String>, opts: &OptimizeOptions, pv: &PresetValues, hw_h264: bool, hw_hevc: bool, nvenc: bool) {
+fn append_mp4_video_codec(
+    a: &mut Vec<String>,
+    opts: &OptimizeOptions,
+    pv: &PresetValues,
+    hw_h264: bool,
+    hw_hevc: bool,
+    nvenc: bool,
+    faststart: bool,
+) {
+    let push_faststart = |out: &mut Vec<String>| {
+        if faststart {
+            out.extend(["-movflags".into(), "+faststart".into()]);
+        }
+    };
+
     if opts.use_hevc {
         if hw_hevc {
             a.extend([
@@ -1153,9 +1175,9 @@ fn append_mp4_video_codec(a: &mut Vec<String>, opts: &OptimizeOptions, pv: &Pres
                 "-allow_sw", "1",
                 "-realtime", "1",
                 "-pix_fmt", "yuv420p",
-                "-movflags", "+faststart",
             ]
             .map(String::from));
+            push_faststart(a);
             return;
         }
         a.extend([
@@ -1163,10 +1185,10 @@ fn append_mp4_video_codec(a: &mut Vec<String>, opts: &OptimizeOptions, pv: &Pres
             "-preset", pv.x264_preset,
             "-crf", pv.x264_crf,
             "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart",
             "-tag:v", "hvc1",
         ]
         .map(String::from));
+        push_faststart(a);
         a.push("-threads".into());
         a.push("0".into());
         return;
@@ -1178,9 +1200,9 @@ fn append_mp4_video_codec(a: &mut Vec<String>, opts: &OptimizeOptions, pv: &Pres
             "-allow_sw", "1",
             "-realtime", "1",
             "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart",
         ]
         .map(String::from));
+        push_faststart(a);
         return;
     }
     if nvenc {
@@ -1195,9 +1217,9 @@ fn append_mp4_video_codec(a: &mut Vec<String>, opts: &OptimizeOptions, pv: &Pres
             "-rc", "vbr",
             "-cq", pv.x264_crf,
             "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart",
         ]
         .map(String::from));
+        push_faststart(a);
         return;
     }
     a.extend([
@@ -1205,10 +1227,10 @@ fn append_mp4_video_codec(a: &mut Vec<String>, opts: &OptimizeOptions, pv: &Pres
         "-preset", pv.x264_preset,
         "-crf", pv.x264_crf,
         "-pix_fmt", "yuv420p",
-        "-movflags", "+faststart",
         "-tune", "fastdecode",
     ]
     .map(String::from));
+    push_faststart(a);
     a.push("-threads".into());
     a.push("0".into());
 }
@@ -1219,7 +1241,7 @@ fn can_copy_audio(opts: &OptimizeOptions, info: &VideoInfo, speed: f64) -> bool 
         && !opts.remove_audio
         && !opts.normalize_audio
         && effective_speed(speed) == 1.0
-        && opts.format == "mp4"
+        && is_mp4_family(&opts.format)
         && opts.keep_ranges.len() <= 1
 }
 
@@ -1514,10 +1536,29 @@ fn build_args(
         "gif" => {
             a.extend(["-loop", "0", "-an"].map(String::from));
         }
-        _ => {
-            append_mp4_video_codec(&mut a, opts, &pv, hw_h264, hw_hevc, nvenc);
+        "avi" => {
+            // AVI + H.264; MP3 audio for widest player compatibility.
+            a.extend([
+                "-c:v", "libx264",
+                "-preset", pv.x264_preset,
+                "-crf", pv.x264_crf,
+                "-pix_fmt", "yuv420p",
+            ]
+            .map(String::from));
+            a.push("-threads".into());
+            a.push("0".into());
             if use_audio {
-                if copy_audio {
+                a.extend(["-c:a", "libmp3lame", "-b:a", pv.audio_bitrate].map(String::from));
+            } else {
+                a.push("-an".into());
+            }
+        }
+        _ => {
+            // mp4 | mov | mkv — H.264/HEVC (+ AAC); faststart only for mp4/mov
+            let faststart = is_mp4_family(format);
+            append_mp4_video_codec(&mut a, opts, &pv, hw_h264, hw_hevc, nvenc, faststart);
+            if use_audio {
+                if copy_audio && is_mp4_family(format) {
                     a.extend(["-c:a", "copy"].map(String::from));
                 } else {
                     a.extend(["-c:a", "aac", "-b:a", pv.audio_bitrate].map(String::from));
@@ -1750,6 +1791,8 @@ pub fn compute_export_estimate(info: &VideoInfo, opts: &OptimizeOptions) -> Expo
         size = match opts.format.as_str() {
             "gif" => size * 0.45,
             "webm" => size * 0.92,
+            "avi" => size * 1.05,
+            "mkv" => size * 0.98,
             _ => size,
         };
 
@@ -1757,8 +1800,8 @@ pub fn compute_export_estimate(info: &VideoInfo, opts: &OptimizeOptions) -> Expo
             duration_secs: out_duration,
             size_bytes: size.max(1024.0) as u64,
             resolution_label: opts.resolution.clone(),
-            format_label: if opts.use_hevc && opts.format == "mp4" {
-                "HEVC MP4".into()
+            format_label: if opts.use_hevc && is_mp4_family(&opts.format) {
+                format!("HEVC {}", opts.format.to_uppercase())
             } else {
                 opts.format.to_uppercase()
             },

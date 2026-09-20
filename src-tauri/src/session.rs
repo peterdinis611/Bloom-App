@@ -63,6 +63,10 @@ pub(crate) fn open_session(
         title: filename
             .trim_end_matches(".mp4")
             .trim_end_matches(".webm")
+            .trim_end_matches(".mov")
+            .trim_end_matches(".mkv")
+            .trim_end_matches(".avi")
+            .trim_end_matches(".m4v")
             .to_owned(),
         filename: filename.clone(),
         created_at: now_iso(),

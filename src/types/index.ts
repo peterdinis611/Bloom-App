@@ -148,7 +148,7 @@ export interface VideoInfo {
 
 export type OptimizePreset = "small" | "medium" | "high"
 export type OptimizeResolution = "480p" | "720p" | "1080p" | "original"
-export type OptimizeFormat = "mp4" | "webm" | "gif"
+export type OptimizeFormat = "mp4" | "mov" | "mkv" | "avi" | "webm" | "gif"
 
 /** Payload sent to optimize_video (mirrors OptimizeOptions in Rust). */
 export interface OptimizeOptions {

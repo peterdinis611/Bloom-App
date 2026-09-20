@@ -66,7 +66,15 @@ fn resolution_and_format_helpers() {
     assert_eq!(ext_for_format("mp4"), "mp4");
     assert_eq!(ext_for_format("webm"), "webm");
     assert_eq!(ext_for_format("gif"), "gif");
+    assert_eq!(ext_for_format("mov"), "mov");
+    assert_eq!(ext_for_format("mkv"), "mkv");
+    assert_eq!(ext_for_format("avi"), "avi");
     assert_eq!(ext_for_format("whatever"), "mp4");
+    assert!(is_mp4_family("mp4"));
+    assert!(is_mp4_family("mov"));
+    assert!(!is_mp4_family("mkv"));
+    assert!(!is_mp4_family("avi"));
+    assert!(!is_mp4_family("webm"));
 }
 
 #[test]
@@ -93,6 +101,11 @@ fn can_stream_copy_when_trim_only_h264() {
     assert!(can_stream_copy(&o, &info));
     o.resolution = "720p".into();
     assert!(!can_stream_copy(&o, &info));
+    let mut mov = opts("medium", "original", "mov");
+    mov.trim_start = Some(1.0);
+    mov.trim_end = Some(10.0);
+    assert!(can_stream_copy(&mov, &info));
+    assert!(!can_stream_copy(&opts("medium", "original", "mkv"), &info));
 }
 
 #[test]
@@ -102,6 +115,39 @@ fn stream_copy_args_use_codec_copy() {
     let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mp4", &info, false, false, false);
     assert!(args.windows(2).any(|w| w == ["-c", "copy"]));
     assert!(args.windows(2).any(|w| w == ["-movflags", "+faststart"]));
+}
+
+#[test]
+fn build_args_mov_uses_faststart() {
+    let o = opts("medium", "720p", "mov");
+    let info = sample_info();
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mov", &info, false, false, false);
+    assert!(args.windows(2).any(|w| w == ["-c:v", "libx264"]));
+    assert!(
+        args.windows(2).any(|w| w == ["-c:a", "aac"])
+            || args.windows(2).any(|w| w == ["-c:a", "copy"])
+    );
+    assert!(args.windows(2).any(|w| w == ["-movflags", "+faststart"]));
+}
+
+#[test]
+fn build_args_mkv_no_faststart() {
+    let o = opts("medium", "720p", "mkv");
+    let info = sample_info();
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mkv", &info, false, false, false);
+    assert!(args.windows(2).any(|w| w == ["-c:v", "libx264"]));
+    assert!(args.windows(2).any(|w| w == ["-c:a", "aac"]));
+    assert!(!args.windows(2).any(|w| w == ["-movflags", "+faststart"]));
+}
+
+#[test]
+fn build_args_avi_uses_mp3_audio() {
+    let o = opts("medium", "720p", "avi");
+    let info = sample_info();
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.avi", &info, false, false, false);
+    assert!(args.windows(2).any(|w| w == ["-c:v", "libx264"]));
+    assert!(args.windows(2).any(|w| w == ["-c:a", "libmp3lame"]));
+    assert!(!args.windows(2).any(|w| w == ["-movflags", "+faststart"]));
 }
 
 #[test]

@@ -4,13 +4,13 @@ Slovenská dokumentácia k desktopovej aplikácii Bloom.
 
 ## V aplikácii
 
-V sidebar-e otvor **Dokumentácia** — stručný návod, skratky a riešenie problémov priamo v UI.
+V sidebar-e otvor **Dokumentácia** — návod, skratky, **praktické príklady** (tutoriál, Slack, orez, nastavenia) a riešenie problémov.
 
 ## Súbory v tomto priečinku
 
 | Súbor | Obsah |
 |-------|--------|
-| [pouzivanie.md](pouzivanie.md) | Príručka pre koncového používateľa |
+| [pouzivanie.md](pouzivanie.md) | Príručka pre koncového používateľa + príklady |
 | [vyvoj.md](vyvoj.md) | Architektúra, príkazy, testy |
 | [backend.md](backend.md) | Rust backend, session, ffmpeg |
 | [release.md](release.md) | 1.0 release: signing, updater, CI |
@@ -26,4 +26,4 @@ bun install
 bun run tauri dev
 ```
 
-Nahrávky sa ukladajú do `~/Movies/Bloom` (macOS).
+Nahrávky sa ukladajú do `~/Movies/Bloom` (macOS). Okno zväčšíš zeleným tlačidlom v titlebare alebo dvojklikom na lištu.

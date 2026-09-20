@@ -15,15 +15,19 @@
       {
         "title": "Bloom",
         "label": "main",
-        "width": 720,
-        "height": 640,
-        "minWidth": 560,
-        "minHeight": 520,
+        "width": 1180,
+        "height": 780,
+        "minWidth": 720,
+        "minHeight": 560,
         "resizable": true,
+        "maximizable": true,
+        "minimizable": true,
+        "closable": true,
         "decorations": false,
         "transparent": false,
         "alwaysOnTop": false,
-        "dragDropEnabled": true
+        "dragDropEnabled": true,
+        "fullscreen": false
       }
     ],
     "security": {

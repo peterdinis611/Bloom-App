@@ -83,6 +83,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/useToast"
+import { useSettings } from "@/hooks/useSettings"
 import { localizeError } from "@/lib/i18n/localizeError"
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -524,6 +525,7 @@ export function LibraryPage({
   editRecordingId = null,
   onEditRecordingHandled,
 }: LibraryPageProps) {
+  const { settings } = useSettings()
   const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
   const [entries, setEntries] = useState<RecordingEntry[]>([])
   const [stats, setStats] = useState<LibraryStats | null>(null)
@@ -687,7 +689,7 @@ export function LibraryPage({
     try {
       const selected = await open({
         multiple: true,
-        filters: [{ name: "Video", extensions: ["mp4", "webm", "mov", "mkv", "m4v"] }],
+        filters: [{ name: "Video", extensions: ["mp4", "webm", "mov", "mkv", "m4v", "avi", "mpeg", "mpg", "wmv", "flv", "ts", "mts", "3gp", "ogv"] }],
         title: sk.library.importBtn,
       })
       if (!selected) return
@@ -1130,7 +1132,13 @@ export function LibraryPage({
                 selected={selectedIds.has(entry.meta.id)}
                 onSelect={() => toggleSelect(entry.meta.id)}
                 onPlay={() => setPlaying(entry)}
-                onDelete={() => setConfirmId(entry.meta.id)}
+                onDelete={() => {
+                  if (settings.general.confirmDelete) {
+                    setConfirmId(entry.meta.id)
+                  } else {
+                    void handleDelete(entry.meta.id)
+                  }
+                }}
                 onReveal={() => revealInFinder(entry.path).catch((e) => setError(localizeError(e)))}
                 onShare={() => setShareEntry(entry)}
                 onCopyPath={() => {

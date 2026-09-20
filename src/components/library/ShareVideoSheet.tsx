@@ -85,7 +85,7 @@ export function ShareVideoSheet({ entry, open, onClose }: ShareVideoSheetProps) 
         title: sk.share.saveCopy,
         filters: [{
           name: "Video",
-          extensions: [extFromPath(entry.path), "mp4", "webm", "mov", "mkv"],
+          extensions: [extFromPath(entry.path), "mp4", "mov", "mkv", "avi", "webm", "m4v"],
         }],
       })
       if (!dest) return

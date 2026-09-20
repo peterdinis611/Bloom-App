@@ -58,6 +58,7 @@ import {
   getFilmstrip,
   getVideoInfo,
 } from "@/hooks/useBloomBackend"
+import { useSettings } from "@/hooks/useSettings"
 
 type Step = "preview" | "trim" | "export" | "queued"
 type SaveMode = "copy" | "replace"
@@ -80,9 +81,12 @@ const RESOLUTIONS = [
   { value: "original" as const, label: sk.optimize.resolutions.original },
 ]
 const FORMATS = [
-  { value: "mp4" as const, label: "MP4" },
-  { value: "webm" as const, label: "WebM" },
-  { value: "gif" as const, label: "GIF" },
+  { value: "mp4" as const, label: "MP4", hint: "Univerzálny" },
+  { value: "mov" as const, label: "MOV", hint: "QuickTime" },
+  { value: "mkv" as const, label: "MKV", hint: "Matroska" },
+  { value: "avi" as const, label: "AVI", hint: "Klasický" },
+  { value: "webm" as const, label: "WebM", hint: "VP9" },
+  { value: "gif" as const, label: "GIF", hint: "Animácia" },
 ]
 const SPEEDS: { value: OptimizeSpeed; label: string }[] = OPTIMIZE_SPEEDS.map((v) => ({
   value: v,
@@ -141,6 +145,8 @@ function fileStem(path: string): string {
 export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
   const playerRef = useRef<BloomVideoPlayerHandle>(null)
   const { enqueue } = useExportQueue()
+  const { settings } = useSettings()
+  const exportDefaults = settings.exportDefaults
 
   const [step, setStep] = useState<Step>("preview")
   const [info, setInfo] = useState<VideoInfo | null>(null)
@@ -158,8 +164,10 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
   const [frames, setFrames] = useState<string[]>([])
   const [framesLoading, setFramesLoading] = useState(false)
 
-  const [preset, setPreset] = useState<OptimizePreset>("medium")
-  const [resolution, setResolution] = useState<OptimizeResolution>("original")
+  const [preset, setPreset] = useState<OptimizePreset>(exportDefaults.preset)
+  const [resolution, setResolution] = useState<OptimizeResolution>(
+    exportDefaults.preferStreamCopy ? "original" : exportDefaults.resolution,
+  )
   const [format, setFormat] = useState<OptimizeFormat>("mp4")
   const [speed, setSpeed] = useState<OptimizeSpeed>("1")
   const [saveMode, setSaveMode] = useState<SaveMode>("copy")
@@ -273,22 +281,26 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
     analyzeVideo(entry.path)
       .then((a) => {
         setAnalysis(a)
-        // Prefer fast path for large sources: apply suggestion once per open.
-        setPreset((prev) => (prev === "medium" ? a.suggested_preset : prev))
+        setPreset((prev) => (prev === exportDefaults.preset ? a.suggested_preset : prev))
         setResolution((prev) => {
-          if (prev !== "original") return prev
-          // Keep original when stream-copy is possible; otherwise use suggestion.
-          return a.can_stream_copy_trim ? "original" : a.suggested_resolution
+          if (exportDefaults.preferStreamCopy && a.can_stream_copy_trim) return "original"
+          if (prev !== "original" && prev !== exportDefaults.resolution) return prev
+          return a.can_stream_copy_trim && exportDefaults.preferStreamCopy
+            ? "original"
+            : a.suggested_resolution
         })
       })
       .catch(() => setAnalysis(null))
-  }, [entry.path, step])
+  }, [entry.path, step, exportDefaults.preset, exportDefaults.preferStreamCopy, exportDefaults.resolution])
 
   useEffect(() => {
     if (step !== "export") return
     if (replaceOriginal && format !== "mp4") setFormat("mp4")
     if (multiClip && saveMode === "replace") setSaveMode("copy")
-  }, [step, replaceOriginal, format, multiClip, saveMode])
+    if ((format === "webm" || format === "gif" || format === "avi") && useHevc) {
+      setUseHevc(false)
+    }
+  }, [step, replaceOriginal, format, multiClip, saveMode, useHevc])
 
   useCloseOnEscape(onClose, step !== "queued")
 
@@ -656,7 +668,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
               <ChoiceGroup label={sk.optimize.qualityPreset} options={PRESETS} value={preset} onChange={setPreset} />
               <ChoiceGroup label={sk.optimize.resolution} layout="wrap" options={RESOLUTIONS} value={resolution} onChange={setResolution} />
               <ChoiceGroup label={sk.optimize.speed} layout="wrap" options={SPEEDS} value={speed} onChange={setSpeed} />
-              <ChoiceGroup label={sk.optimize.format} options={FORMATS} value={format} onChange={setFormat} />
+              <ChoiceGroup label={sk.optimize.format} layout="wrap" options={FORMATS} value={format} onChange={setFormat} />
               {multiClip && (
                 <ChoiceGroup label={sk.editor.partsTitle} options={PARTS_MODES} value={partsMode} onChange={setPartsMode} />
               )}

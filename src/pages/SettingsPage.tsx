@@ -32,7 +32,16 @@ const TOOLS: { id: AnnotationTool; label: string }[] = [
 ]
 
 export function SettingsPage({ active = true }: { active?: boolean }) {
-  const { settings, setTheme, updateAnnotation, updateRecording, updateIntegrations, resetSettings } = useSettings()
+  const {
+    settings,
+    setTheme,
+    updateAnnotation,
+    updateRecording,
+    updateIntegrations,
+    updateGeneral,
+    updateExportDefaults,
+    resetSettings,
+  } = useSettings()
   const { success: toastSuccess, error: toastError } = useToast()
   const [libraryCount, setLibraryCount] = useState(0)
   const [librarySize, setLibrarySize] = useState(0)
@@ -43,6 +52,8 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
   const [updateBusy, setUpdateBusy] = useState(false)
   const [showPrivacy, setShowPrivacy] = useState(false)
   const integ = settings.integrations
+  const general = settings.general
+  const exportDefaults = settings.exportDefaults
 
   const handleCheckUpdates = async () => {
     setUpdateBusy(true)
@@ -188,6 +199,49 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
           </div>
         </MacGroup>
 
+        <MacGroupHeader>{sk.settings.general}</MacGroupHeader>
+        <MacGroup>
+          <MacRow
+            label={sk.settings.startMaximized}
+            hint={sk.settings.startMaximizedHint}
+            onClick={() => updateGeneral({ startMaximized: !general.startMaximized })}
+          >
+            <MacToggle
+              on={general.startMaximized}
+              onChange={() => updateGeneral({ startMaximized: !general.startMaximized })}
+            />
+          </MacRow>
+          <MacRow
+            label={sk.settings.openLibraryAfterRecord}
+            onClick={() => updateGeneral({ openLibraryAfterRecord: !general.openLibraryAfterRecord })}
+          >
+            <MacToggle
+              on={general.openLibraryAfterRecord}
+              onChange={() => updateGeneral({ openLibraryAfterRecord: !general.openLibraryAfterRecord })}
+            />
+          </MacRow>
+          <MacRow
+            label={sk.settings.showNewsBadge}
+            hint={sk.settings.showNewsBadgeHint}
+            onClick={() => updateGeneral({ showNewsBadge: !general.showNewsBadge })}
+          >
+            <MacToggle
+              on={general.showNewsBadge}
+              onChange={() => updateGeneral({ showNewsBadge: !general.showNewsBadge })}
+            />
+          </MacRow>
+          <MacRow
+            label={sk.settings.confirmDelete}
+            hint={sk.settings.confirmDeleteHint}
+            onClick={() => updateGeneral({ confirmDelete: !general.confirmDelete })}
+          >
+            <MacToggle
+              on={general.confirmDelete}
+              onChange={() => updateGeneral({ confirmDelete: !general.confirmDelete })}
+            />
+          </MacRow>
+        </MacGroup>
+
         <MacGroupHeader>{sk.settings.recording}</MacGroupHeader>
         <MacGroup>
           <div className="flex flex-col gap-4 p-3">
@@ -206,6 +260,24 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
               ]}
               value={String(settings.recording.defaultCountdown)}
               onChange={(v) => updateRecording({ defaultCountdown: Number(v) as 0 | 3 | 5 })}
+            />
+            <ChoiceGroup
+              label={sk.settings.pipSize}
+              options={(["small", "medium", "large"] as const).map((v) => ({
+                value: v,
+                label: sk.record.pipSizes[v],
+              }))}
+              value={settings.recording.pipSize}
+              onChange={(v) => updateRecording({ pipSize: v })}
+            />
+            <ChoiceGroup
+              label={sk.settings.pipPosition}
+              options={(["bottom-right", "bottom-left", "top-right", "top-left"] as const).map((v) => ({
+                value: v,
+                label: sk.record.pipPositions[v],
+              }))}
+              value={settings.recording.pipPosition}
+              onChange={(v) => updateRecording({ pipPosition: v })}
             />
           </div>
           <MacRow
@@ -234,6 +306,54 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
             <MacToggle
               on={settings.recording.cameraBlur}
               onChange={() => updateRecording({ cameraBlur: !settings.recording.cameraBlur })}
+            />
+          </MacRow>
+        </MacGroup>
+
+        <MacGroupHeader>{sk.settings.exportDefaults}</MacGroupHeader>
+        <MacGroup>
+          <div className="flex flex-col gap-4 p-3">
+            <ChoiceGroup
+              label={sk.settings.exportPreset}
+              options={[
+                { value: "small", label: sk.optimize.presets.small.label, hint: sk.optimize.presets.small.hint },
+                { value: "medium", label: sk.optimize.presets.medium.label, hint: sk.optimize.presets.medium.hint },
+                { value: "high", label: sk.optimize.presets.high.label, hint: sk.optimize.presets.high.hint },
+              ]}
+              value={exportDefaults.preset}
+              onChange={(v) => updateExportDefaults({ preset: v })}
+            />
+            <ChoiceGroup
+              label={sk.settings.exportResolution}
+              layout="wrap"
+              options={[
+                { value: "480p", label: sk.optimize.resolutions["480p"] },
+                { value: "720p", label: sk.optimize.resolutions["720p"] },
+                { value: "1080p", label: sk.optimize.resolutions["1080p"] },
+                { value: "original", label: sk.optimize.resolutions.original },
+              ]}
+              value={exportDefaults.resolution}
+              onChange={(v) => updateExportDefaults({ resolution: v })}
+            />
+          </div>
+          <MacRow
+            label={sk.settings.preferStreamCopy}
+            hint={sk.settings.preferStreamCopyHint}
+            onClick={() => updateExportDefaults({ preferStreamCopy: !exportDefaults.preferStreamCopy })}
+          >
+            <MacToggle
+              on={exportDefaults.preferStreamCopy}
+              onChange={() => updateExportDefaults({ preferStreamCopy: !exportDefaults.preferStreamCopy })}
+            />
+          </MacRow>
+          <MacRow
+            label={sk.settings.preferHardwareEncode}
+            hint={sk.settings.preferHardwareEncodeHint}
+            onClick={() => updateExportDefaults({ preferHardwareEncode: !exportDefaults.preferHardwareEncode })}
+          >
+            <MacToggle
+              on={exportDefaults.preferHardwareEncode}
+              onChange={() => updateExportDefaults({ preferHardwareEncode: !exportDefaults.preferHardwareEncode })}
             />
           </MacRow>
         </MacGroup>

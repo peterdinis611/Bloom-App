@@ -22,6 +22,26 @@ export interface ShortcutBindings {
   stop: string
 }
 
+export interface GeneralSettings {
+  /** Maximize main window when Bloom starts. */
+  startMaximized: boolean
+  /** After a recording finishes, jump to Library. */
+  openLibraryAfterRecord: boolean
+  /** Show unread badge on Novinky until opened. */
+  showNewsBadge: boolean
+  /** Confirm before deleting a single recording. */
+  confirmDelete: boolean
+}
+
+export interface ExportDefaults {
+  preset: "small" | "medium" | "high"
+  resolution: "480p" | "720p" | "1080p" | "original"
+  /** Prefer original resolution so trim-only can stream-copy. */
+  preferStreamCopy: boolean
+  /** Default hardware-friendly encode (VideoToolbox / NVENC when available). */
+  preferHardwareEncode: boolean
+}
+
 export interface IntegrationSettings {
   slackWebhookUrl: string
   discordWebhookUrl: string
@@ -57,10 +77,12 @@ export interface AppSettings {
   }
   shortcuts: ShortcutBindings
   integrations: IntegrationSettings
+  general: GeneralSettings
+  exportDefaults: ExportDefaults
 }
 
-const STORAGE_KEY = "bloom-settings-v4"
-const LEGACY_STORAGE_KEY = "bloom-settings-v3"
+const STORAGE_KEY = "bloom-settings-v5"
+const LEGACY_KEYS = ["bloom-settings-v4", "bloom-settings-v3"] as const
 
 export const DEFAULTS: AppSettings = {
   theme: DEFAULT_THEME,
@@ -95,10 +117,28 @@ export const DEFAULTS: AppSettings = {
     copyPathAfterExport: false,
     preferNativeShare: true,
   },
+  general: {
+    startMaximized: false,
+    openLibraryAfterRecord: false,
+    showNewsBadge: true,
+    confirmDelete: true,
+  },
+  exportDefaults: {
+    preset: "medium",
+    resolution: "original",
+    preferStreamCopy: true,
+    preferHardwareEncode: true,
+  },
 }
 
 async function loadSettings(): Promise<AppSettings> {
-  const raw = (await idbGet(STORAGE_KEY)) ?? (await idbGet(LEGACY_STORAGE_KEY))
+  let raw = await idbGet(STORAGE_KEY)
+  if (!raw) {
+    for (const key of LEGACY_KEYS) {
+      raw = await idbGet(key)
+      if (raw) break
+    }
+  }
   return parseSettings(raw)
 }
 
@@ -129,6 +169,8 @@ function parseSettings(raw: string | null): AppSettings {
         stop: normalizeKey(parsed.shortcuts?.stop, DEFAULTS.shortcuts.stop),
       },
       integrations: { ...DEFAULTS.integrations, ...parsed.integrations },
+      general: { ...DEFAULTS.general, ...parsed.general },
+      exportDefaults: { ...DEFAULTS.exportDefaults, ...parsed.exportDefaults },
     }
   } catch {
     return DEFAULTS
@@ -157,6 +199,8 @@ interface SettingsCtx {
   updateRecording: (patch: Partial<AppSettings["recording"]>) => void
   updateShortcuts: (patch: Partial<ShortcutBindings>) => void
   updateIntegrations: (patch: Partial<IntegrationSettings>) => void
+  updateGeneral: (patch: Partial<GeneralSettings>) => void
+  updateExportDefaults: (patch: Partial<ExportDefaults>) => void
   resetSettings: () => void
 }
 
@@ -220,6 +264,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setSettings((s) => ({ ...s, integrations: { ...s.integrations, ...patch } }))
   }, [])
 
+  const updateGeneral = useCallback((patch: Partial<GeneralSettings>) => {
+    setSettings((s) => ({ ...s, general: { ...s.general, ...patch } }))
+  }, [])
+
+  const updateExportDefaults = useCallback((patch: Partial<ExportDefaults>) => {
+    setSettings((s) => ({ ...s, exportDefaults: { ...s.exportDefaults, ...patch } }))
+  }, [])
+
   const resetSettings = useCallback(() => setSettings(DEFAULTS), [])
 
   const value = useMemo(
@@ -232,9 +284,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       updateRecording,
       updateShortcuts,
       updateIntegrations,
+      updateGeneral,
+      updateExportDefaults,
       resetSettings,
     }),
-    [settings, ready, setTheme, updateSettings, updateAnnotation, updateRecording, updateShortcuts, updateIntegrations, resetSettings],
+    [settings, ready, setTheme, updateSettings, updateAnnotation, updateRecording, updateShortcuts, updateIntegrations, updateGeneral, updateExportDefaults, resetSettings],
   )
 
   if (!ready) return null

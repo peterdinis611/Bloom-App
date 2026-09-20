@@ -41,6 +41,18 @@ function DocBlockView({ block }: { block: DocBlock }) {
       </div>
     )
   }
+  if (block.type === "example") {
+    return (
+      <div className="rounded-xl border border-accent/25 bg-accent/5 p-3.5">
+        <p className="mb-2 text-[12px] font-semibold tracking-wide text-accent">{block.title}</p>
+        <ol className="list-inside list-decimal space-y-1.5 text-[13px] leading-relaxed text-foreground/90">
+          {block.steps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+      </div>
+    )
+  }
   return (
     <div className="divide-y divide-border/50 rounded-xl border border-border/60 bg-secondary/20">
       {block.rows.map((row) => (
