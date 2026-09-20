@@ -106,15 +106,44 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
             return { ...item, status: "cancelled", percent: 0 }
           }
           if (p.error) {
-            error({ title: sk.toast.exportFailed, description: `${item.label}: ${p.error}` })
-            return { ...item, status: "error", error: p.error, percent: 0 }
+            error({ title: sk.toast.exportFailed, description: `${item.label}: ${localizeError(p.error)}` })
+            return { ...item, status: "error", error: localizeError(p.error), percent: 0 }
           }
           success({ title: sk.toast.exportDone, description: item.label })
+          const outPath = p.output_path ?? undefined
+          if (outPath) {
+            void import("@/hooks/useSettings").then(({ readStoredSettings }) =>
+              readStoredSettings().then((s) => {
+                const integ = s.integrations
+                if (integ.openAfterExport) {
+                  void import("@/hooks/useBloomBackend").then(({ openWithSystemApp }) =>
+                    openWithSystemApp(outPath).catch(() => {}),
+                  )
+                }
+                if (integ.copyPathAfterExport) {
+                  void import("@/hooks/useBloomBackend").then(({ copyText }) =>
+                    copyText(outPath).catch(() => {}),
+                  )
+                }
+                if (integ.notifyOnExport) {
+                  void import("@/lib/integrations").then(({ notifyExportWebhooks }) =>
+                    notifyExportWebhooks({
+                      enabled: true,
+                      slackUrl: integ.slackWebhookUrl,
+                      discordUrl: integ.discordWebhookUrl,
+                      title: item.label,
+                      path: outPath,
+                    }),
+                  )
+                }
+              }),
+            )
+          }
           return {
             ...item,
             status: "done",
             percent: 100,
-            outputPath: p.output_path ?? undefined,
+            outputPath: outPath,
             outputSize: p.output_size_bytes ?? undefined,
           }
         }),

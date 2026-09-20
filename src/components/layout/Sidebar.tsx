@@ -1,27 +1,29 @@
-import { Circle, Library, Settings, Video, BookOpen } from "lucide-react"
+import { Circle, Library, Settings, Video, BookOpen, Newspaper } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { sk } from "@/lib/i18n/sk"
 import { ExportQueuePanel } from "@/components/layout/ExportQueuePanel"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
-export type AppView = "record" | "library" | "settings" | "docs"
+export type AppView = "record" | "library" | "settings" | "docs" | "news"
 
 interface SidebarProps {
   view: AppView
   onChange: (v: AppView) => void
   locked?: boolean
   recording?: boolean
+  newsBadge?: boolean
 }
 
 const ITEMS: { id: AppView; label: string; icon: React.FC<{ className?: string }> }[] = [
   { id: "record", label: sk.nav.record, icon: Video },
   { id: "library", label: sk.nav.library, icon: Library },
+  { id: "news", label: sk.nav.news, icon: Newspaper },
   { id: "docs", label: sk.nav.docs, icon: BookOpen },
   { id: "settings", label: sk.nav.settings, icon: Settings },
 ]
 
-export function Sidebar({ view, onChange, locked = false, recording = false }: SidebarProps) {
+export function Sidebar({ view, onChange, locked = false, recording = false, newsBadge = false }: SidebarProps) {
   return (
     <aside className="mac-sidebar relative flex w-[204px] shrink-0 flex-col">
       <div className="flex items-center gap-2.5 px-4 pb-3 pt-4">
@@ -68,7 +70,10 @@ export function Sidebar({ view, onChange, locked = false, recording = false }: S
               )}
             >
               <item.icon className={cn("size-[15px] shrink-0", active ? "text-accent" : "opacity-70")} />
-              {item.label}
+              <span className="flex-1 text-left">{item.label}</span>
+              {item.id === "news" && newsBadge && !active && (
+                <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-hidden />
+              )}
             </Button>
           )
           return disabled ? (
@@ -77,7 +82,7 @@ export function Sidebar({ view, onChange, locked = false, recording = false }: S
               <TooltipContent>{sk.nav.recordingLocked}</TooltipContent>
             </Tooltip>
           ) : (
-            btn
+            <div key={item.id}>{btn}</div>
           )
         })}
       </nav>

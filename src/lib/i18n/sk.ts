@@ -10,6 +10,7 @@ export const sk = {
     library: "Archív",
     settings: "Panel",
     docs: "Príručka",
+    news: "Release",
   },
   toast: {
     dismiss: "Zavrieť",
@@ -96,8 +97,21 @@ export const sk = {
     library: "Knižnica",
     settings: "Nastavenia",
     docs: "Dokumentácia",
+    news: "Novinky",
     recordingLocked: "Najprv ukonči nahrávanie",
     recordingActive: "Nahráva sa",
+  },
+  news: {
+    title: "Novinky",
+    subtitle: "Čo je nové v jednotlivých verziách Bloom",
+  },
+  legal: {
+    eyebrow: "Súkromie",
+    privacyTitle: "Zásady súkromia",
+    readPolicy: "Prečítať zásady súkromia",
+    close: "Rozumiem",
+    openPrivacy: "Zásady súkromia",
+    openPrivacyHint: "Čo Bloom ukladá a čo neodosiela",
   },
   record: {
     title: "Nahrávanie",
@@ -204,6 +218,20 @@ export const sk = {
     libraryFolderDefault: "Predvolený",
     libraryFolderChoose: "Vybrať…",
     libraryFolderReset: "Obnoviť predvolený",
+    integrations: "Integrácie",
+    integrationsHint: "Voliteľné webhooky a správanie po exporte",
+    slackWebhook: "Slack webhook URL",
+    slackWebhookHint: "Incoming Webhook — oznámenie po exporte",
+    discordWebhook: "Discord webhook URL",
+    discordWebhookHint: "Channel webhook — oznámenie po exporte",
+    notifyOnExport: "Oznámiť export cez webhook",
+    notifyOnExportHint: "Pošle názov a cestu súboru",
+    openAfterExport: "Otvoriť súbor po exporte",
+    openAfterExportHint: "Spustí výsledok v predvolenej aplikácii",
+    copyPathAfterExport: "Kopírovať cestu po exporte",
+    preferNativeShare: "Preferovať natívne zdieľanie",
+    preferNativeShareHint: "macOS sheet / Windows schránka / Linux",
+    platform: "Platforma",
     tools: {
       pen: "Pero",
       highlighter: "Zvýrazňovač",
@@ -279,28 +307,33 @@ export const sk = {
     back: "Späť",
     next: "Ďalej",
     done: "Začať",
-    steps: [
-      {
-        title: "Kam sa ukladajú nahrávky",
-        body: "Všetky klipy a importované videá nájdeš v knižnici. Predvolená cesta je nižšie — môžeš ju zmeniť v Nastaveniach.",
+    privacyConsent: "Súhlasím so zásadami súkromia — nahrávky ostávajú lokálne na mojom zariadení.",
+    stepsById: {
+      welcome: {
+        title: "Tvoje nahrávky",
+        body: "Všetky klipy a importy nájdeš v knižnici. Predvolená cesta je nižšie — zmeníš ju kedykoľvek v Nastaveniach.",
       },
-      {
+      privacy: {
+        title: "Súkromie najprv",
+        body: "Bloom neodosiela nahrávky ani telemetriu. Pred štartom potvrď, že rozumieš ako appka pracuje s dátami.",
+      },
+      permissions: {
         title: "Oprávnenia",
-        body: "Bloom potrebuje kameru, mikrofón a nahrávanie obrazovky. Povoľ ich teraz — neskôr ich nájdeš aj v Systémových nastaveniach.",
+        body: "Kamera, mikrofón a nahrávanie obrazovky. Povoľ ich teraz — neskôr ich nájdeš v Systémových nastaveniach.",
       },
-      {
-        title: "ffmpeg pre export a miniatúry",
-        body: "Nahrávanie funguje aj bez ffmpeg. Pre editor, filmstrip a optimalizáciu ho nainštaluj cez Homebrew — môžeš to urobiť hneď alebo neskôr v knižnici.",
+      ffmpeg: {
+        title: "ffmpeg pre export",
+        body: "Nahrávanie funguje aj bez neho. Pre editor, filmstrip a optimalizáciu nainštaluj ffmpeg cez Homebrew.",
       },
-      {
+      shortcuts: {
         title: "Globálne skratky",
-        body: "Ovládaj nahrávanie aj keď je Bloom v tray menu. Fungujú počas nahrávania na pozadí.",
+        body: "Ovládaj nahrávanie aj keď je Bloom v tray. Fungujú na pozadí počas nahrávania.",
       },
-      {
+      export: {
         title: "Fronta exportov",
-        body: "Export z editora beží na pozadí — priebeh sleduj v ľavom paneli. Po dokončení sa knižnica automaticky obnoví.",
+        body: "Export beží na pozadí — priebeh sleduj v ľavom paneli. Po dokončení sa knižnica obnoví.",
       },
-    ],
+    },
     permissions: {
       camMic: "Kamera + mikrofón",
       screen: "Nahrávanie obrazovky",

@@ -13,6 +13,7 @@ V sidebar-e otvor **Dokumentácia** — stručný návod, skratky a riešenie pr
 | [pouzivanie.md](pouzivanie.md) | Príručka pre koncového používateľa |
 | [vyvoj.md](vyvoj.md) | Architektúra, príkazy, testy |
 | [backend.md](backend.md) | Rust backend, session, ffmpeg |
+| [release.md](release.md) | 1.0 release: signing, updater, CI |
 
 ## Témy
 

@@ -79,6 +79,7 @@ import { sk } from "@/lib/i18n/sk"
 import { setLastRecordingId } from "@/lib/lastRecording"
 import { RECORDING_QUALITIES } from "@/lib/videoOptions"
 import { localizeError } from "@/lib/i18n/localizeError"
+import { openPrivacySettings } from "@/lib/privacySettings"
 
 function captureErrorMessage(err: unknown): string {
   const name = (err as { name?: string })?.name ?? ""
@@ -851,9 +852,18 @@ export function RecordPage({
           {
             label: sk.toast.share,
             onClick: () => {
-              void shareRecording(meta.id).catch((e) =>
-                toastError({ title: sk.library.shareFailed, description: localizeError(e) }),
-              )
+              void (async () => {
+                try {
+                  if (!appSettings.integrations.preferNativeShare && path) {
+                    await copyText(path)
+                    toastSuccess({ title: sk.toast.pathCopied })
+                    return
+                  }
+                  await shareRecording(meta.id)
+                } catch (e) {
+                  toastError({ title: sk.library.shareFailed, description: localizeError(e) })
+                }
+              })()
             },
           },
           ...(path
@@ -1050,9 +1060,7 @@ export function RecordPage({
               type="button"
               className="mt-1.5 text-[11px] font-semibold text-primary hover:underline"
               onClick={() => {
-                void import("@/lib/privacySettings").then(({ openPrivacySettings }) =>
-                  openPrivacySettings("screen").catch(() => {}),
-                )
+                void openPrivacySettings("screen").catch(() => {})
               }}
             >
               {sk.privacy.openScreen}

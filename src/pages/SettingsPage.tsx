@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { RotateCcw, Trash2, Check, FolderOpen, RefreshCw } from "lucide-react"
+import { RotateCcw, Trash2, Check, FolderOpen, RefreshCw, Shield, Mic, Video } from "lucide-react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -18,6 +18,8 @@ import { ShortcutsPanel } from "@/components/settings/ShortcutsPanel"
 import { MacGroup, MacGroupHeader, MacPageHeader, MacRow, MacToggle, ChoiceGroup } from "@/components/mac/MacUIKit"
 import { localizeError } from "@/lib/i18n/localizeError"
 import { checkForAppUpdate } from "@/lib/updater"
+import { PrivacyPolicyModal } from "@/components/legal/PrivacyPolicyModal"
+import { openPrivacySettings } from "@/lib/privacySettings"
 
 const TOOLS: { id: AnnotationTool; label: string }[] = [
   { id: "pen", label: sk.settings.tools.pen },
@@ -30,7 +32,7 @@ const TOOLS: { id: AnnotationTool; label: string }[] = [
 ]
 
 export function SettingsPage({ active = true }: { active?: boolean }) {
-  const { settings, setTheme, updateAnnotation, updateRecording, resetSettings } = useSettings()
+  const { settings, setTheme, updateAnnotation, updateRecording, updateIntegrations, resetSettings } = useSettings()
   const { success: toastSuccess, error: toastError } = useToast()
   const [libraryCount, setLibraryCount] = useState(0)
   const [librarySize, setLibrarySize] = useState(0)
@@ -39,6 +41,8 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
   const [libraryDir, setLibraryDir] = useState<LibraryDirectoryInfo | null>(null)
   const [libraryDirBusy, setLibraryDirBusy] = useState(false)
   const [updateBusy, setUpdateBusy] = useState(false)
+  const [showPrivacy, setShowPrivacy] = useState(false)
+  const integ = settings.integrations
 
   const handleCheckUpdates = async () => {
     setUpdateBusy(true)
@@ -306,6 +310,106 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
 
         <ShortcutsPanel />
 
+        <MacGroupHeader>{sk.legal.privacyTitle}</MacGroupHeader>
+        <MacGroup>
+          <MacRow label={sk.legal.openPrivacy} hint={sk.legal.openPrivacyHint}>
+            <Button variant="outline" size="sm" className="text-[11px]" onClick={() => setShowPrivacy(true)}>
+              <Shield className="size-3" /> {sk.legal.readPolicy}
+            </Button>
+          </MacRow>
+          <MacRow label={sk.privacy.openScreen} hint={sk.privacy.screenHint}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-[11px]"
+              onClick={() => void openPrivacySettings("screen")}
+            >
+              <Video className="size-3" /> {sk.privacy.openScreen}
+            </Button>
+          </MacRow>
+          <MacRow label={sk.privacy.openCamera}>
+            <div className="flex flex-wrap justify-end gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-[11px]"
+                onClick={() => void openPrivacySettings("camera")}
+              >
+                <Video className="size-3" /> {sk.privacy.openCamera}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-[11px]"
+                onClick={() => void openPrivacySettings("microphone")}
+              >
+                <Mic className="size-3" /> {sk.privacy.openMic}
+              </Button>
+            </div>
+          </MacRow>
+        </MacGroup>
+
+        <MacGroupHeader>{sk.settings.integrations}</MacGroupHeader>
+        <MacGroup>
+          <MacRow
+            label={sk.settings.notifyOnExport}
+            hint={sk.settings.notifyOnExportHint}
+            onClick={() => updateIntegrations({ notifyOnExport: !integ.notifyOnExport })}
+          >
+            <MacToggle
+              on={integ.notifyOnExport}
+              onChange={() => updateIntegrations({ notifyOnExport: !integ.notifyOnExport })}
+            />
+          </MacRow>
+          <MacRow label={sk.settings.slackWebhook} hint={sk.settings.slackWebhookHint}>
+            <Input
+              type="url"
+              placeholder="https://hooks.slack.com/…"
+              value={integ.slackWebhookUrl}
+              onChange={(e) => updateIntegrations({ slackWebhookUrl: e.target.value.trim() })}
+              className="w-[min(100%,14rem)] text-[11px]"
+            />
+          </MacRow>
+          <MacRow label={sk.settings.discordWebhook} hint={sk.settings.discordWebhookHint}>
+            <Input
+              type="url"
+              placeholder="https://discord.com/api/webhooks/…"
+              value={integ.discordWebhookUrl}
+              onChange={(e) => updateIntegrations({ discordWebhookUrl: e.target.value.trim() })}
+              className="w-[min(100%,14rem)] text-[11px]"
+            />
+          </MacRow>
+          <MacRow
+            label={sk.settings.openAfterExport}
+            hint={sk.settings.openAfterExportHint}
+            onClick={() => updateIntegrations({ openAfterExport: !integ.openAfterExport })}
+          >
+            <MacToggle
+              on={integ.openAfterExport}
+              onChange={() => updateIntegrations({ openAfterExport: !integ.openAfterExport })}
+            />
+          </MacRow>
+          <MacRow
+            label={sk.settings.copyPathAfterExport}
+            onClick={() => updateIntegrations({ copyPathAfterExport: !integ.copyPathAfterExport })}
+          >
+            <MacToggle
+              on={integ.copyPathAfterExport}
+              onChange={() => updateIntegrations({ copyPathAfterExport: !integ.copyPathAfterExport })}
+            />
+          </MacRow>
+          <MacRow
+            label={sk.settings.preferNativeShare}
+            hint={sk.settings.preferNativeShareHint}
+            onClick={() => updateIntegrations({ preferNativeShare: !integ.preferNativeShare })}
+          >
+            <MacToggle
+              on={integ.preferNativeShare}
+              onChange={() => updateIntegrations({ preferNativeShare: !integ.preferNativeShare })}
+            />
+          </MacRow>
+        </MacGroup>
+
         <MacGroupHeader>{sk.settings.updates}</MacGroupHeader>
         <MacGroup>
           <MacRow label={sk.settings.updates} hint={sk.settings.updatesHint}>
@@ -395,6 +499,8 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
         onCancel={() => setConfirmDeleteAll(false)}
         onConfirm={() => { void handleDeleteAll() }}
       />
+
+      <PrivacyPolicyModal open={showPrivacy} onClose={() => setShowPrivacy(false)} />
     </div>
   )
 }

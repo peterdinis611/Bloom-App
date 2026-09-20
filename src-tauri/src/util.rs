@@ -87,9 +87,53 @@ pub(crate) fn load_all_recordings(dir: &Path) -> Vec<RecordingEntry> {
     recordings
 }
 
-/// Find a single recording by its UUID.
+/// Find a single recording by its UUID without loading/sorting the full library.
 pub(crate) fn find_recording(dir: &Path, id: &str) -> Option<RecordingEntry> {
-    load_all_recordings(dir).into_iter().find(|r| r.meta.id == id)
+    let Ok(entries) = fs::read_dir(dir) else {
+        return None;
+    };
+
+    for e in entries.filter_map(|e| e.ok()) {
+        let meta_path = e.path();
+        let is_sidecar = meta_path
+            .extension()
+            .and_then(|x| x.to_str())
+            .map(|x| x == "json")
+            .unwrap_or(false)
+            && meta_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| s.ends_with(".bloom"))
+                .unwrap_or(false);
+        if !is_sidecar {
+            continue;
+        }
+
+        let raw = match fs::read_to_string(&meta_path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        // Cheap reject before JSON parse — id is a UUID in the sidecar.
+        if !raw.contains(id) {
+            continue;
+        }
+
+        let meta: RecordingMeta = match serde_json::from_str(&raw) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if meta.id != id {
+            continue;
+        }
+
+        let video_path = dir.join(&meta.filename);
+        return Some(RecordingEntry {
+            meta,
+            path: video_path.to_string_lossy().into_owned(),
+            meta_path: meta_path.to_string_lossy().into_owned(),
+        });
+    }
+    None
 }
 
 // ── Time (minimal ISO-8601 UTC, no chrono dependency) ───────────────────────

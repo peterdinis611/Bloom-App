@@ -29,6 +29,6 @@ describe("1.0 product strings", () => {
   })
 
   it("includes permissions onboarding step", () => {
-    expect(sk.onboarding.steps.some((s) => s.title.toLowerCase().includes("oprávnen"))).toBe(true)
+    expect(sk.onboarding.stepsById.permissions.title.toLowerCase().includes("oprávnen")).toBe(true)
   })
 })

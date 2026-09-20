@@ -62,6 +62,7 @@ import {
   copyFile,
 } from "@/hooks/useBloomBackend"
 import { useExportQueue } from "@/hooks/useExportQueue"
+import { useSettings } from "@/hooks/useSettings"
 import { VideoPlayerModal } from "@/components/video/VideoPlayerModal"
 import { EditorModal } from "@/components/editor/EditorModal"
 import { BatchOptimizeModal } from "@/components/BatchOptimizeModal"
@@ -480,6 +481,7 @@ export function LibraryPage({
   onEditRecordingHandled,
 }: LibraryPageProps) {
   const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
+  const { settings: appSettings } = useSettings()
   const [entries, setEntries] = useState<RecordingEntry[]>([])
   const [stats, setStats] = useState<LibraryStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1074,6 +1076,11 @@ export function LibraryPage({
                 onReveal={() => revealInFinder(entry.path).catch((e) => setError(localizeError(e)))}
                 onShare={async () => {
                   try {
+                    if (!appSettings.integrations.preferNativeShare) {
+                      await copyText(entry.path)
+                      toastSuccess({ title: sk.toast.pathCopied })
+                      return
+                    }
                     const result = await shareRecording(entry.meta.id)
                     const title =
                       sk.library.shareSuccess[result.mode] ?? sk.library.shareOpened

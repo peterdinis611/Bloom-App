@@ -11,10 +11,12 @@ import { RecordPage } from "@/pages/RecordPage"
 import { LibraryPage } from "@/pages/LibraryPage"
 import { SettingsPage } from "@/pages/SettingsPage"
 import { DocsPage } from "@/pages/DocsPage"
+import { WhatsNewPage } from "@/pages/WhatsNewPage"
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal"
 import { getBloomDir } from "@/hooks/useBloomBackend"
 import { getLastRecordingId } from "@/lib/lastRecording"
 import { isOnboardingDone } from "@/lib/onboarding"
+import { hasUnreadNews, markNewsSeen } from "@/lib/whatsNew"
 import { useToast } from "@/hooks/useToast"
 import { sk } from "@/lib/i18n/sk"
 
@@ -27,11 +29,16 @@ function AppShell() {
   const [onboardingDir, setOnboardingDir] = useState("")
   const [openRecordingId, setOpenRecordingId] = useState<string | null>(null)
   const [editRecordingId, setEditRecordingId] = useState<string | null>(null)
+  const [newsBadge, setNewsBadge] = useState(false)
 
   useEffect(() => {
     isOnboardingDone()
       .then((done) => setShowOnboarding(!done))
       .finally(() => setOnboardingReady(true))
+  }, [])
+
+  useEffect(() => {
+    void hasUnreadNews().then(setNewsBadge)
   }, [])
 
   useEffect(() => {
@@ -56,6 +63,14 @@ function AppShell() {
     return () => unsubs.forEach((fn) => fn())
   }, [toastInfo])
 
+  const handleViewChange = (next: AppView) => {
+    setView(next)
+    if (next === "news") {
+      setNewsBadge(false)
+      void markNewsSeen()
+    }
+  }
+
   const handleOpenRecording = (id: string) => {
     setView("library")
     setOpenRecordingId(id)
@@ -73,9 +88,10 @@ function AppShell() {
         <div className="flex min-h-0 flex-1">
           <Sidebar
             view={view}
-            onChange={setView}
+            onChange={handleViewChange}
             locked={recording}
             recording={recording}
+            newsBadge={newsBadge}
           />
           <main className="mac-main bloom-stage flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <div className={view === "record" ? "flex h-full min-h-0 flex-1 flex-col" : "hidden"}>
@@ -96,6 +112,7 @@ function AppShell() {
                 onEditRecordingHandled={() => setEditRecordingId(null)}
               />
             )}
+            {view === "news" && <WhatsNewPage active />}
             {view === "settings" && <SettingsPage active />}
             {view === "docs" && <DocsPage active />}
           </main>

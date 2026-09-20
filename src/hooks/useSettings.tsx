@@ -22,6 +22,15 @@ export interface ShortcutBindings {
   stop: string
 }
 
+export interface IntegrationSettings {
+  slackWebhookUrl: string
+  discordWebhookUrl: string
+  notifyOnExport: boolean
+  openAfterExport: boolean
+  copyPathAfterExport: boolean
+  preferNativeShare: boolean
+}
+
 export interface AppSettings {
   theme: ThemeId
   annotation: {
@@ -47,9 +56,11 @@ export interface AppSettings {
     idleStopSecs: number
   }
   shortcuts: ShortcutBindings
+  integrations: IntegrationSettings
 }
 
-const STORAGE_KEY = "bloom-settings-v3"
+const STORAGE_KEY = "bloom-settings-v4"
+const LEGACY_STORAGE_KEY = "bloom-settings-v3"
 
 export const DEFAULTS: AppSettings = {
   theme: DEFAULT_THEME,
@@ -76,6 +87,19 @@ export const DEFAULTS: AppSettings = {
     pause: "P",
     stop: "S",
   },
+  integrations: {
+    slackWebhookUrl: "",
+    discordWebhookUrl: "",
+    notifyOnExport: false,
+    openAfterExport: false,
+    copyPathAfterExport: false,
+    preferNativeShare: true,
+  },
+}
+
+async function loadSettings(): Promise<AppSettings> {
+  const raw = (await idbGet(STORAGE_KEY)) ?? (await idbGet(LEGACY_STORAGE_KEY))
+  return parseSettings(raw)
 }
 
 function normalizeKey(raw: unknown, fallback: string): string {
@@ -104,15 +128,11 @@ function parseSettings(raw: string | null): AppSettings {
         pause: normalizeKey(parsed.shortcuts?.pause, DEFAULTS.shortcuts.pause),
         stop: normalizeKey(parsed.shortcuts?.stop, DEFAULTS.shortcuts.stop),
       },
+      integrations: { ...DEFAULTS.integrations, ...parsed.integrations },
     }
   } catch {
     return DEFAULTS
   }
-}
-
-async function loadSettings(): Promise<AppSettings> {
-  const raw = await idbGet(STORAGE_KEY)
-  return parseSettings(raw)
 }
 
 export function applyTheme(theme: ThemeId) {
@@ -136,6 +156,7 @@ interface SettingsCtx {
   updateAnnotation: (patch: Partial<AppSettings["annotation"]>) => void
   updateRecording: (patch: Partial<AppSettings["recording"]>) => void
   updateShortcuts: (patch: Partial<ShortcutBindings>) => void
+  updateIntegrations: (patch: Partial<IntegrationSettings>) => void
   resetSettings: () => void
 }
 
@@ -195,6 +216,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setSettings((s) => ({ ...s, shortcuts: { ...s.shortcuts, ...patch } }))
   }, [])
 
+  const updateIntegrations = useCallback((patch: Partial<IntegrationSettings>) => {
+    setSettings((s) => ({ ...s, integrations: { ...s.integrations, ...patch } }))
+  }, [])
+
   const resetSettings = useCallback(() => setSettings(DEFAULTS), [])
 
   const value = useMemo(
@@ -206,9 +231,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       updateAnnotation,
       updateRecording,
       updateShortcuts,
+      updateIntegrations,
       resetSettings,
     }),
-    [settings, ready, setTheme, updateSettings, updateAnnotation, updateRecording, updateShortcuts, resetSettings],
+    [settings, ready, setTheme, updateSettings, updateAnnotation, updateRecording, updateShortcuts, updateIntegrations, resetSettings],
   )
 
   if (!ready) return null

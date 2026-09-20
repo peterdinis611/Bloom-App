@@ -15,11 +15,17 @@ use uuid::Uuid;
 use crate::types::{RecordingMeta, SessionMeta};
 use crate::util::{bloom_dir, meta_path_for, now_iso};
 
-struct Session {
+/// Writer state held behind its own mutex so chunk I/O does not block the
+/// session map (open/close/cancel of other sessions).
+struct SessionWriter {
     writer: BufWriter<File>,
+    bytes_written: u64,
+}
+
+struct Session {
+    write: Arc<Mutex<SessionWriter>>,
     path: PathBuf,
     started_at: Instant,
-    bytes_written: u64,
     meta_template: RecordingMeta, // finalised at close_session
 }
 
@@ -78,10 +84,12 @@ pub(crate) fn open_session(
     sm.map.insert(
         id,
         Session {
-            writer,
+            write: Arc::new(Mutex::new(SessionWriter {
+                writer,
+                bytes_written: 0,
+            })),
             path,
             started_at: Instant::now(),
-            bytes_written: 0,
             meta_template,
         },
     );
@@ -94,18 +102,21 @@ pub(crate) fn write_chunk(
     session_id: u32,
     data: Vec<u8>,
 ) -> Result<u64, String> {
-    let mut sm = state.lock().unwrap();
-    let session = sm
-        .map
-        .get_mut(&session_id)
-        .ok_or_else(|| format!("No session {session_id}"))?;
+    // Take Arc under a short map lock, then write without holding the map.
+    let write = {
+        let sm = state.lock().unwrap();
+        sm.map
+            .get(&session_id)
+            .map(|s| Arc::clone(&s.write))
+            .ok_or_else(|| format!("No session {session_id}"))?
+    };
 
-    session
-        .writer
+    let mut w = write.lock().unwrap();
+    w.writer
         .write_all(&data)
         .map_err(|e| format!("Write error: {e}"))?;
-    session.bytes_written += data.len() as u64;
-    Ok(session.bytes_written)
+    w.bytes_written += data.len() as u64;
+    Ok(w.bytes_written)
 }
 
 #[tauri::command]
@@ -113,14 +124,19 @@ pub(crate) fn close_session(
     state: tauri::State<Sessions>,
     session_id: u32,
 ) -> Result<RecordingMeta, String> {
-    let mut sm = state.lock().unwrap();
-    let mut session = sm
-        .map
-        .remove(&session_id)
-        .ok_or_else(|| format!("No session {session_id}"))?;
+    let session = {
+        let mut sm = state.lock().unwrap();
+        sm.map
+            .remove(&session_id)
+            .ok_or_else(|| format!("No session {session_id}"))?
+    };
 
-    session.writer.flush().map_err(|e| format!("Flush error: {e}"))?;
-    drop(session.writer); // close file handle
+    {
+        let mut w = session.write.lock().unwrap();
+        w.writer.flush().map_err(|e| format!("Flush error: {e}"))?;
+    }
+    // Drop Arc so the file handle closes before finalize.
+    drop(session.write);
 
     let wall_duration_secs = session.started_at.elapsed().as_secs_f64();
     let finalized = crate::finalize::finalize_recording(&session.path, wall_duration_secs);
@@ -139,9 +155,12 @@ pub(crate) fn close_session(
 
 #[tauri::command]
 pub(crate) fn cancel_session(state: tauri::State<Sessions>, session_id: u32) -> Result<(), String> {
-    let mut sm = state.lock().unwrap();
-    if let Some(session) = sm.map.remove(&session_id) {
-        drop(session.writer);
+    let session = {
+        let mut sm = state.lock().unwrap();
+        sm.map.remove(&session_id)
+    };
+    if let Some(session) = session {
+        drop(session.write);
         let _ = fs::remove_file(&session.path);
     }
     Ok(())
