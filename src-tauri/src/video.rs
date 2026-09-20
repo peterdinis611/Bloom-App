@@ -1534,6 +1534,7 @@ fn write_output_sidecar(input: &Path, output: &Path, opts: &OptimizeOptions, dur
         starred: false,
         tags: vec![],
         folder: String::new(),
+        notes: base.as_ref().map(|m| m.notes.clone()).unwrap_or_default(),
     };
 
     if let Ok(json) = serde_json::to_string_pretty(&meta) {

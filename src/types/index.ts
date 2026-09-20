@@ -60,6 +60,8 @@ export interface RecordingMeta {
   starred?: boolean
   tags?: string[]
   folder?: string
+  /** Free-form user notes */
+  notes?: string
 }
 
 /** Mirrors RecordingEntry in Rust */

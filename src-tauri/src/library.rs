@@ -97,6 +97,7 @@ pub struct RecordingMetaPatch {
     pub starred: Option<bool>,
     pub tags: Option<Vec<String>>,
     pub folder: Option<String>,
+    pub notes: Option<String>,
 }
 
 #[tauri::command]
@@ -117,6 +118,9 @@ pub(crate) fn update_recording_meta(
     }
     if let Some(folder) = patch.folder {
         meta.folder = folder;
+    }
+    if let Some(notes) = patch.notes {
+        meta.notes = notes;
     }
 
     let json = serde_json::to_string_pretty(&meta).map_err(|e| format!("Serialise error: {e}"))?;
@@ -328,6 +332,7 @@ pub(crate) fn import_recording(
         starred: false,
         tags: Vec::new(),
         folder: String::new(),
+        notes: String::new(),
     };
 
     let meta_path = meta_path_for(&dest);

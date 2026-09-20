@@ -138,6 +138,7 @@ export interface RecordingMetaPatch {
   starred?: boolean
   tags?: string[]
   folder?: string
+  notes?: string
 }
 
 export async function updateRecordingMeta(id: string, patch: RecordingMetaPatch): Promise<RecordingMeta> {

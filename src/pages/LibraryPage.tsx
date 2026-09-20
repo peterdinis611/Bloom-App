@@ -35,6 +35,7 @@ import {
   FileUp,
   Image,
   ClipboardCopy,
+  StickyNote,
 } from "lucide-react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { getCurrentWindow } from "@tauri-apps/api/window"
@@ -242,7 +243,7 @@ function ConfirmDelete({ title, open, onCancel, onConfirm }: {
 }
 
 // ── Recording card ─────────────────────────────────────────────────────────
-function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, onEdit, onToggleStar, onShare, onCopyPath, onCopyFile, onGif, validation, busy, ffmpegReady, batchMode, selected, onSelect, tagValue, onTagChange, onTagCommit, onFolderChange, showMetaInputs }: {
+function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, onEdit, onToggleStar, onShare, onCopyPath, onCopyFile, onGif, validation, busy, ffmpegReady, batchMode, selected, onSelect, tagValue, onTagChange, onTagCommit, onFolderChange, onNotesChange, showMetaInputs }: {
   entry: RecordingEntry
   onPlay: () => void
   onDelete: () => void
@@ -265,19 +266,28 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
   onTagChange?: (value: string) => void
   onTagCommit?: () => void
   onFolderChange?: (folder: string) => void
+  onNotesChange?: (notes: string) => void
   showMetaInputs?: boolean
 }) {
   const meta = entry.meta
   const starred = meta.starred ?? false
   const tags = meta.tags ?? []
   const folder = meta.folder ?? ""
+  const notes = meta.notes ?? ""
   const src = SOURCE_META[meta.source] ?? SOURCE_META.screen
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(meta.title)
   const [thumb, setThumb] = useState<string | null>(null)
+  const [notesOpen, setNotesOpen] = useState(Boolean(notes.trim()))
+  const [notesDraft, setNotesDraft] = useState(notes)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { if (editing) inputRef.current?.select() }, [editing])
+
+  useEffect(() => {
+    setNotesDraft(notes)
+    if (notes.trim()) setNotesOpen(true)
+  }, [notes, meta.id])
 
   // Lazily fetch a thumbnail (backend only regenerates if missing).
   useEffect(() => {
@@ -295,6 +305,10 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
     setEditing(false)
     if (next && next !== meta.title) onRename(next)
     else setDraft(meta.title)
+  }
+
+  const commitNotes = () => {
+    if (notesDraft !== notes) onNotesChange?.(notesDraft)
   }
 
   return (
@@ -364,7 +378,7 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
 
           <p className="mt-0.5 text-[11px] text-muted-foreground">{relativeDate(meta.created_at)}</p>
 
-          {(folder || tags.length > 0) && (
+          {(folder || tags.length > 0 || notes.trim()) && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1">
               {folder && (
                 <span className="flex items-center gap-0.5 rounded-md bg-secondary px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground">
@@ -376,6 +390,11 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
                   <Tag className="size-2.5" /> {t}
                 </span>
               ))}
+              {notes.trim() && (
+                <span className="flex items-center gap-0.5 rounded-md bg-accent/12 px-1.5 py-0.5 text-[10px] font-bold text-accent">
+                  <StickyNote className="size-2.5" /> {sk.library.notes}
+                </span>
+              )}
             </div>
           )}
 
@@ -412,8 +431,34 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
           <ActionBtn icon={Share2} label={sk.library.actions.share} onClick={onShare} />
           <ActionBtn icon={Copy} label={sk.library.actions.copyPath} onClick={onCopyPath} />
           <ActionBtn icon={ClipboardCopy} label={sk.library.actions.copyFile} onClick={onCopyFile} />
+          <ActionBtn
+            icon={StickyNote}
+            label={sk.library.notes}
+            onClick={() => setNotesOpen((o) => !o)}
+            accent={Boolean(notes.trim())}
+          />
           <ActionBtn icon={Trash2} label={sk.library.delete} onClick={onDelete} danger />
         </div>
+
+        {notesOpen && !batchMode && (
+          <div className="rounded-xl border border-border/50 bg-[var(--surface)]/80 p-2.5">
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <p className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground">
+                <StickyNote className="size-3 text-accent" />
+                {sk.library.notes}
+              </p>
+              <span className="text-[10px] text-muted-foreground">{sk.library.notesHint}</span>
+            </div>
+            <textarea
+              value={notesDraft}
+              onChange={(e) => setNotesDraft(e.target.value)}
+              onBlur={commitNotes}
+              rows={3}
+              placeholder={sk.library.notesPlaceholder}
+              className="w-full resize-y rounded-lg border border-border/50 bg-background/60 px-3 py-2 text-[12.5px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-primary/40"
+            />
+          </div>
+        )}
 
         {showMetaInputs && !batchMode && (
           <div className="flex flex-wrap items-center gap-2">
@@ -689,7 +734,9 @@ export function LibraryPage({
     return list.filter((e) =>
       e.meta.title.toLowerCase().includes(q)
       || e.meta.source.includes(q)
-      || (e.meta.tags ?? []).some((t) => t.toLowerCase().includes(q)),
+      || (e.meta.tags ?? []).some((t) => t.toLowerCase().includes(q))
+      || (e.meta.notes ?? "").toLowerCase().includes(q)
+      || (e.meta.folder ?? "").toLowerCase().includes(q),
     )
   }, [entries, debouncedQuery, starredOnly, folderFilter])
 
@@ -790,6 +837,18 @@ export function LibraryPage({
       const meta = await updateRecordingMeta(id, { folder: trimmed })
       setEntries((prev) => prev.map((e) => (e.meta.id === id ? { ...e, meta } : e)))
       toastSuccess({ title: sk.toast.folderSet(trimmed) })
+    } catch (e) {
+      const msg = localizeError(e)
+      setError(msg)
+      toastError({ title: sk.toast.actionFailed, description: msg })
+    }
+  }
+
+  const handleSetNotes = async (id: string, notes: string) => {
+    try {
+      const meta = await updateRecordingMeta(id, { notes })
+      setEntries((prev) => prev.map((e) => (e.meta.id === id ? { ...e, meta } : e)))
+      toastSuccess({ title: sk.toast.notesSaved })
     } catch (e) {
       const msg = localizeError(e)
       setError(msg)
@@ -1126,6 +1185,9 @@ export function LibraryPage({
                 onTagCommit={() => handleAddTag(entry.meta.id)}
                 onFolderChange={(folder) => {
                   if (folder !== (entry.meta.folder ?? "")) handleSetFolder(entry.meta.id, folder)
+                }}
+                onNotesChange={(notes) => {
+                  if (notes !== (entry.meta.notes ?? "")) void handleSetNotes(entry.meta.id, notes)
                 }}
               />
             ))}

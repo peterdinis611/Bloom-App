@@ -76,6 +76,7 @@ pub(crate) fn open_session(
         starred: false,
         tags: vec![],
         folder: String::new(),
+        notes: String::new(),
     };
 
     let mut sm = state.lock().unwrap();

@@ -22,6 +22,9 @@ pub struct RecordingMeta {
     pub tags: Vec<String>,
     #[serde(default)]
     pub folder: String, // empty = inbox
+    /// Free-form user notes for this recording.
+    #[serde(default)]
+    pub notes: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
