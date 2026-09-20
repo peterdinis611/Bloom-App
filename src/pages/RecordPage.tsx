@@ -78,6 +78,7 @@ import {
 import { sk } from "@/lib/i18n/sk"
 import { setLastRecordingId } from "@/lib/lastRecording"
 import { RECORDING_QUALITIES } from "@/lib/videoOptions"
+import { localizeError } from "@/lib/i18n/localizeError"
 
 function captureErrorMessage(err: unknown): string {
   const name = (err as { name?: string })?.name ?? ""
@@ -279,7 +280,7 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
         .catch((e: unknown) => {
           const name = e instanceof DOMException ? e.name : ""
           if (name === "AbortError") return
-          setPlayError(e instanceof Error ? e.message : String(e))
+          setPlayError(localizeError(e))
         })
     }
     tryPlay()
@@ -769,7 +770,7 @@ export function RecordPage({
       })
       sessionIdRef.current = id
     } catch (e) {
-      setError(sk.record.errors.openFile(e))
+      setError(sk.record.errors.openFile(localizeError(e)))
       handle.stop()
       captureRef.current = null
       return false
@@ -851,7 +852,7 @@ export function RecordPage({
             label: sk.toast.share,
             onClick: () => {
               void shareRecording(meta.id).catch((e) =>
-                toastError({ title: sk.library.shareFailed, description: String(e) }),
+                toastError({ title: sk.library.shareFailed, description: localizeError(e) }),
               )
             },
           },
@@ -861,7 +862,7 @@ export function RecordPage({
                 onClick: () => {
                   void copyText(path)
                     .then(() => toastSuccess({ title: sk.toast.pathCopied }))
-                    .catch((e) => toastError({ title: sk.toast.actionFailed, description: String(e) }))
+                    .catch((e) => toastError({ title: sk.toast.actionFailed, description: localizeError(e) }))
                 },
               }]
             : []),
@@ -1043,7 +1044,20 @@ export function RecordPage({
       {error && (
         <div className="fade-up banner-error flex items-start gap-3 rounded-xl px-3.5 py-3">
           <AlertCircle className="mt-0.5 size-4 shrink-0 opacity-80" />
-          <p className="flex-1 text-xs font-medium leading-relaxed">{error}</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium leading-relaxed">{error}</p>
+            <button
+              type="button"
+              className="mt-1.5 text-[11px] font-semibold text-primary hover:underline"
+              onClick={() => {
+                void import("@/lib/privacySettings").then(({ openPrivacySettings }) =>
+                  openPrivacySettings("screen").catch(() => {}),
+                )
+              }}
+            >
+              {sk.privacy.openScreen}
+            </button>
+          </div>
           <button onClick={() => setError(null)} className="text-muted-foreground hover:text-foreground">
             <X className="size-3.5" />
           </button>

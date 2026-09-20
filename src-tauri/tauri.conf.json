@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Bloom",
-  "version": "0.2.0",
-  "identifier": "com.peterdinis.desktop",
+  "version": "1.0.0",
+  "identifier": "app.bloom.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -41,9 +41,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "macOS": {
       "entitlements": "./entitlements.plist",
-      "minimumSystemVersion": "12.0"
+      "minimumSystemVersion": "12.0",
+      "signingIdentity": null
     },
     "icon": [
       "icons/32x32.png",
@@ -52,5 +54,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "REPLACE_WITH_MINISIGN_PUBLIC_KEY",
+      "endpoints": [
+        "https://github.com/bloom-app/desktop/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

@@ -5,6 +5,7 @@ import { setGlobalShortcuts } from "@/hooks/useBloomBackend"
 import { MacGroup, MacGroupHeader, MacButton } from "@/components/mac/MacUIKit"
 import { useToast } from "@/hooks/useToast"
 import { cn } from "@/lib/utils"
+import { localizeError } from "@/lib/i18n/localizeError"
 
 type ShortcutId = "arm" | "pause" | "stop"
 
@@ -53,7 +54,7 @@ export function ShortcutsPanel() {
           toastSuccess({ title: sk.shortcuts.saved, description: formatChord(letter) })
         })
         .catch((err) => {
-          toastError({ title: sk.shortcuts.saveFailed, description: String(err) })
+          toastError({ title: sk.shortcuts.saveFailed, description: localizeError(err) })
         })
         .finally(() => {
           setSaving(false)

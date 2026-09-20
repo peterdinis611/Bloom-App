@@ -26,6 +26,7 @@ import {
 import { cn } from "@/lib/utils"
 import { sk } from "@/lib/i18n/sk"
 import { fileSrc, formatDurationSecs } from "@/hooks/useBloomBackend"
+import { localizeError } from "@/lib/i18n/localizeError"
 
 const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2] as const
 type FitMode = "contain" | "cover"
@@ -429,7 +430,7 @@ export const BloomVideoPlayer = forwardRef<BloomVideoPlayerHandle, BloomVideoPla
           setControlsVisible(true)
           return
         }
-        setError(e instanceof Error ? e.message : String(e))
+        setError(localizeError(e))
         setStatus("error")
         onPlayStateChange?.(false)
         setControlsVisible(true)

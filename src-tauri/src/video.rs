@@ -376,11 +376,11 @@ fn read_version_with_timeout(ffmpeg: &Path, timeout_ms: u64) -> Option<String> {
 
 fn install_hint() -> String {
     #[cfg(target_os = "macos")]
-    return "Install ffmpeg with Homebrew:  brew install ffmpeg".to_string();
+    return "Nainštaluj ffmpeg: brew install ffmpeg".to_string();
     #[cfg(target_os = "windows")]
-    return "Install ffmpeg with winget:  winget install Gyan.FFmpeg".to_string();
+    return "Nainštaluj ffmpeg: winget install Gyan.FFmpeg".to_string();
     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-    return "Install ffmpeg with your package manager, e.g.  sudo apt install ffmpeg".to_string();
+    return "Nainštaluj ffmpeg cez správcu balíkov, napr. sudo apt install ffmpeg".to_string();
 }
 
 #[cfg(target_os = "linux")]
@@ -421,7 +421,7 @@ fn install_ffmpeg_argv() -> Result<(PathBuf, Vec<String>), String> {
     #[cfg(target_os = "windows")]
     {
         let winget = find_winget().ok_or_else(|| {
-            "winget is not available. Install ffmpeg manually or update Windows App Installer.".to_string()
+            "winget nie je dostupný. Nainštaluj ffmpeg ručne alebo aktualizuj Windows App Installer.".to_string()
         })?;
         return Ok((
             winget,
@@ -471,12 +471,12 @@ fn install_ffmpeg_argv() -> Result<(PathBuf, Vec<String>), String> {
                 ));
             }
         }
-        return Err("Install ffmpeg manually, e.g.  sudo apt install ffmpeg".into());
+        return Err("Nainštaluj ffmpeg ručne, napr. sudo apt install ffmpeg".into());
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
-        Err("Automatic ffmpeg install is not supported on this platform.".into())
+        Err("Automatická inštalácia ffmpeg nie je na tejto platforme podporovaná.".into())
     }
 }
 
@@ -560,7 +560,7 @@ export NONINTERACTIVE=1
 #[cfg(target_os = "windows")]
 fn run_ffmpeg_install() -> Result<(), String> {
     let winget = find_winget().ok_or_else(|| {
-        "winget is not available. Install ffmpeg manually or update Windows App Installer.".to_string()
+        "winget nie je dostupný. Nainštaluj ffmpeg ručne alebo aktualizuj Windows App Installer.".to_string()
     })?;
     let mut cmd = Command::new(&winget);
     cmd.args([
@@ -632,7 +632,7 @@ fn run_ffmpeg_install() -> Result<(), String> {
 
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 fn run_ffmpeg_install() -> Result<(), String> {
-    Err("Automatic ffmpeg install is not supported on this platform.".into())
+    Err("Automatická inštalácia ffmpeg nie je na tejto platforme podporovaná.".into())
 }
 
 fn install_ffmpeg_blocking() -> FfmpegInstallResult {
@@ -640,7 +640,7 @@ fn install_ffmpeg_blocking() -> FfmpegInstallResult {
     if before.available {
         return FfmpegInstallResult {
             success: true,
-            message: "ffmpeg is already installed.".into(),
+            message: "ffmpeg je už nainštalovaný.".into(),
             status: before,
         };
     }
@@ -674,7 +674,7 @@ fn install_ffmpeg_blocking() -> FfmpegInstallResult {
     } else {
         FfmpegInstallResult {
             success: false,
-            message: "Install finished but ffmpeg was not detected. Try Recheck or restart Bloom.".into(),
+            message: "Inštalácia prebehla, ale ffmpeg sa nenašiel. Skús Skontrolovať alebo reštartuj Bloom.".into(),
             status,
         }
     }
@@ -708,7 +708,7 @@ pub(crate) fn probe(ffprobe: &Path, path: &str) -> Result<VideoInfo, String> {
         .map_err(|e| format!("ffprobe failed: {e}"))?;
 
     if !output.status.success() {
-        return Err("ffprobe could not read the file".into());
+        return Err("ffprobe nedokázal prečítať súbor".into());
     }
 
     let json: serde_json::Value =
@@ -1340,7 +1340,7 @@ pub(crate) fn remux_mp4_faststart(ffmpeg: &Path, path: &Path) -> Result<(), Stri
 
     if !status.success() || !tmp.exists() {
         let _ = std::fs::remove_file(&tmp);
-        return Err("faststart remux failed".into());
+        return Err("Remux faststart zlyhal".into());
     }
 
     std::fs::rename(&tmp, path).map_err(|e| format!("Could not replace recording: {e}"))
@@ -1384,7 +1384,7 @@ fn make_thumbnail_scaled(
         .map_err(|e| format!("ffmpeg failed: {e}"))?;
 
     if !status.success() || !out.exists() {
-        return Err("Could not generate thumbnail".into());
+        return Err("Nepodarilo sa vytvoriť miniatúru".into());
     }
     Ok(out.to_path_buf())
 }
@@ -1486,7 +1486,7 @@ fn replace_original_file(
     size_bytes: u64,
 ) -> Result<PathBuf, String> {
     if !temp_output.exists() {
-        return Err("Temporary export file missing".into());
+        return Err("Dočasný export súbor chýba".into());
     }
     let _ = std::fs::remove_file(input);
     std::fs::rename(temp_output, input).map_err(|e| format!("Could not replace original: {e}"))?;
@@ -1768,7 +1768,7 @@ pub fn get_thumbnail(app: tauri::AppHandle, id: String, at_secs: Option<f64>) ->
         return Ok(thumb.to_string_lossy().into_owned());
     }
 
-    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg not found".to_string())?;
+    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg nie je nainštalovaný".to_string())?;
     let at = at_secs.unwrap_or_else(|| (entry.meta.duration_secs * 0.1).max(0.0));
     let path = make_thumbnail(&ffmpeg, &video, at)?;
     Ok(path.to_string_lossy().into_owned())
@@ -1780,12 +1780,12 @@ pub fn optimize_video(
     state: tauri::State<VideoJobs>,
     options: OptimizeOptions,
 ) -> Result<String, String> {
-    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg not found. Install it and try again.".to_string())?;
-    let ffprobe = find_ffprobe(Some(&ffmpeg)).ok_or_else(|| "ffprobe not found. Install ffmpeg and try again.".to_string())?;
+    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg nie je nainštalovaný. Nainštaluj ho a skús znova.".to_string())?;
+    let ffprobe = find_ffprobe(Some(&ffmpeg)).ok_or_else(|| "ffprobe nie je nainštalovaný. Nainštaluj ffmpeg a skús znova.".to_string())?;
 
     let input = PathBuf::from(&options.input_path);
     if !input.exists() {
-        return Err("Input video does not exist".into());
+        return Err("Vstupné video neexistuje".into());
     }
 
     // Determine total duration for progress (trimmed window or full clip).
@@ -1856,12 +1856,12 @@ pub fn analyze_video(path: String) -> Result<VideoAnalyze, String> {
 
 #[tauri::command]
 pub fn get_filmstrip(path: String, frame_count: Option<u32>) -> Result<Vec<String>, String> {
-    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg not found".to_string())?;
+    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg nie je nainštalovaný".to_string())?;
     let ffprobe = find_ffprobe(Some(&ffmpeg)).ok_or_else(|| "ffprobe not found".to_string())?;
     let info = probe(&ffprobe, &path)?;
     let video = PathBuf::from(&path);
     if !video.exists() {
-        return Err("Video file does not exist".into());
+        return Err("Video súbor neexistuje".into());
     }
 
     let count = frame_count.unwrap_or(12).clamp(6, 20);

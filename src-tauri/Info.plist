@@ -3,8 +3,10 @@
 <plist version="1.0">
 <dict>
   <key>NSCameraUsageDescription</key>
-  <string>Bloom uses your camera to record webcam video and picture-in-picture overlays.</string>
+  <string>Bloom používa kameru na nahrávanie webkamery a picture-in-picture.</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Bloom uses your microphone to record narration alongside your video.</string>
+  <string>Bloom používa mikrofón na nahrávanie komentára spolu s videom.</string>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>Bloom potrebuje prístup k nahrávaniu obrazovky, aby mohol zachytiť tvoj displej.</string>
 </dict>
 </plist>

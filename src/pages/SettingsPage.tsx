@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { RotateCcw, Trash2, Check, FolderOpen } from "lucide-react"
+import { RotateCcw, Trash2, Check, FolderOpen, RefreshCw } from "lucide-react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,6 +16,8 @@ import { PageScrollArea } from "@/components/layout/PageScrollArea"
 import { PresetEditor } from "@/components/settings/PresetEditor"
 import { ShortcutsPanel } from "@/components/settings/ShortcutsPanel"
 import { MacGroup, MacGroupHeader, MacPageHeader, MacRow, MacToggle, ChoiceGroup } from "@/components/mac/MacUIKit"
+import { localizeError } from "@/lib/i18n/localizeError"
+import { checkForAppUpdate } from "@/lib/updater"
 
 const TOOLS: { id: AnnotationTool; label: string }[] = [
   { id: "pen", label: sk.settings.tools.pen },
@@ -36,6 +38,25 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
   const [deleteAllBusy, setDeleteAllBusy] = useState(false)
   const [libraryDir, setLibraryDir] = useState<LibraryDirectoryInfo | null>(null)
   const [libraryDirBusy, setLibraryDirBusy] = useState(false)
+  const [updateBusy, setUpdateBusy] = useState(false)
+
+  const handleCheckUpdates = async () => {
+    setUpdateBusy(true)
+    try {
+      const result = await checkForAppUpdate({
+        onAvailable: (version) => {
+          toastSuccess({ title: sk.toast.updateAvailable(version) })
+        },
+      })
+      if (result === "up-to-date") {
+        toastSuccess({ title: sk.updater.upToDate })
+      } else if (result === "error") {
+        toastError({ title: sk.toast.updateCheckFailed })
+      }
+    } finally {
+      setUpdateBusy(false)
+    }
+  }
 
   const refreshLibraryDir = useCallback(async () => {
     try {
@@ -71,7 +92,7 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
       setConfirmDeleteAll(false)
       toastSuccess({ title: sk.toast.deletedAll(count) })
     } catch (e) {
-      toastError({ title: sk.toast.actionFailed, description: String(e) })
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
     } finally {
       setDeleteAllBusy(false)
     }
@@ -102,7 +123,7 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
       await refreshLibraryStats()
       toastSuccess({ title: sk.settings.libraryFolder, description: info.path })
     } catch (e) {
-      toastError({ title: sk.toast.actionFailed, description: String(e) })
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
     } finally {
       setLibraryDirBusy(false)
     }
@@ -119,7 +140,7 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
         description: info.path,
       })
     } catch (e) {
-      toastError({ title: sk.toast.actionFailed, description: String(e) })
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
     } finally {
       setLibraryDirBusy(false)
     }
@@ -284,6 +305,22 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
         </MacGroup>
 
         <ShortcutsPanel />
+
+        <MacGroupHeader>{sk.settings.updates}</MacGroupHeader>
+        <MacGroup>
+          <MacRow label={sk.settings.updates} hint={sk.settings.updatesHint}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={updateBusy}
+              onClick={() => { void handleCheckUpdates() }}
+              className="text-[11px]"
+            >
+              <RefreshCw className={cn("size-3", updateBusy && "animate-spin")} />
+              {sk.settings.checkUpdates}
+            </Button>
+          </MacRow>
+        </MacGroup>
 
         <MacGroupHeader>{sk.settings.presets}</MacGroupHeader>
         <div className="px-6">

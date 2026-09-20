@@ -82,6 +82,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/useToast"
+import { localizeError } from "@/lib/i18n/localizeError"
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function relativeDate(iso: string): string {
@@ -532,7 +533,7 @@ export function LibraryPage({
       if (showToast) {
         toastError({
           title: sk.library.ffmpeg.toastCheckFailed,
-          description: String(e),
+          description: localizeError(e),
         })
       }
     } finally {
@@ -563,7 +564,7 @@ export function LibraryPage({
     } catch (e) {
       toastError({
         title: sk.library.ffmpeg.toastInstallFailed,
-        description: String(e),
+        description: localizeError(e),
       })
     } finally {
       setInstallingFfmpeg(false)
@@ -578,7 +579,7 @@ export function LibraryPage({
       setEntries(recs)
       setStats(st)
     } catch (e) {
-      const msg = String(e)
+      const msg = localizeError(e)
       setError(msg)
       toastError({ title: sk.toast.loadFailed, description: msg })
     } finally {
@@ -629,7 +630,7 @@ export function LibraryPage({
         description: paths.length === 1 ? paths[0].split("/").pop() : `${paths.length} súborov`,
       })
     } catch (e) {
-      toastError({ title: sk.library.importFailed, description: String(e) })
+      toastError({ title: sk.library.importFailed, description: localizeError(e) })
     } finally {
       setImportBusy(false)
       setDragActive(false)
@@ -647,7 +648,7 @@ export function LibraryPage({
       const paths = Array.isArray(selected) ? selected : [selected]
       await importPaths(paths)
     } catch (e) {
-      toastError({ title: sk.library.importFailed, description: String(e) })
+      toastError({ title: sk.library.importFailed, description: localizeError(e) })
     }
   }, [importPaths, toastError])
 
@@ -705,7 +706,7 @@ export function LibraryPage({
       setEntries((prev) => prev.map((e) => (e.meta.id === id ? { ...e, meta } : e)))
       toastSuccess({ title: sk.toast.renamed(title) })
     } catch (e) {
-      const msg = String(e)
+      const msg = localizeError(e)
       setError(msg)
       toastError({ title: sk.toast.actionFailed, description: msg })
     }
@@ -720,7 +721,7 @@ export function LibraryPage({
       if (st) setStats(st)
       toastSuccess({ title: sk.toast.deleted })
     } catch (e) {
-      const msg = String(e)
+      const msg = localizeError(e)
       setError(msg)
       toastError({ title: sk.toast.actionFailed, description: msg })
     }
@@ -738,7 +739,7 @@ export function LibraryPage({
       if (st) setStats(st)
       toastSuccess({ title: sk.toast.batchDeleted(ids.length) })
     } catch (e) {
-      const msg = String(e)
+      const msg = localizeError(e)
       setError(msg)
       toastError({ title: sk.toast.actionFailed, description: msg })
     }
@@ -764,7 +765,7 @@ export function LibraryPage({
       setValidations({})
       toastSuccess({ title: sk.toast.deletedAll(count) })
     } catch (e) {
-      const msg = String(e)
+      const msg = localizeError(e)
       setError(msg)
       toastError({ title: sk.toast.actionFailed, description: msg })
     } finally {
@@ -777,7 +778,7 @@ export function LibraryPage({
       const meta = await updateRecordingMeta(id, { starred: !starred })
       setEntries((prev) => prev.map((e) => (e.meta.id === id ? { ...e, meta } : e)))
     } catch (e) {
-      setError(String(e))
+      setError(localizeError(e))
     }
   }
 
@@ -788,7 +789,7 @@ export function LibraryPage({
       setEntries((prev) => prev.map((e) => (e.meta.id === id ? { ...e, meta } : e)))
       toastSuccess({ title: sk.toast.folderSet(trimmed) })
     } catch (e) {
-      const msg = String(e)
+      const msg = localizeError(e)
       setError(msg)
       toastError({ title: sk.toast.actionFailed, description: msg })
     }
@@ -806,7 +807,7 @@ export function LibraryPage({
       setTagDraft((d) => ({ ...d, [id]: "" }))
       toastSuccess({ title: sk.toast.tagAdded(raw) })
     } catch (e) {
-      const msg = String(e)
+      const msg = localizeError(e)
       setError(msg)
       toastError({ title: sk.toast.actionFailed, description: msg })
     }
@@ -835,7 +836,7 @@ export function LibraryPage({
         })
       }
     } catch (e) {
-      const msg = String(e)
+      const msg = localizeError(e)
       setError(msg)
       toastError({ title: sk.toast.validateFail, description: msg })
     } finally {
@@ -1070,7 +1071,7 @@ export function LibraryPage({
                 onSelect={() => toggleSelect(entry.meta.id)}
                 onPlay={() => setPlaying(entry)}
                 onDelete={() => setConfirmId(entry.meta.id)}
-                onReveal={() => revealInFinder(entry.path).catch((e) => setError(String(e)))}
+                onReveal={() => revealInFinder(entry.path).catch((e) => setError(localizeError(e)))}
                 onShare={async () => {
                   try {
                     const result = await shareRecording(entry.meta.id)
@@ -1078,18 +1079,18 @@ export function LibraryPage({
                       sk.library.shareSuccess[result.mode] ?? sk.library.shareOpened
                     toastSuccess({ title })
                   } catch (e) {
-                    toastError({ title: sk.library.shareFailed, description: String(e) })
+                    toastError({ title: sk.library.shareFailed, description: localizeError(e) })
                   }
                 }}
                 onCopyPath={() => {
                   void copyText(entry.path)
                     .then(() => toastSuccess({ title: sk.toast.pathCopied }))
-                    .catch((e) => toastError({ title: sk.toast.actionFailed, description: String(e) }))
+                    .catch((e) => toastError({ title: sk.toast.actionFailed, description: localizeError(e) }))
                 }}
                 onCopyFile={() => {
                   void copyFile(entry.path)
                     .then(() => toastSuccess({ title: sk.toast.fileCopied }))
-                    .catch((e) => toastError({ title: sk.toast.actionFailed, description: String(e) }))
+                    .catch((e) => toastError({ title: sk.toast.actionFailed, description: localizeError(e) }))
                 }}
                 onGif={() => {
                   enqueue({
