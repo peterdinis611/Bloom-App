@@ -3,6 +3,7 @@
  */
 
 mod config;
+mod clipboard;
 mod cursor;
 mod finalize;
 mod library;
@@ -23,6 +24,9 @@ pub fn run() {
         .manage(session::Sessions::default())
         .manage(video::VideoJobs::default())
         .manage(cursor::CursorTracker::default())
+        .manage(tray::ShortcutStateStore(std::sync::Mutex::new(
+            tray::ShortcutBindings::default(),
+        )))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -54,6 +58,10 @@ pub fn run() {
             library::validate_recording,
             library::import_recording,
             library::reveal_in_finder,
+            clipboard::copy_text,
+            clipboard::copy_file,
+            tray::set_global_shortcuts,
+            tray::get_global_shortcuts,
             video::check_ffmpeg,
             video::install_ffmpeg,
             video::get_video_info,

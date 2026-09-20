@@ -179,6 +179,21 @@ export async function revealInFinder(path: string): Promise<void> {
   return invoke<void>("reveal_in_finder", { path })
 }
 
+/** Copy plain text to the system clipboard. */
+export async function copyText(text: string): Promise<void> {
+  return invoke<void>("copy_text", { text })
+}
+
+/** Copy a file reference to the system clipboard. */
+export async function copyFile(path: string): Promise<void> {
+  return invoke<void>("copy_file", { path })
+}
+
+/** Update ⌘⇧ global shortcuts (single letters A–Z). */
+export async function setGlobalShortcuts(arm: string, pause: string, stop: string): Promise<void> {
+  return invoke<void>("set_global_shortcuts", { arm, pause, stop })
+}
+
 /** Otvorí súbor v predvolenej systémovej aplikácii (QuickTime, VLC…). */
 export async function openWithSystemApp(path: string): Promise<void> {
   const { openPath } = await import("@tauri-apps/plugin-opener")

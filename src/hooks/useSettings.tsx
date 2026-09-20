@@ -15,6 +15,13 @@ import type { RecordingQuality } from "@/lib/videoOptions"
 
 export type AnnotationTool = "pen" | "highlighter" | "rect" | "circle" | "line" | "arrow" | "eraser"
 
+export interface ShortcutBindings {
+  /** Letter A–Z for ⌘⇧ binding to arm recording. */
+  arm: string
+  pause: string
+  stop: string
+}
+
 export interface AppSettings {
   theme: ThemeId
   annotation: {
@@ -39,6 +46,7 @@ export interface AppSettings {
     /** Auto-stop after N seconds of no mouse/keyboard activity (0 = disabled). */
     idleStopSecs: number
   }
+  shortcuts: ShortcutBindings
 }
 
 const STORAGE_KEY = "bloom-settings-v3"
@@ -63,6 +71,17 @@ export const DEFAULTS: AppSettings = {
     maxDurationSecs: 0,
     idleStopSecs: 0,
   },
+  shortcuts: {
+    arm: "R",
+    pause: "P",
+    stop: "S",
+  },
+}
+
+function normalizeKey(raw: unknown, fallback: string): string {
+  if (typeof raw !== "string") return fallback
+  const letter = raw.trim().toUpperCase()
+  return /^[A-Z]$/.test(letter) ? letter : fallback
 }
 
 function parseSettings(raw: string | null): AppSettings {
@@ -79,6 +98,11 @@ function parseSettings(raw: string | null): AppSettings {
         ...DEFAULTS.recording,
         ...parsed.recording,
         presets: parsed.recording?.presets ?? DEFAULTS.recording.presets,
+      },
+      shortcuts: {
+        arm: normalizeKey(parsed.shortcuts?.arm, DEFAULTS.shortcuts.arm),
+        pause: normalizeKey(parsed.shortcuts?.pause, DEFAULTS.shortcuts.pause),
+        stop: normalizeKey(parsed.shortcuts?.stop, DEFAULTS.shortcuts.stop),
       },
     }
   } catch {
@@ -111,6 +135,7 @@ interface SettingsCtx {
   updateSettings: (patch: Partial<AppSettings>) => void
   updateAnnotation: (patch: Partial<AppSettings["annotation"]>) => void
   updateRecording: (patch: Partial<AppSettings["recording"]>) => void
+  updateShortcuts: (patch: Partial<ShortcutBindings>) => void
   resetSettings: () => void
 }
 
@@ -127,6 +152,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setSettings(loaded)
       applyTheme(loaded.theme)
       setReady(true)
+      const { arm, pause, stop } = loaded.shortcuts
+      if (arm !== "R" || pause !== "P" || stop !== "S") {
+        void import("@/hooks/useBloomBackend").then(({ setGlobalShortcuts }) => {
+          setGlobalShortcuts(arm, pause, stop).catch(() => {})
+        })
+      }
     })
     return () => { cancelled = true }
   }, [])
@@ -160,11 +191,24 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setSettings((s) => ({ ...s, recording: { ...s.recording, ...patch } }))
   }, [])
 
+  const updateShortcuts = useCallback((patch: Partial<ShortcutBindings>) => {
+    setSettings((s) => ({ ...s, shortcuts: { ...s.shortcuts, ...patch } }))
+  }, [])
+
   const resetSettings = useCallback(() => setSettings(DEFAULTS), [])
 
   const value = useMemo(
-    () => ({ settings, ready, setTheme, updateSettings, updateAnnotation, updateRecording, resetSettings }),
-    [settings, ready, setTheme, updateSettings, updateAnnotation, updateRecording, resetSettings],
+    () => ({
+      settings,
+      ready,
+      setTheme,
+      updateSettings,
+      updateAnnotation,
+      updateRecording,
+      updateShortcuts,
+      resetSettings,
+    }),
+    [settings, ready, setTheme, updateSettings, updateAnnotation, updateRecording, updateShortcuts, resetSettings],
   )
 
   if (!ready) return null

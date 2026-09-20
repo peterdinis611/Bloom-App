@@ -37,7 +37,7 @@ export const DOC_SECTIONS: DocSection[] = [
     blocks: [
       {
         type: "p",
-        text: "Vyber zdroj (obrazovka, kamera, oboje), displej a voliteľne mikrofón či systémový zvuk. Pri obrazovke potvrď zdieľanie v systémovom dialógu macOS.",
+        text: "Vyber zdroj (obrazovka, kamera, oboje), displej a voliteľne mikrofón či systémový zvuk. Pri obrazovke potvrď zdieľanie v systémovom dialógu macOS. Zapni „Nahrať len vybranú oblasť“ a po zdieľaní potiahni obdĺžnik na náhľade.",
       },
       {
         type: "ul",

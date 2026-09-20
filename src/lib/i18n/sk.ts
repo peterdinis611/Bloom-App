@@ -18,6 +18,13 @@ export const sk = {
     settingsResetBody: "Predvolené hodnoty boli obnovené.",
     recordingSaved: (title: string) => `Uložené: ${title}`,
     recordingSavedBody: "Nahrávka je v knižnici.",
+    openEditor: "Editor",
+    share: "Zdieľať",
+    copyPath: "Kopírovať cestu",
+    pathCopied: "Cesta skopírovaná",
+    fileCopied: "Súbor v schránke",
+    gifQueued: "GIF export vo fronte",
+    gifQueuedBody: "Po dokončení skopíruj súbor zo fronty alebo knižnice.",
     noLastRecording: "Zatiaľ žiadna nahrávka",
     exportQueued: (count: number) =>
       count === 1 ? "Export pridaný do fronty" : `${count} exporty pridané do fronty`,
@@ -53,6 +60,11 @@ export const sk = {
     savedTo: "Nahrávky sa ukladajú do",
     lowDisk: (free: string) => `Málo miesta na disku: voľných je len ${free}`,
     sources: { screen: "Obrazovka", camera: "Kamera", both: "Oboje" },
+    region: "Oblasť",
+    regionHint: "Potiahni oblasť na náhľade",
+    regionConfirm: "Použiť oblasť",
+    regionEnabled: "Nahrať len vybranú oblasť",
+    regionEnabledHint: "Po potvrdení zdieľania vyber obdĺžnik na náhľade",
     quickStart: "Rýchly štart",
     source: "Zdroj",
     recordWithPreset: (name: string) => `Nahrať s predvoľbou ${name}`,
@@ -151,6 +163,7 @@ export const sk = {
       arrow: "Šípka",
       rect: "Obdĺžnik",
       circle: "Kruh",
+      eraser: "Guma",
     },
   },
   docs: {
@@ -160,6 +173,16 @@ export const sk = {
   },
   shortcuts: {
     title: "Klávesové skratky",
+    editableHint: "Klikni na skratku a stlač písmeno A–Z. Modifikátory ⌘⇧ zostávajú.",
+    pressKey: "Stlač kláves…",
+    saved: "Skratka uložená",
+    saveFailed: "Skratku sa nepodarilo uložiť",
+    duplicate: "Každá skratka musí mať iný kláves",
+    editable: {
+      arm: "Spustiť nahrávanie",
+      pause: "Pauza / pokračovať",
+      stop: "Ukončiť a uložiť",
+    },
     sections: [
       {
         title: "Nahrávanie",
@@ -430,6 +453,9 @@ export const sk = {
       verify: "Overiť",
       reveal: "Vo Finderi",
       share: "Zdieľať",
+      copyPath: "Kopírovať cestu",
+      copyFile: "Kopírovať súbor",
+      gif: "GIF",
     },
     validation: {
       ok: "Súbor v poriadku",

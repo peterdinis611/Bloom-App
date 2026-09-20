@@ -6,18 +6,26 @@ import { sk } from "@/lib/i18n/sk"
 export type ToastVariant = "success" | "error" | "info"
 
 const TOAST_DURATION_MS = 4800
+const TOAST_WITH_ACTIONS_MS = 9000
 const TOAST_EXIT_MS = 240
+
+export interface ToastAction {
+  label: string
+  onClick: () => void
+}
 
 interface ToastItem {
   id: number
   title: string
   description?: string
   variant: ToastVariant
+  actions?: ToastAction[]
 }
 
 interface ToastInput {
   title: string
   description?: string
+  actions?: ToastAction[]
 }
 
 interface ToastContextValue {
@@ -47,6 +55,7 @@ function ToastCard({
   onDismiss: (id: number) => void
 }) {
   const Icon = VARIANT_ICONS[item.variant]
+  const duration = item.actions?.length ? TOAST_WITH_ACTIONS_MS : TOAST_DURATION_MS
 
   return (
     <div
@@ -69,6 +78,23 @@ function ToastCard({
         <div className="bloom-toast__content">
           <p className="bloom-toast__title">{item.title}</p>
           {item.description && <p className="bloom-toast__desc">{item.description}</p>}
+          {item.actions && item.actions.length > 0 && (
+            <div className="bloom-toast__actions">
+              {item.actions.map((action) => (
+                <button
+                  key={action.label}
+                  type="button"
+                  className="bloom-toast__action"
+                  onClick={() => {
+                    action.onClick()
+                    onDismiss(item.id)
+                  }}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <button
@@ -84,7 +110,7 @@ function ToastCard({
       {!exiting && (
         <div
           className="bloom-toast__progress"
-          style={{ animationDuration: `${TOAST_DURATION_MS}ms` }}
+          style={{ animationDuration: `${duration}ms` }}
           aria-hidden
         />
       )}
@@ -152,9 +178,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   )
 
   const scheduleDismiss = useCallback(
-    (id: number) => {
+    (id: number, ms: number) => {
       clearTimer(id)
-      const timer = window.setTimeout(() => dismiss(id), TOAST_DURATION_MS)
+      const timer = window.setTimeout(() => dismiss(id), ms)
       timersRef.current.set(id, timer)
     },
     [clearTimer, dismiss],
@@ -168,9 +194,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         title: input.title,
         description: input.description,
         variant: input.variant ?? "info",
+        actions: input.actions,
       }
       setToasts((prev) => [...prev.slice(-4), item])
-      scheduleDismiss(id)
+      const ms = input.actions?.length ? TOAST_WITH_ACTIONS_MS : TOAST_DURATION_MS
+      scheduleDismiss(id, ms)
     },
     [scheduleDismiss],
   )

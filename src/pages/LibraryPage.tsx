@@ -33,6 +33,8 @@ import {
   Scissors,
   Download,
   FileUp,
+  Image,
+  ClipboardCopy,
 } from "lucide-react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { getCurrentWindow } from "@tauri-apps/api/window"
@@ -56,6 +58,8 @@ import {
   fileSrc,
   formatBytes,
   formatDurationSecs,
+  copyText,
+  copyFile,
 } from "@/hooks/useBloomBackend"
 import { useExportQueue } from "@/hooks/useExportQueue"
 import { VideoPlayerModal } from "@/components/video/VideoPlayerModal"
@@ -236,7 +240,7 @@ function ConfirmDelete({ title, open, onCancel, onConfirm }: {
 }
 
 // ── Recording card ─────────────────────────────────────────────────────────
-function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, onEdit, onToggleStar, onShare, validation, busy, ffmpegReady, batchMode, selected, onSelect, tagValue, onTagChange, onTagCommit, onFolderChange, showMetaInputs }: {
+function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, onEdit, onToggleStar, onShare, onCopyPath, onCopyFile, onGif, validation, busy, ffmpegReady, batchMode, selected, onSelect, tagValue, onTagChange, onTagCommit, onFolderChange, showMetaInputs }: {
   entry: RecordingEntry
   onPlay: () => void
   onDelete: () => void
@@ -246,6 +250,9 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
   onEdit: () => void
   onToggleStar: () => void
   onShare: () => void
+  onCopyPath: () => void
+  onCopyFile: () => void
+  onGif: () => void
   validation?: ValidationResult
   busy: boolean
   ffmpegReady: boolean
@@ -397,9 +404,12 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
         <div className="flex flex-wrap gap-1">
           <ActionBtn icon={Play} label={sk.library.actions.play} onClick={onPlay} primary />
           {ffmpegReady && <ActionBtn icon={Scissors} label={sk.library.actions.edit} onClick={onEdit} accent />}
+          {ffmpegReady && <ActionBtn icon={Image} label={sk.library.actions.gif} onClick={onGif} />}
           <ActionBtn icon={ScanSearch} label={sk.library.actions.verify} onClick={onValidate} disabled={busy} />
           <ActionBtn icon={FolderOpen} label={sk.library.actions.reveal} onClick={onReveal} />
           <ActionBtn icon={Share2} label={sk.library.actions.share} onClick={onShare} />
+          <ActionBtn icon={Copy} label={sk.library.actions.copyPath} onClick={onCopyPath} />
+          <ActionBtn icon={ClipboardCopy} label={sk.library.actions.copyFile} onClick={onCopyFile} />
           <ActionBtn icon={Trash2} label={sk.library.delete} onClick={onDelete} danger />
         </div>
 
@@ -456,6 +466,8 @@ interface LibraryPageProps {
   active?: boolean
   openRecordingId?: string | null
   onOpenRecordingHandled?: () => void
+  editRecordingId?: string | null
+  onEditRecordingHandled?: () => void
 }
 
 export function LibraryPage({
@@ -463,6 +475,8 @@ export function LibraryPage({
   active = true,
   openRecordingId = null,
   onOpenRecordingHandled,
+  editRecordingId = null,
+  onEditRecordingHandled,
 }: LibraryPageProps) {
   const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
   const [entries, setEntries] = useState<RecordingEntry[]>([])
@@ -572,7 +586,7 @@ export function LibraryPage({
     }
   }, [toastError])
 
-  const { activeCount } = useExportQueue()
+  const { activeCount, enqueue } = useExportQueue()
   const prevQueueActive = useRef(0)
 
   useEffect(() => { load() }, [load])
@@ -590,6 +604,15 @@ export function LibraryPage({
       onOpenRecordingHandled?.()
     }
   }, [openRecordingId, entries, loading, onOpenRecordingHandled])
+
+  useEffect(() => {
+    if (!editRecordingId || loading) return
+    const entry = entries.find((e) => e.meta.id === editRecordingId)
+    if (entry) {
+      setEditing(entry)
+      onEditRecordingHandled?.()
+    }
+  }, [editRecordingId, entries, loading, onEditRecordingHandled])
 
   const importPaths = useCallback(async (paths: string[]) => {
     if (paths.length === 0) return
@@ -1057,6 +1080,33 @@ export function LibraryPage({
                   } catch (e) {
                     toastError({ title: sk.library.shareFailed, description: String(e) })
                   }
+                }}
+                onCopyPath={() => {
+                  void copyText(entry.path)
+                    .then(() => toastSuccess({ title: sk.toast.pathCopied }))
+                    .catch((e) => toastError({ title: sk.toast.actionFailed, description: String(e) }))
+                }}
+                onCopyFile={() => {
+                  void copyFile(entry.path)
+                    .then(() => toastSuccess({ title: sk.toast.fileCopied }))
+                    .catch((e) => toastError({ title: sk.toast.actionFailed, description: String(e) }))
+                }}
+                onGif={() => {
+                  enqueue({
+                    label: `GIF · ${entry.meta.title}`,
+                    options: {
+                      input_path: entry.path,
+                      preset: "medium",
+                      resolution: "480p",
+                      format: "gif",
+                      add_to_library: false,
+                      output_name: `${entry.meta.title.replace(/\s+/g, "-").slice(0, 40)}.gif`,
+                    },
+                  })
+                  toastSuccess({
+                    title: sk.toast.gifQueued,
+                    description: sk.toast.gifQueuedBody,
+                  })
                 }}
                 onRename={(title) => handleRename(entry.meta.id, title)}
                 onValidate={() => handleValidate(entry.meta.id)}

@@ -21,6 +21,7 @@ import {
   Zap,
   MousePointer2,
   Sparkles,
+  Crop,
 } from "lucide-react"
 import { openRecordingHud, closeRecordingHud } from "@/lib/recordingHud"
 import { openCursorOverlay, closeCursorOverlay } from "@/lib/cursorOverlay"
@@ -57,13 +58,17 @@ import {
   revealInFinder,
   formatBytes,
   isLowDiskSpace,
+  getRecording,
+  shareRecording,
+  copyText,
 } from "@/hooks/useBloomBackend"
 import { useMediaDevices } from "@/hooks/useMediaDevices"
 import { useSettings } from "@/hooks/useSettings"
 import { useToast } from "@/hooks/useToast"
-import { startCapture, openCameraStream, type CaptureHandle } from "@/lib/capture"
+import { startCapture, openCameraStream, type CaptureHandle, type CropRect } from "@/lib/capture"
 import { highlightMonitor, dismissMonitorHighlight } from "@/lib/monitorHighlight"
 import { MonitorPicker } from "@/components/record/MonitorPicker"
+import { RegionCropOverlay } from "@/components/record/RegionCropOverlay"
 import { PreviewFaultPanel } from "@/components/record/PreviewFaultPanel"
 import {
   buildPreviewFault,
@@ -423,12 +428,18 @@ interface RecordPageProps {
   active?: boolean
   onRecordingChange?: (active: boolean) => void
   onOpenRecording?: (id: string) => void
+  onEditRecording?: (id: string) => void
 }
 
-export function RecordPage({ active = true, onRecordingChange, onOpenRecording }: RecordPageProps) {
+export function RecordPage({
+  active = true,
+  onRecordingChange,
+  onOpenRecording,
+  onEditRecording,
+}: RecordPageProps) {
   const { cameras, microphones, monitors, hasLabels, requestPermission, refresh } = useMediaDevices()
   const { settings: appSettings, updateRecording } = useSettings()
-  const { success: toastSuccess } = useToast()
+  const { success: toastSuccess, error: toastError } = useToast()
 
   const [settings, setSettings] = useState<RecordingSettings>({
     source: "screen",
@@ -444,6 +455,9 @@ export function RecordPage({ active = true, onRecordingChange, onOpenRecording }
     pipSize: appSettings.recording.pipSize,
     pipPosition: appSettings.recording.pipPosition,
   })
+
+  const [regionMode, setRegionMode] = useState(false)
+  const cropRectRef = useRef<CropRect | null>(null)
 
   const pipLayoutRef = useRef<PipRect>(defaultPipRect(appSettings.recording.pipSize, appSettings.recording.pipPosition))
   const annotationLayerRef = useRef<AnnotationLayer>(new AnnotationLayer())
@@ -502,7 +516,7 @@ export function RecordPage({ active = true, onRecordingChange, onOpenRecording }
   const statusRef = useRef<RecordingStatus>("idle")
 
   const isActive    = status === "recording" || status === "paused"
-  const isBusy      = status === "preparing" || status === "countdown" || status === "processing" || status === "done"
+  const isBusy      = status === "preparing" || status === "region" || status === "countdown" || status === "processing" || status === "done"
   const showConfig  = !isActive && !isBusy
   const needsScreen = settings.source === "screen" || settings.source === "both"
   const needsCamera = settings.source === "camera" || settings.source === "both"
@@ -704,6 +718,7 @@ export function RecordPage({ active = true, onRecordingChange, onOpenRecording }
   async function prepareCaptureFlow(): Promise<boolean> {
     annotationLayerRef.current.clear()
     setDrawingMode(false)
+    cropRectRef.current = null
     await dismissMonitorHighlight()
     let handle: CaptureHandle
     try {
@@ -720,6 +735,7 @@ export function RecordPage({ active = true, onRecordingChange, onOpenRecording }
         cameraBlur: settings.cameraBlur,
         pipLayoutRef: settings.source === "both" ? pipLayoutRef : undefined,
         annotationLayerRef,
+        cropRectRef: regionMode && needsScreen ? cropRectRef : undefined,
         onEnded: () => { if (mediaRef.current?.state !== "inactive") stopRecording() },
       })
     } catch (err: unknown) {
@@ -815,9 +831,41 @@ export function RecordPage({ active = true, onRecordingChange, onOpenRecording }
       const meta = await closeSession(sid)
       void setLastRecordingId(meta.id)
       setSavedMeta({ title: meta.title, size: formatBytes(meta.file_size_bytes), id: meta.id })
+
+      let path = ""
+      try {
+        const entry = await getRecording(meta.id)
+        path = entry.path
+      } catch { /* optional */ }
+
       toastSuccess({
         title: sk.toast.recordingSaved(meta.title),
         description: sk.toast.recordingSavedBody,
+        actions: [
+          ...(onEditRecording
+            ? [{ label: sk.toast.openEditor, onClick: () => onEditRecording(meta.id) }]
+            : onOpenRecording
+              ? [{ label: sk.record.openLast, onClick: () => onOpenRecording(meta.id) }]
+              : []),
+          {
+            label: sk.toast.share,
+            onClick: () => {
+              void shareRecording(meta.id).catch((e) =>
+                toastError({ title: sk.library.shareFailed, description: String(e) }),
+              )
+            },
+          },
+          ...(path
+            ? [{
+                label: sk.toast.copyPath,
+                onClick: () => {
+                  void copyText(path)
+                    .then(() => toastSuccess({ title: sk.toast.pathCopied }))
+                    .catch((e) => toastError({ title: sk.toast.actionFailed, description: String(e) }))
+                },
+              }]
+            : []),
+        ],
       })
     } catch { /* non-critical */ }
   }
@@ -826,6 +874,7 @@ export function RecordPage({ active = true, onRecordingChange, onOpenRecording }
     captureRef.current?.stop()
     captureRef.current = null
     mediaRef.current   = null
+    cropRectRef.current = null
     const sid = sessionIdRef.current
     sessionIdRef.current = null
     if (sid !== null) cancelSession(sid).catch(() => {})
@@ -842,6 +891,15 @@ export function RecordPage({ active = true, onRecordingChange, onOpenRecording }
       return
     }
 
+    if (regionMode && needsScreen) {
+      setStatus("region")
+      return
+    }
+
+    await continueAfterRegion()
+  }
+
+  async function continueAfterRegion() {
     await hideForRecording()
 
     if (settings.countdown === 0) {
@@ -936,6 +994,11 @@ export function RecordPage({ active = true, onRecordingChange, onOpenRecording }
     setCountdown(0)
   }
 
+  function confirmRegion(rect: CropRect) {
+    cropRectRef.current = rect
+    void continueAfterRegion()
+  }
+
   stopRecordingRef.current = stopRecording
   pauseRecordingRef.current = pauseRecording
   resumeRecordingRef.current = resumeRecording
@@ -998,7 +1061,12 @@ export function RecordPage({ active = true, onRecordingChange, onOpenRecording }
           summary={previewSummary}
           drawing={drawingMode && isActive}
           drawOverlay={
-            drawingMode && isActive ? (
+            status === "region" ? (
+              <RegionCropOverlay
+                onConfirm={confirmRegion}
+                onCancel={cancelCountdown}
+              />
+            ) : drawingMode && isActive ? (
               <LiveDrawOverlay
                 layer={annotationLayerRef.current}
                 drawState={drawState}
@@ -1101,6 +1169,28 @@ export function RecordPage({ active = true, onRecordingChange, onOpenRecording }
                 <p className="mt-1.5 px-1 text-[11px] text-muted-foreground">
                   {sk.record.displayHint}
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setRegionMode((v) => !v)}
+                  className={cn(
+                    "bloom-card mt-2 flex w-full items-center justify-between px-3.5 py-3 text-left min-h-[48px] cursor-pointer",
+                    regionMode && "bloom-card-active ring-2 ring-accent/25",
+                  )}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Crop className="size-4 text-accent" />
+                    <div>
+                      <p className="text-xs font-bold text-foreground">{sk.record.regionEnabled}</p>
+                      <p className="text-[10px] text-muted-foreground">{sk.record.regionEnabledHint}</p>
+                    </div>
+                  </div>
+                  <div className={cn(
+                    "flex h-5 w-9 items-center rounded-full p-0.5 transition-colors",
+                    regionMode ? "bg-primary" : "bg-secondary",
+                  )}>
+                    <div className={cn("size-4 rounded-full bg-white shadow-sm transition-transform", regionMode ? "translate-x-4" : "translate-x-0")} />
+                  </div>
+                </button>
               </>
             )}
 
@@ -1296,7 +1386,7 @@ export function RecordPage({ active = true, onRecordingChange, onOpenRecording }
           </MacButton>
         )}
 
-        {(status === "countdown" || status === "preparing") && (
+        {(status === "countdown" || status === "preparing" || status === "region") && (
           <MacButton onClick={cancelCountdown} className="min-w-[100px]">{sk.record.cancel}</MacButton>
         )}
 

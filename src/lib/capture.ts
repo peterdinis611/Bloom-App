@@ -23,6 +23,14 @@ type Quality = RecordingQuality
 export type PipSize = "small" | "medium" | "large"
 export type PipPosition = "bottom-right" | "bottom-left" | "top-right" | "top-left"
 
+/** Normalised crop rectangle (0–1) relative to the captured video frame. */
+export interface CropRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
 /** Normalised PiP rectangle (0–1) relative to canvas. */
 export interface PipRect {
   x: number
@@ -66,6 +74,8 @@ export interface CaptureConfig {
   cameraBlur?: boolean
   /** Live-updated PiP layout (overrides pipSize/pipPosition when set). */
   pipLayoutRef?: { current: PipRect }
+  /** Live-updated region crop (0–1). When set, compositor crops the screen frame. */
+  cropRectRef?: { current: CropRect | null }
   /** Strokes composited into every recorded frame. */
   annotationLayerRef?: { current: AnnotationLayer | null }
   /** Fired when the captured screen surface ends (user clicks "Stop sharing"). */
@@ -136,10 +146,26 @@ function drawCover(
   dy: number,
   dw: number,
   dh: number,
+  crop?: CropRect | null,
 ) {
   const vw = video.videoWidth
   const vh = video.videoHeight
   if (!vw || !vh) return
+
+  if (crop && crop.w > 0.01 && crop.h > 0.01) {
+    const sx = crop.x * vw
+    const sy = crop.y * vh
+    const sw = Math.max(1, crop.w * vw)
+    const sh = Math.max(1, crop.h * vh)
+    const scale = Math.min(dw / sw, dh / sh)
+    const outW = sw * scale
+    const outH = sh * scale
+    const ox = dx + (dw - outW) / 2
+    const oy = dy + (dh - outH) / 2
+    ctx.drawImage(video, sx, sy, sw, sh, ox, oy, outW, outH)
+    return
+  }
+
   const scale = Math.max(dw / vw, dh / vh)
   const sw = dw / scale
   const sh = dh / scale
@@ -284,6 +310,7 @@ async function startVideoCompositor(
   videoStream: MediaStream,
   quality: Quality,
   layerRef?: { current: AnnotationLayer | null },
+  cropRectRef?: { current: CropRect | null },
 ): Promise<{ stream: MediaStream; stop: () => void }> {
   const { w, h } = DIMENSIONS[quality]
   const fps = qualityFrameRate(quality)
@@ -298,7 +325,7 @@ async function startVideoCompositor(
   const render = () => {
     ctx.fillStyle = "#000"
     ctx.fillRect(0, 0, w, h)
-    drawCover(ctx, video, 0, 0, w, h)
+    drawCover(ctx, video, 0, 0, w, h, cropRectRef?.current)
     paintAnnotations(ctx, w, h, layerRef)
   }
   const { stream, stopLoop } = startCompositorOutput(canvas, fps, render)
@@ -378,6 +405,7 @@ async function startCompositor(
   cameraBlur = false,
   pipLayoutRef?: { current: PipRect },
   layerRef?: { current: AnnotationLayer | null },
+  cropRectRef?: { current: CropRect | null },
 ): Promise<{ stream: MediaStream; stop: () => void }> {
   const { w, h } = DIMENSIONS[quality]
   const fps = qualityFrameRate(quality)
@@ -400,7 +428,7 @@ async function startCompositor(
   const render = () => {
     ctx.fillStyle = "#000"
     ctx.fillRect(0, 0, w, h)
-    drawCover(ctx, screenVideo, 0, 0, w, h)
+    drawCover(ctx, screenVideo, 0, 0, w, h, cropRectRef?.current)
 
     const layout = pipLayoutRef?.current ?? fallback
     const pipW = Math.round(layout.w * w)
@@ -461,6 +489,7 @@ export async function startCapture(config: CaptureConfig): Promise<CaptureHandle
   const pipPosition = config.pipPosition ?? "bottom-right"
   const cameraBlur = config.cameraBlur ?? false
   const layerRef = config.annotationLayerRef
+  const cropRectRef = config.cropRectRef
   const cleanups: Array<() => void> = []
 
   async function attachMic(): Promise<MediaStreamTrack[]> {
@@ -519,7 +548,7 @@ export async function startCapture(config: CaptureConfig): Promise<CaptureHandle
   const micTracks = await attachMic()
 
   if (source === "screen") {
-    const needsCompositor = !!layerRef
+    const needsCompositor = !!layerRef || !!cropRectRef
     if (!needsCompositor) {
       const recordStream = new MediaStream([
         ...screen.getVideoTracks(),
@@ -533,7 +562,7 @@ export async function startCapture(config: CaptureConfig): Promise<CaptureHandle
       }
     }
 
-    const compositor = await startVideoCompositor(screen, quality, layerRef)
+    const compositor = await startVideoCompositor(screen, quality, layerRef, cropRectRef)
     cleanups.push(compositor.stop)
     const recordStream = new MediaStream([
       ...compositor.stream.getVideoTracks(),
@@ -553,7 +582,7 @@ export async function startCapture(config: CaptureConfig): Promise<CaptureHandle
   if (ownsCamera) cleanups.push(() => camera.getTracks().forEach((t) => t.stop()))
 
   const compositor = await startCompositor(
-    screen, camera, quality, pipSize, pipPosition, cameraBlur, config.pipLayoutRef, layerRef,
+    screen, camera, quality, pipSize, pipPosition, cameraBlur, config.pipLayoutRef, layerRef, cropRectRef,
   )
   cleanups.push(compositor.stop)
 

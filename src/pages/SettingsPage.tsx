@@ -24,6 +24,7 @@ const TOOLS: { id: AnnotationTool; label: string }[] = [
   { id: "arrow", label: sk.settings.tools.arrow },
   { id: "rect", label: sk.settings.tools.rect },
   { id: "circle", label: sk.settings.tools.circle },
+  { id: "eraser", label: sk.settings.tools.eraser },
 ]
 
 export function SettingsPage({ active = true }: { active?: boolean }) {

@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef } from "react"
-import { Pen, Highlighter, Eraser, Undo2, Trash2, X } from "lucide-react"
+import {
+  Pen, Highlighter, Eraser, Undo2, Trash2, X,
+  Minus, ArrowUpRight, Square, Circle,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   AnnotationLayer,
@@ -10,11 +13,16 @@ import {
 } from "@/lib/annotation"
 import { ANNOTATION_COLORS } from "@/hooks/useSettings"
 import type { AnnotationTool } from "@/hooks/useSettings"
+import { sk } from "@/lib/i18n/sk"
 
 const TOOLS: { id: AnnotationTool; icon: React.FC<{ className?: string }>; label: string }[] = [
-  { id: "pen", icon: Pen, label: "Pen" },
-  { id: "highlighter", icon: Highlighter, label: "Highlight" },
-  { id: "eraser", icon: Eraser, label: "Eraser" },
+  { id: "pen", icon: Pen, label: sk.settings.tools.pen },
+  { id: "highlighter", icon: Highlighter, label: sk.settings.tools.highlighter },
+  { id: "line", icon: Minus, label: sk.settings.tools.line },
+  { id: "arrow", icon: ArrowUpRight, label: sk.settings.tools.arrow },
+  { id: "rect", icon: Square, label: sk.settings.tools.rect },
+  { id: "circle", icon: Circle, label: sk.settings.tools.circle },
+  { id: "eraser", icon: Eraser, label: sk.settings.tools.eraser },
 ]
 
 interface LiveDrawOverlayProps {
@@ -128,7 +136,7 @@ export function LiveDrawOverlay({
         onPointerLeave={onPointerUp}
       />
 
-      <div className="pointer-events-auto absolute bottom-2 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-border/60 bg-black/75 px-2 py-1.5 shadow-lg backdrop-blur-sm">
+      <div className="pointer-events-auto absolute bottom-2 left-1/2 z-30 flex max-w-[95%] -translate-x-1/2 items-center gap-1 overflow-x-auto rounded-xl border border-border/60 bg-black/75 px-2 py-1.5 shadow-lg backdrop-blur-sm">
         {TOOLS.map((t) => (
           <button
             key={t.id}
@@ -136,14 +144,14 @@ export function LiveDrawOverlay({
             title={t.label}
             onClick={() => onToolChange(t.id)}
             className={cn(
-              "flex size-8 items-center justify-center rounded-lg transition-colors",
+              "flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors",
               drawState.tool === t.id ? "bg-white/20 text-white" : "text-white/60 hover:bg-white/10 hover:text-white",
             )}
           >
             <t.icon className="size-3.5" />
           </button>
         ))}
-        <div className="mx-0.5 h-5 w-px bg-white/20" />
+        <div className="mx-0.5 h-5 w-px shrink-0 bg-white/20" />
         {ANNOTATION_COLORS.slice(0, 6).map((c) => (
           <button
             key={c.id}
@@ -151,34 +159,34 @@ export function LiveDrawOverlay({
             title={c.label}
             onClick={() => onColorChange(c.hex)}
             className={cn(
-              "size-5 rounded-full border-2 transition-transform hover:scale-110",
+              "size-5 shrink-0 rounded-full border-2 transition-transform hover:scale-110",
               drawState.color === c.hex ? "scale-110 border-white" : "border-transparent",
             )}
             style={{ background: c.hex }}
           />
         ))}
-        <div className="mx-0.5 h-5 w-px bg-white/20" />
+        <div className="mx-0.5 h-5 w-px shrink-0 bg-white/20" />
         <button
           type="button"
-          title="Undo"
+          title={sk.toast.dismiss}
           onClick={() => { layer.undo(); scheduleRepaint() }}
-          className="flex size-8 items-center justify-center rounded-lg text-white/60 hover:bg-white/10 hover:text-white"
+          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-white/60 hover:bg-white/10 hover:text-white"
         >
           <Undo2 className="size-3.5" />
         </button>
         <button
           type="button"
-          title="Clear all"
+          title={sk.record.done}
           onClick={() => { layer.clear(); scheduleRepaint() }}
-          className="flex size-8 items-center justify-center rounded-lg text-white/60 tone-hover-error"
+          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-white/60 tone-hover-error"
         >
           <Trash2 className="size-3.5" />
         </button>
         <button
           type="button"
-          title="Done"
+          title={sk.record.done}
           onClick={onClose}
-          className="flex size-8 items-center justify-center rounded-lg text-white/60 hover:bg-white/10 hover:text-white"
+          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-white/60 hover:bg-white/10 hover:text-white"
         >
           <X className="size-3.5" />
         </button>

@@ -1176,6 +1176,31 @@
   color: color-mix(in srgb, var(--toast-title, var(--foreground)) 62%, var(--muted-foreground));
 }
 
+.bloom-toast__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+}
+
+.bloom-toast__action {
+  border: 1px solid color-mix(in srgb, var(--toast-accent) 35%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--toast-accent) 12%, transparent);
+  color: var(--toast-title, var(--foreground));
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  padding: 0.28rem 0.55rem;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.bloom-toast__action:hover {
+  background: color-mix(in srgb, var(--toast-accent) 22%, transparent);
+  border-color: color-mix(in srgb, var(--toast-accent) 55%, var(--border));
+}
+
 .bloom-toast__close {
   flex-shrink: 0;
   display: grid;

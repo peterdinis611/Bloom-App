@@ -73,6 +73,7 @@ const READY_STATE_KEYS = [
 const STATUS_LABELS: Record<RecordingStatus, string> = {
   idle: "Nečinný",
   preparing: "Pripravuje sa",
+  region: "Výber oblasti",
   countdown: "Odpočítavanie",
   recording: "Nahráva sa",
   paused: "Pozastavené",
@@ -100,7 +101,13 @@ export function localizeReadyState(state: string): string {
 
 export function expectsPreviewStream(source: RecordingSource, status: RecordingStatus): boolean {
   if (status === "idle") return source === "camera" || source === "both"
-  return status === "preparing" || status === "countdown" || status === "recording" || status === "paused"
+  return (
+    status === "preparing" ||
+    status === "region" ||
+    status === "countdown" ||
+    status === "recording" ||
+    status === "paused"
+  )
 }
 
 export function buildPreviewFault(

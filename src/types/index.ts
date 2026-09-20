@@ -2,7 +2,7 @@ import type { PipPosition, PipSize } from "@/lib/capture"
 import type { RecordingQuality } from "@/lib/videoOptions"
 
 // ── App state ──────────────────────────────────────────────────────────────
-export type RecordingStatus = "idle" | "preparing" | "countdown" | "recording" | "paused" | "processing" | "done"
+export type RecordingStatus = "idle" | "preparing" | "region" | "countdown" | "recording" | "paused" | "processing" | "done"
 
 export type RecordingSource = "screen" | "camera" | "both"
 

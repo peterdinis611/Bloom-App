@@ -26,6 +26,7 @@ function AppShell() {
   const [onboardingReady, setOnboardingReady] = useState(false)
   const [onboardingDir, setOnboardingDir] = useState("")
   const [openRecordingId, setOpenRecordingId] = useState<string | null>(null)
+  const [editRecordingId, setEditRecordingId] = useState<string | null>(null)
 
   useEffect(() => {
     isOnboardingDone()
@@ -60,6 +61,11 @@ function AppShell() {
     setOpenRecordingId(id)
   }
 
+  const handleEditRecording = (id: string) => {
+    setView("library")
+    setEditRecordingId(id)
+  }
+
   return (
     <>
       <div className="bloom-shell flex h-screen w-screen flex-col overflow-hidden bg-background">
@@ -77,6 +83,7 @@ function AppShell() {
                 active={view === "record"}
                 onRecordingChange={setRecording}
                 onOpenRecording={handleOpenRecording}
+                onEditRecording={handleEditRecording}
               />
             </div>
             {view === "library" && (
@@ -85,6 +92,8 @@ function AppShell() {
                 onStartRecording={() => setView("record")}
                 openRecordingId={openRecordingId}
                 onOpenRecordingHandled={() => setOpenRecordingId(null)}
+                editRecordingId={editRecordingId}
+                onEditRecordingHandled={() => setEditRecordingId(null)}
               />
             )}
             {view === "settings" && <SettingsPage active />}
