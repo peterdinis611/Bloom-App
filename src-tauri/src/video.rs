@@ -126,7 +126,7 @@ pub struct OptimizeOptions {
     pub preset: String,
     /// "480p" | "720p" | "1080p" | "original"
     pub resolution: String,
-    /// "mp4" | "mov" | "mkv" | "avi" | "webm" | "gif"
+    /// "mp4" | "mov" | "m4v" | "mkv" | "avi" | "mpeg" | "ts" | "flv" | "3gp" | "ogv" | "webm" | "gif"
     pub format: String,
     pub trim_start: Option<f64>,
     pub trim_end: Option<f64>,
@@ -954,13 +954,24 @@ fn ext_for_format(format: &str) -> &'static str {
         "mov" => "mov",
         "mkv" => "mkv",
         "avi" => "avi",
+        "m4v" => "m4v",
+        "mpeg" | "mpg" => "mpg",
+        "ts" => "ts",
+        "flv" => "flv",
+        "3gp" => "3gp",
+        "ogv" => "ogv",
         _ => "mp4",
     }
 }
 
-/// MP4 / MOV share H.264+AAC and can use +faststart / stream-copy.
+/// MP4 / MOV / M4V share H.264+AAC and can use +faststart / stream-copy.
 fn is_mp4_family(format: &str) -> bool {
-    matches!(format, "mp4" | "mov")
+    matches!(format, "mp4" | "mov" | "m4v")
+}
+
+/// Containers that use the shared H.264/HEVC + AAC encode path.
+fn uses_h264_aac_path(format: &str) -> bool {
+    matches!(format, "mp4" | "mov" | "m4v" | "mkv" | "ts" | "flv")
 }
 
 fn effective_speed(speed: f64) -> f64 {
@@ -1159,6 +1170,7 @@ fn append_mp4_video_codec(
     hw_hevc: bool,
     nvenc: bool,
     faststart: bool,
+    use_hevc: bool,
 ) {
     let push_faststart = |out: &mut Vec<String>| {
         if faststart {
@@ -1166,7 +1178,7 @@ fn append_mp4_video_codec(
         }
     };
 
-    if opts.use_hevc {
+    if use_hevc {
         if hw_hevc {
             a.extend([
                 "-c:v", "hevc_videotoolbox",
@@ -1553,16 +1565,88 @@ fn build_args(
                 a.push("-an".into());
             }
         }
-        _ => {
-            // mp4 | mov | mkv — H.264/HEVC (+ AAC); faststart only for mp4/mov
+        "mpeg" | "mpg" => {
+            let v_bitrate = match opts.preset.as_str() {
+                "small" => "2500k",
+                "high" => "8000k",
+                _ => "5000k",
+            };
+            a.extend([
+                "-c:v", "mpeg2video",
+                "-b:v", v_bitrate,
+                "-maxrate", v_bitrate,
+                "-bufsize", "4M",
+                "-pix_fmt", "yuv420p",
+            ]
+            .map(String::from));
+            if use_audio {
+                a.extend(["-c:a", "mp2", "-b:a", "192k"].map(String::from));
+            } else {
+                a.push("-an".into());
+            }
+        }
+        "ogv" => {
+            let qv = match opts.preset.as_str() {
+                "small" => "5",
+                "high" => "8",
+                _ => "7",
+            };
+            a.extend([
+                "-c:v", "libtheora",
+                "-q:v", qv,
+                "-pix_fmt", "yuv420p",
+            ]
+            .map(String::from));
+            if use_audio {
+                a.extend(["-c:a", "libvorbis", "-q:a", "5"].map(String::from));
+            } else {
+                a.push("-an".into());
+            }
+        }
+        "3gp" => {
+            a.extend([
+                "-c:v", "libx264",
+                "-preset", pv.x264_preset,
+                "-crf", pv.x264_crf,
+                "-profile:v", "baseline",
+                "-level", "3.0",
+                "-pix_fmt", "yuv420p",
+                "-f", "3gp",
+            ]
+            .map(String::from));
+            a.push("-threads".into());
+            a.push("0".into());
+            if use_audio {
+                a.extend(["-c:a", "aac", "-b:a", "96k", "-ac", "1", "-ar", "22050"].map(String::from));
+            } else {
+                a.push("-an".into());
+            }
+        }
+        _ if uses_h264_aac_path(format) => {
+            // mp4 | mov | m4v | mkv | ts | flv
             let faststart = is_mp4_family(format);
-            append_mp4_video_codec(&mut a, opts, &pv, hw_h264, hw_hevc, nvenc, faststart);
+            let allow_hevc = matches!(format, "mp4" | "mov" | "m4v" | "mkv") && opts.use_hevc;
+            append_mp4_video_codec(&mut a, opts, &pv, hw_h264, hw_hevc, nvenc, faststart, allow_hevc);
+            if format == "ts" {
+                a.extend(["-f", "mpegts"].map(String::from));
+            } else if format == "flv" {
+                a.extend(["-f", "flv"].map(String::from));
+            }
             if use_audio {
                 if copy_audio && is_mp4_family(format) {
                     a.extend(["-c:a", "copy"].map(String::from));
                 } else {
                     a.extend(["-c:a", "aac", "-b:a", pv.audio_bitrate].map(String::from));
                 }
+            } else {
+                a.push("-an".into());
+            }
+        }
+        _ => {
+            // Unknown → treat as MP4
+            append_mp4_video_codec(&mut a, opts, &pv, hw_h264, hw_hevc, nvenc, true, opts.use_hevc);
+            if use_audio {
+                a.extend(["-c:a", "aac", "-b:a", pv.audio_bitrate].map(String::from));
             } else {
                 a.push("-an".into());
             }
@@ -1793,6 +1877,11 @@ pub fn compute_export_estimate(info: &VideoInfo, opts: &OptimizeOptions) -> Expo
             "webm" => size * 0.92,
             "avi" => size * 1.05,
             "mkv" => size * 0.98,
+            "mpeg" | "mpg" => size * 1.35,
+            "ogv" => size * 1.15,
+            "3gp" => size * 0.55,
+            "ts" | "flv" => size * 1.02,
+            "m4v" => size,
             _ => size,
         };
 

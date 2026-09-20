@@ -83,8 +83,14 @@ const RESOLUTIONS = [
 const FORMATS = [
   { value: "mp4" as const, label: "MP4", hint: "Univerzálny" },
   { value: "mov" as const, label: "MOV", hint: "QuickTime" },
+  { value: "m4v" as const, label: "M4V", hint: "Apple" },
   { value: "mkv" as const, label: "MKV", hint: "Matroska" },
   { value: "avi" as const, label: "AVI", hint: "Klasický" },
+  { value: "mpeg" as const, label: "MPEG", hint: "MPEG-2" },
+  { value: "ts" as const, label: "TS", hint: "Broadcast" },
+  { value: "flv" as const, label: "FLV", hint: "Flash" },
+  { value: "3gp" as const, label: "3GP", hint: "Mobil" },
+  { value: "ogv" as const, label: "OGV", hint: "Ogg" },
   { value: "webm" as const, label: "WebM", hint: "VP9" },
   { value: "gif" as const, label: "GIF", hint: "Animácia" },
 ]
@@ -297,7 +303,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
     if (step !== "export") return
     if (replaceOriginal && format !== "mp4") setFormat("mp4")
     if (multiClip && saveMode === "replace") setSaveMode("copy")
-    if ((format === "webm" || format === "gif" || format === "avi") && useHevc) {
+    if ((format === "webm" || format === "gif" || format === "avi" || format === "mpeg" || format === "ts" || format === "flv" || format === "3gp" || format === "ogv") && useHevc) {
       setUseHevc(false)
     }
   }, [step, replaceOriginal, format, multiClip, saveMode, useHevc])

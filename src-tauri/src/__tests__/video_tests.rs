@@ -67,14 +67,23 @@ fn resolution_and_format_helpers() {
     assert_eq!(ext_for_format("webm"), "webm");
     assert_eq!(ext_for_format("gif"), "gif");
     assert_eq!(ext_for_format("mov"), "mov");
+    assert_eq!(ext_for_format("m4v"), "m4v");
     assert_eq!(ext_for_format("mkv"), "mkv");
     assert_eq!(ext_for_format("avi"), "avi");
+    assert_eq!(ext_for_format("mpeg"), "mpg");
+    assert_eq!(ext_for_format("mpg"), "mpg");
+    assert_eq!(ext_for_format("ts"), "ts");
+    assert_eq!(ext_for_format("flv"), "flv");
+    assert_eq!(ext_for_format("3gp"), "3gp");
+    assert_eq!(ext_for_format("ogv"), "ogv");
     assert_eq!(ext_for_format("whatever"), "mp4");
     assert!(is_mp4_family("mp4"));
     assert!(is_mp4_family("mov"));
+    assert!(is_mp4_family("m4v"));
     assert!(!is_mp4_family("mkv"));
     assert!(!is_mp4_family("avi"));
     assert!(!is_mp4_family("webm"));
+    assert!(!is_mp4_family("mpeg"));
 }
 
 #[test]

@@ -62,11 +62,18 @@ pub(crate) fn open_session(
         id: Uuid::new_v4().to_string(),
         title: filename
             .trim_end_matches(".mp4")
+            .trim_end_matches(".m4v")
             .trim_end_matches(".webm")
             .trim_end_matches(".mov")
             .trim_end_matches(".mkv")
             .trim_end_matches(".avi")
-            .trim_end_matches(".m4v")
+            .trim_end_matches(".mpeg")
+            .trim_end_matches(".mpg")
+            .trim_end_matches(".ts")
+            .trim_end_matches(".flv")
+            .trim_end_matches(".3gp")
+            .trim_end_matches(".ogv")
+            .trim_end_matches(".gif")
             .to_owned(),
         filename: filename.clone(),
         created_at: now_iso(),

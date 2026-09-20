@@ -689,7 +689,13 @@ export function LibraryPage({
     try {
       const selected = await open({
         multiple: true,
-        filters: [{ name: "Video", extensions: ["mp4", "webm", "mov", "mkv", "m4v", "avi", "mpeg", "mpg", "wmv", "flv", "ts", "mts", "3gp", "ogv"] }],
+        filters: [{
+          name: "Video",
+          extensions: [
+            "mp4", "m4v", "mov", "webm", "mkv", "avi", "mpeg", "mpg", "ts", "mts", "m2ts",
+            "flv", "f4v", "wmv", "asf", "3gp", "ogv", "vob", "mxf",
+          ],
+        }],
         title: sk.library.importBtn,
       })
       if (!selected) return
