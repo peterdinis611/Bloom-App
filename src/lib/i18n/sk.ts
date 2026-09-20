@@ -210,6 +210,8 @@ export const sk = {
     subtitle: "Vzhľad, nahrávanie, export a správanie aplikácie",
     appearance: "Vzhľad",
     general: "Všeobecné",
+    language: "Jazyk",
+    languageHint: "Jazyk rozhrania Bloom",
     recording: "Nahrávanie",
     exportDefaults: "Predvolby exportu",
     autoStop: "Automatické ukončenie",

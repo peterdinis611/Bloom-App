@@ -160,6 +160,43 @@ fn build_args_avi_uses_mp3_audio() {
 }
 
 #[test]
+fn build_args_mpeg_uses_mpeg2() {
+    let o = opts("medium", "720p", "mpeg");
+    let info = sample_info();
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mpg", &info, false, false, false);
+    assert!(args.windows(2).any(|w| w == ["-c:v", "mpeg2video"]));
+    assert!(args.windows(2).any(|w| w == ["-c:a", "mp2"]));
+}
+
+#[test]
+fn build_args_ts_uses_mpegts() {
+    let o = opts("medium", "720p", "ts");
+    let info = sample_info();
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.ts", &info, false, false, false);
+    assert!(args.windows(2).any(|w| w == ["-c:v", "libx264"]));
+    assert!(args.windows(2).any(|w| w == ["-f", "mpegts"]));
+}
+
+#[test]
+fn build_args_ogv_uses_theora() {
+    let o = opts("medium", "720p", "ogv");
+    let info = sample_info();
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.ogv", &info, false, false, false);
+    assert!(args.windows(2).any(|w| w == ["-c:v", "libtheora"]));
+    assert!(args.windows(2).any(|w| w == ["-c:a", "libvorbis"]));
+}
+
+#[test]
+fn build_args_3gp_baseline() {
+    let o = opts("small", "480p", "3gp");
+    let info = sample_info();
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.3gp", &info, false, false, false);
+    assert!(args.windows(2).any(|w| w == ["-c:v", "libx264"]));
+    assert!(args.windows(2).any(|w| w == ["-f", "3gp"]));
+    assert!(args.windows(2).any(|w| w == ["-profile:v", "baseline"]));
+}
+
+#[test]
 fn progress_seconds_parsing() {
     assert_eq!(parse_progress_seconds("out_time_us=1500000"), Some(1.5));
     assert_eq!(parse_progress_seconds("out_time_ms=2000000"), Some(2.0));

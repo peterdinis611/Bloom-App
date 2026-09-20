@@ -152,7 +152,7 @@ export const DOC_SECTIONS: DocSection[] = [
         items: [
           "Export sa pridá do fronty v sidebar-e — môžeš pokračovať v práci",
           "H.264 MP4 orez môže použiť rýchly stream copy (predvoľba v Nastaveniach)",
-          "Presety: small / medium / high; formáty MP4, MOV, MKV, AVI, WebM, GIF",
+          "Presety: small / medium / high; formáty MP4, MOV, M4V, MKV, AVI, MPEG, TS, FLV, 3GP, OGV, WebM, GIF",
           "Až 3 segmenty — export zvlášť alebo spojiť do jedného súboru",
         ],
       },

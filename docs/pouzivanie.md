@@ -96,14 +96,14 @@ Spustíte cez **Upraviť** v knižnici. Postup v troch krokoch:
 
 ### 3. Export
 
-- Preset (small / medium / high), rozlíšenie, formát (**MP4 / MOV / MKV / AVI / WebM / GIF**), rýchlosť
+- Preset (small / medium / high), rozlíšenie, formát (**MP4 / MOV / M4V / MKV / AVI / MPEG / TS / FLV / 3GP / OGV / WebM / GIF**), rýchlosť
 - Predvolby berie z **Nastavenia → Predvolby exportu**
 - **Uložiť kópiu** vs **Nahradiť originál** (nahradenie len MP4)
 - Titulky: cesta k `.srt` alebo manuálne textové karty (max. 2)
 - Voliteľne: redukcia šumu, normalizácia zvuku, HEVC, bez zvuku
-- Odhad veľkosti a dĺžky; pri orezaní H.264 MP4/MOV môže byť **rýchly export (stream copy)**
+- Odhad veľkosti a dĺžky; pri orezaní H.264 MP4/MOV/M4V môže byť **rýchly export (stream copy)**
 
-Import do knižnice podporuje aj ďalšie kontajnery: `m4v`, `mpeg`, `mpg`, `wmv`, `flv`, `ts`, `mts`, `3gp`, `ogv`.
+Import do knižnice podporuje aj ďalšie kontajnery: `wmv`, `asf`, `f4v`, `mts`, `m2ts`, `vob`, `mxf`, `divx` a pod.
 
 Po spustení sa úloha pridá do **Fronty exportov** v sidebar-e — modal sa zavrie a môžete pokračovať v práci.
 
