@@ -5,8 +5,8 @@ type Widen<T> = T extends string
   ? string
   : T extends (...args: infer A) => infer R
     ? (...args: A) => Widen<R>
-    : T extends readonly (infer U)[]
-      ? Widen<U>[]
+    : T extends ReadonlyArray<infer U>
+      ? Array<Widen<U>>
       : T extends object
         ? { -readonly [K in keyof T]: Widen<T[K]> }
         : T

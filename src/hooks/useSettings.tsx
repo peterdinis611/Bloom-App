@@ -12,6 +12,8 @@ import { PACER } from "@/lib/pacer"
 import type { PipPosition, PipSize } from "@/lib/capture"
 import { BUILTIN_PRESETS, type RecordingPreset } from "@/lib/presets"
 import type { RecordingQuality } from "@/lib/videoOptions"
+import { isLocaleId } from "@/lib/i18n/catalog"
+import type { LocaleId } from "@/lib/i18n/types"
 
 export type AnnotationTool = "pen" | "highlighter" | "rect" | "circle" | "line" | "arrow" | "eraser"
 
@@ -31,6 +33,8 @@ export interface GeneralSettings {
   showNewsBadge: boolean
   /** Confirm before deleting a single recording. */
   confirmDelete: boolean
+  /** UI language (synced to Rust tray / backend strings). */
+  locale: LocaleId
 }
 
 export interface ExportDefaults {
@@ -122,6 +126,7 @@ export const DEFAULTS: AppSettings = {
     openLibraryAfterRecord: false,
     showNewsBadge: true,
     confirmDelete: true,
+    locale: "sk",
   },
   exportDefaults: {
     preset: "medium",
@@ -169,7 +174,11 @@ function parseSettings(raw: string | null): AppSettings {
         stop: normalizeKey(parsed.shortcuts?.stop, DEFAULTS.shortcuts.stop),
       },
       integrations: { ...DEFAULTS.integrations, ...parsed.integrations },
-      general: { ...DEFAULTS.general, ...parsed.general },
+      general: {
+        ...DEFAULTS.general,
+        ...parsed.general,
+        locale: isLocaleId(parsed.general?.locale) ? parsed.general.locale : DEFAULTS.general.locale,
+      },
       exportDefaults: { ...DEFAULTS.exportDefaults, ...parsed.exportDefaults },
     }
   } catch {

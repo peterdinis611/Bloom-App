@@ -6,6 +6,7 @@ mod config;
 mod clipboard;
 mod cursor;
 mod finalize;
+mod i18n;
 mod library;
 mod session;
 mod share;
@@ -14,6 +15,8 @@ mod tray;
 mod types;
 mod util;
 mod video;
+
+use tauri::Manager;
 
 pub(crate) use types::RecordingMeta;
 pub(crate) use util::{bloom_dir, find_recording, meta_path_for, now_iso};
@@ -32,6 +35,8 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            let locale = i18n::resolve_startup_locale(app.handle());
+            app.manage(i18n::LocaleState::new(locale));
             tray::build_tray(app.handle())?;
             tray::register_shortcuts(app.handle())?;
             Ok(())
@@ -42,6 +47,9 @@ pub fn run() {
             system::set_library_directory,
             system::get_disk_space,
             system::list_monitors,
+            i18n::list_locales,
+            i18n::get_locale,
+            i18n::set_locale,
             session::open_session,
             session::write_chunk,
             session::close_session,

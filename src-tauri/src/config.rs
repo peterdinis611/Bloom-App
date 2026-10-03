@@ -10,6 +10,9 @@ use tauri::Manager;
 pub(crate) struct AppConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub library_dir: Option<String>,
+    /// UI + tray locale: sk | en | cs | de | pl | hu
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locale: Option<String>,
 }
 
 fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {

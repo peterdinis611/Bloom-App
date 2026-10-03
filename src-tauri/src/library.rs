@@ -4,6 +4,8 @@ use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use tauri::Manager;
+
 use crate::share;
 use crate::types::{LibraryStats, RecordingEntry, RecordingMeta, ShareResult, ValidationResult};
 use crate::util::{bloom_dir, find_recording, load_all_recordings, meta_path_for, now_iso};
@@ -172,6 +174,8 @@ pub(crate) fn validate_recording(
     id: String,
 ) -> Result<ValidationResult, String> {
     let dir = bloom_dir(&app)?;
+    let locale = app.state::<crate::i18n::LocaleState>();
+    let s = crate::i18n::current_strings(&*locale);
     let Some(entry) = find_recording(&dir, &id) else {
         return Ok(ValidationResult {
             id,
@@ -179,7 +183,7 @@ pub(crate) fn validate_recording(
             size_bytes: 0,
             meta_exists: false,
             is_valid: false,
-            error: Some("Recording not found in library".into()),
+            error: Some(s.err_recording_not_found.into()),
         });
     };
 
@@ -195,11 +199,11 @@ pub(crate) fn validate_recording(
     let meta_exists = meta_path.exists();
 
     let (is_valid, error) = if !exists {
-        (false, Some("Video file is missing from disk".into()))
+        (false, Some(s.err_video_missing.into()))
     } else if size_bytes == 0 {
-        (false, Some("Video file is empty (0 bytes)".into()))
+        (false, Some(s.err_video_empty.into()))
     } else if !meta_exists {
-        (false, Some("Metadata sidecar (.bloom.json) is missing".into()))
+        (false, Some(s.err_sidecar_missing.into()))
     } else {
         (true, None)
     };
@@ -286,17 +290,19 @@ pub(crate) fn import_recording(
     source_path: String,
 ) -> Result<RecordingEntry, String> {
     let source = PathBuf::from(&source_path);
+    let locale = app.state::<crate::i18n::LocaleState>();
+    let s = crate::i18n::current_strings(&*locale);
     if !source.is_absolute() {
-        return Err("Cesta musí byť absolútna".to_string());
+        return Err(s.err_path_absolute.to_string());
     }
     if !source.exists() {
-        return Err("Súbor neexistuje".to_string());
+        return Err(s.err_file_missing.to_string());
     }
     if !source.is_file() {
-        return Err("Vybraná položka nie je súbor".to_string());
+        return Err(s.err_not_a_file.to_string());
     }
     if !is_video_file(&source) {
-        return Err("Nepodporovaný formát. Podporované: MP4, WebM, MOV, MKV".to_string());
+        return Err(s.err_unsupported_format.to_string());
     }
 
     let dir = bloom_dir(&app)?;
@@ -319,7 +325,7 @@ pub(crate) fn import_recording(
     );
     let dest = dir.join(&filename);
 
-    fs::copy(&source, &dest).map_err(|e| format!("Kopírovanie zlyhalo: {e}"))?;
+    fs::copy(&source, &dest).map_err(|e| format!("{}: {e}", s.err_copy_failed))?;
 
     let finalized = crate::finalize::finalize_recording(&dest, 0.0);
     let file_size_bytes = fs::metadata(&dest)

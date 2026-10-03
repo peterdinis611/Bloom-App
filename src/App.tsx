@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ToastProvider } from "@/hooks/useToast"
 import { SettingsProvider, useSettings } from "@/hooks/useSettings"
+import { I18nProvider } from "@/lib/i18n/I18nProvider"
 import { TanStackRoot } from "@/components/TanStackRoot"
 import { ExportQueueProvider } from "@/hooks/useExportQueue"
 import { TitleBar } from "@/components/layout/TitleBar"
@@ -155,11 +156,13 @@ function App() {
     <TanStackRoot>
       <ToastProvider>
         <SettingsProvider>
-          <ExportQueueProvider>
-            <TooltipProvider delayDuration={300}>
-              <AppShell />
-            </TooltipProvider>
-          </ExportQueueProvider>
+          <I18nProvider>
+            <ExportQueueProvider>
+              <TooltipProvider delayDuration={300}>
+                <AppShell />
+              </TooltipProvider>
+            </ExportQueueProvider>
+          </I18nProvider>
         </SettingsProvider>
       </ToastProvider>
     </TanStackRoot>

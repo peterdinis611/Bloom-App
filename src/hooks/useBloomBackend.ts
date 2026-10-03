@@ -53,6 +53,27 @@ export async function listMonitors(): Promise<MonitorInfo[]> {
   return invoke<MonitorInfo[]>("list_monitors")
 }
 
+export interface LocaleInfo {
+  id: string
+  nativeLabel: string
+  englishLabel: string
+}
+
+/** Available UI / tray locales from the Rust i18n module. */
+export async function listLocales(): Promise<LocaleInfo[]> {
+  return invoke<LocaleInfo[]>("list_locales")
+}
+
+/** Current backend locale (tray + error strings). */
+export async function getLocale(): Promise<string> {
+  return invoke<string>("get_locale")
+}
+
+/** Persist locale, refresh tray menu, emit locale-changed. */
+export async function setLocale(locale: string): Promise<string> {
+  return invoke<string>("set_locale", { locale })
+}
+
 /**
  * Convert an absolute file path into a URL the webview can load
  * (e.g. as a <video src>) via the Tauri asset protocol.

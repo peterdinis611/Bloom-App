@@ -3,11 +3,12 @@
 use std::sync::Mutex;
 
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, State,
 };
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+
+use crate::i18n::{self, current_strings, LocaleState, TRAY_ID};
 
 #[derive(Clone)]
 pub struct ShortcutBindings {
@@ -149,16 +150,19 @@ fn apply_shortcuts(app: &AppHandle, bindings: &ShortcutBindings) -> Result<(), S
 pub fn set_global_shortcuts(
     app: AppHandle,
     state: State<'_, ShortcutStateStore>,
+    locale: State<'_, LocaleState>,
     arm: String,
     pause: String,
     stop: String,
 ) -> Result<(), String> {
-    let arm_code = code_from_key(&arm).ok_or_else(|| format!("Neplatný kláves: {arm}"))?;
-    let pause_code = code_from_key(&pause).ok_or_else(|| format!("Neplatný kláves: {pause}"))?;
-    let stop_code = code_from_key(&stop).ok_or_else(|| format!("Neplatný kláves: {stop}"))?;
+    let s = current_strings(&*locale);
+    let arm_code = code_from_key(&arm).ok_or_else(|| format!("{}: {arm}", s.err_invalid_key))?;
+    let pause_code =
+        code_from_key(&pause).ok_or_else(|| format!("{}: {pause}", s.err_invalid_key))?;
+    let stop_code = code_from_key(&stop).ok_or_else(|| format!("{}: {stop}", s.err_invalid_key))?;
 
     if arm_code == pause_code || arm_code == stop_code || pause_code == stop_code {
-        return Err("Každá skratka musí mať iný kláves.".into());
+        return Err(s.err_duplicate_shortcut.into());
     }
 
     let bindings = ShortcutBindings {
@@ -184,25 +188,16 @@ pub fn get_global_shortcuts(state: State<'_, ShortcutStateStore>) -> Result<(Str
 }
 
 pub fn build_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let show_i = MenuItem::with_id(app, "show", "Zobraziť Bloom", true, None::<&str>)?;
-    let start_i = MenuItem::with_id(app, "start", "Spustiť nahrávanie…", true, None::<&str>)?;
-    let last_i = MenuItem::with_id(app, "last", "Posledná nahrávka", true, None::<&str>)?;
-    let pause_i = MenuItem::with_id(app, "pause", "Pauza / pokračovať", true, None::<&str>)?;
-    let stop_i = MenuItem::with_id(app, "stop", "Ukončiť a uložiť", true, None::<&str>)?;
-    let sep = PredefinedMenuItem::separator(app)?;
-    let quit_i = MenuItem::with_id(app, "quit", "Ukončiť Bloom", true, None::<&str>)?;
-
-    let menu = Menu::with_items(
-        app,
-        &[&show_i, &start_i, &last_i, &pause_i, &stop_i, &sep, &quit_i],
-    )?;
+    let locale_state = app.state::<LocaleState>();
+    let s = current_strings(&*locale_state);
+    let menu = i18n::build_tray_menu(app, &s)?;
 
     let icon = app.default_window_icon().cloned();
 
-    TrayIconBuilder::new()
+    TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon.unwrap())
         .menu(&menu)
-        .tooltip("Bloom")
+        .tooltip(s.tray_tooltip)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "show" => {
                 if let Some(win) = app.get_webview_window("main") {

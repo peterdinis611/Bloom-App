@@ -1,7 +1,8 @@
-import { sk } from "@/lib/i18n/sk"
+import { getMessagesSync } from "@/lib/i18n/I18nProvider"
 
-/** Map backend / DOM error text to a Slovak user-facing message. */
+/** Map backend / DOM error text to a localized user-facing message. */
 export function localizeError(err: unknown): string {
+  const sk = getMessagesSync()
   const raw = err instanceof Error ? err.message : String(err ?? "")
   const text = raw.trim()
   if (!text) return sk.errors.unknown
@@ -19,12 +20,12 @@ export function localizeError(err: unknown): string {
     { test: /ffmpeg is already installed/i, message: sk.errors.ffmpegAlreadyInstalled },
     { test: /install finished but ffmpeg was not detected/i, message: sk.errors.ffmpegInstallNotDetected },
     { test: /install failed/i, message: sk.errors.ffmpegInstallFailed },
-    { test: /recording .+ not found/i, message: sk.errors.recordingNotFound },
+    { test: /recording .+ not found|nahrávka sa nenašla/i, message: sk.errors.recordingNotFound },
     { test: /no session/i, message: sk.errors.sessionMissing },
     { test: /write error|cannot write/i, message: sk.errors.writeFailed },
     { test: /cannot delete/i, message: sk.errors.deleteFailed },
     { test: /cannot create|cannot open/i, message: sk.errors.createFailed },
-    { test: /video file is missing|video file does not exist|input video does not exist/i, message: sk.errors.videoMissing },
+    { test: /video file is missing|video file does not exist|input video does not exist|video súbor chýba/i, message: sk.errors.videoMissing },
     { test: /temporary export file missing/i, message: sk.errors.exportTempMissing },
     { test: /could not generate thumbnail/i, message: sk.errors.thumbnailFailed },
     { test: /ffprobe could not read/i, message: sk.errors.probeFailed },

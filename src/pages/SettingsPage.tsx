@@ -4,7 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages } from "@/lib/i18n/I18nProvider"
 import { RECORDING_QUALITIES } from "@/lib/videoOptions"
 import { THEMES } from "@/lib/themes"
 import { ANNOTATION_COLORS, useSettings, type AnnotationTool } from "@/hooks/useSettings"
@@ -17,21 +17,14 @@ import { PresetEditor } from "@/components/settings/PresetEditor"
 import { ShortcutsPanel } from "@/components/settings/ShortcutsPanel"
 import { MacGroup, MacGroupHeader, MacPageHeader, MacRow, MacToggle, ChoiceGroup } from "@/components/mac/MacUIKit"
 import { localizeError } from "@/lib/i18n/localizeError"
+import { LOCALES } from "@/lib/i18n/catalog"
+import type { LocaleId } from "@/lib/i18n/types"
 import { checkForAppUpdate } from "@/lib/updater"
 import { PrivacyPolicyModal } from "@/components/legal/PrivacyPolicyModal"
 import { openPrivacySettings } from "@/lib/privacySettings"
 
-const TOOLS: { id: AnnotationTool; label: string }[] = [
-  { id: "pen", label: sk.settings.tools.pen },
-  { id: "highlighter", label: sk.settings.tools.highlighter },
-  { id: "line", label: sk.settings.tools.line },
-  { id: "arrow", label: sk.settings.tools.arrow },
-  { id: "rect", label: sk.settings.tools.rect },
-  { id: "circle", label: sk.settings.tools.circle },
-  { id: "eraser", label: sk.settings.tools.eraser },
-]
-
 export function SettingsPage({ active = true }: { active?: boolean }) {
+  const sk = useMessages()
   const {
     settings,
     setTheme,
@@ -55,6 +48,15 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
   const general = settings.general
   const exportDefaults = settings.exportDefaults
 
+  const TOOLS: { id: AnnotationTool; label: string }[] = [
+    { id: "pen", label: sk.settings.tools.pen },
+    { id: "highlighter", label: sk.settings.tools.highlighter },
+    { id: "line", label: sk.settings.tools.line },
+    { id: "arrow", label: sk.settings.tools.arrow },
+    { id: "rect", label: sk.settings.tools.rect },
+    { id: "circle", label: sk.settings.tools.circle },
+    { id: "eraser", label: sk.settings.tools.eraser },
+  ]
   const handleCheckUpdates = async () => {
     setUpdateBusy(true)
     try {
@@ -201,6 +203,19 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
 
         <MacGroupHeader>{sk.settings.general}</MacGroupHeader>
         <MacGroup>
+          <div className="flex flex-col gap-4 p-3">
+            <ChoiceGroup
+              label={sk.settings.language}
+              layout="wrap"
+              options={LOCALES.map((l) => ({
+                value: l.id,
+                label: l.nativeLabel,
+                hint: l.englishLabel,
+              }))}
+              value={general.locale}
+              onChange={(v) => updateGeneral({ locale: v as LocaleId })}
+            />
+          </div>
           <MacRow
             label={sk.settings.startMaximized}
             hint={sk.settings.startMaximizedHint}

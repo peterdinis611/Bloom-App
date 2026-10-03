@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, type ReactNode } from "react"
 import { useSettings } from "@/hooks/useSettings"
+import { setLocale as setBackendLocale } from "@/hooks/useBloomBackend"
 import { getMessages } from "./catalog"
 import type { Messages } from "./types"
 
@@ -23,6 +24,13 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   // Keep sync handle current during render (before effects) for same-tick callers.
   syncMessages = messages
+
+  // Sync tray + backend error strings with the UI locale.
+  useEffect(() => {
+    void setBackendLocale(settings.general.locale).catch(() => {
+      /* Vite-only / non-Tauri */
+    })
+  }, [settings.general.locale])
 
   return <I18nContext.Provider value={messages}>{children}</I18nContext.Provider>
 }
