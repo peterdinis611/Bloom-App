@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react"
 import { X, Sparkles } from "lucide-react"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages } from "@/lib/i18n/I18nProvider"
 import type { OptimizePreset, RecordingEntry } from "@/types"
 import { useExportQueue } from "@/hooks/useExportQueue"
+import { useSettings } from "@/hooks/useSettings"
 
 interface BatchOptimizeModalProps {
   entries: RecordingEntry[]
@@ -13,8 +14,11 @@ interface BatchOptimizeModalProps {
 
 /** Enqueues batch jobs and closes — progress lives in the sidebar queue. */
 export function BatchOptimizeModal({ entries, preset = "medium", onClose, onComplete }: BatchOptimizeModalProps) {
+  const sk = useMessages()
+  const { settings } = useSettings()
   const { enqueue } = useExportQueue()
   const startedRef = useRef(false)
+  const format = settings.exportDefaults.format === "gif" ? "mp4" : settings.exportDefaults.format
 
   useEffect(() => {
     if (startedRef.current) return
@@ -25,15 +29,15 @@ export function BatchOptimizeModal({ entries, preset = "medium", onClose, onComp
         options: {
           input_path: entry.path,
           preset,
-          resolution: "720p",
-          format: "mp4",
+          resolution: settings.exportDefaults.resolution,
+          format,
           add_to_library: true,
         },
       })),
     )
     onComplete()
     onClose()
-  }, [entries, preset, enqueue, onComplete, onClose])
+  }, [entries, preset, format, settings.exportDefaults.resolution, enqueue, onComplete, onClose])
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-5 fade-up">

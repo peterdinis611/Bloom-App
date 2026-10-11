@@ -12,8 +12,59 @@ import { PACER } from "@/lib/pacer"
 import type { PipPosition, PipSize } from "@/lib/capture"
 import { BUILTIN_PRESETS, type RecordingPreset } from "@/lib/presets"
 import type { RecordingQuality } from "@/lib/videoOptions"
+import { isLocaleId } from "@/lib/i18n/catalog"
+import type { LocaleId } from "@/lib/i18n/types"
+import type { OptimizeFormat } from "@/types"
+
+const EXPORT_FORMATS: OptimizeFormat[] = [
+  "mp4", "mov", "m4v", "mkv", "avi", "mpeg", "ts", "flv", "3gp", "ogv", "webm", "gif",
+]
+
+function isOptimizeFormat(v: unknown): v is OptimizeFormat {
+  return typeof v === "string" && (EXPORT_FORMATS as string[]).includes(v)
+}
 
 export type AnnotationTool = "pen" | "highlighter" | "rect" | "circle" | "line" | "arrow" | "eraser"
+
+export interface ShortcutBindings {
+  /** Letter A–Z for ⌘⇧ binding to arm recording. */
+  arm: string
+  pause: string
+  stop: string
+}
+
+export interface GeneralSettings {
+  /** Maximize main window when Bloom starts. */
+  startMaximized: boolean
+  /** After a recording finishes, jump to Library. */
+  openLibraryAfterRecord: boolean
+  /** Show unread badge on Novinky until opened. */
+  showNewsBadge: boolean
+  /** Confirm before deleting a single recording. */
+  confirmDelete: boolean
+  /** UI language (synced to Rust tray / backend strings). */
+  locale: LocaleId
+}
+
+export interface ExportDefaults {
+  preset: "small" | "medium" | "high"
+  resolution: "480p" | "720p" | "1080p" | "original"
+  /** Default container for editor / batch export. */
+  format: OptimizeFormat
+  /** Prefer original resolution so trim-only can stream-copy. */
+  preferStreamCopy: boolean
+  /** Default hardware-friendly encode (VideoToolbox / NVENC when available). */
+  preferHardwareEncode: boolean
+}
+
+export interface IntegrationSettings {
+  slackWebhookUrl: string
+  discordWebhookUrl: string
+  notifyOnExport: boolean
+  openAfterExport: boolean
+  copyPathAfterExport: boolean
+  preferNativeShare: boolean
+}
 
 export interface AppSettings {
   theme: ThemeId
@@ -39,9 +90,14 @@ export interface AppSettings {
     /** Auto-stop after N seconds of no mouse/keyboard activity (0 = disabled). */
     idleStopSecs: number
   }
+  shortcuts: ShortcutBindings
+  integrations: IntegrationSettings
+  general: GeneralSettings
+  exportDefaults: ExportDefaults
 }
 
-const STORAGE_KEY = "bloom-settings-v3"
+const STORAGE_KEY = "bloom-settings-v5"
+const LEGACY_KEYS = ["bloom-settings-v4", "bloom-settings-v3"] as const
 
 export const DEFAULTS: AppSettings = {
   theme: DEFAULT_THEME,
@@ -63,6 +119,54 @@ export const DEFAULTS: AppSettings = {
     maxDurationSecs: 0,
     idleStopSecs: 0,
   },
+  shortcuts: {
+    arm: "R",
+    pause: "P",
+    stop: "S",
+  },
+  integrations: {
+    slackWebhookUrl: "",
+    discordWebhookUrl: "",
+    notifyOnExport: false,
+    openAfterExport: false,
+    copyPathAfterExport: false,
+    preferNativeShare: true,
+  },
+  general: {
+    startMaximized: false,
+    openLibraryAfterRecord: false,
+    showNewsBadge: true,
+    confirmDelete: true,
+    locale: "sk",
+  },
+  exportDefaults: {
+    preset: "medium",
+    resolution: "original",
+    format: "mp4",
+    preferStreamCopy: true,
+    preferHardwareEncode: true,
+  },
+}
+
+async function loadSettings(): Promise<{ settings: AppSettings; isFresh: boolean }> {
+  let raw = await idbGet(STORAGE_KEY)
+  let fromLegacy = false
+  if (!raw) {
+    for (const key of LEGACY_KEYS) {
+      raw = await idbGet(key)
+      if (raw) {
+        fromLegacy = true
+        break
+      }
+    }
+  }
+  return { settings: parseSettings(raw), isFresh: !raw && !fromLegacy }
+}
+
+function normalizeKey(raw: unknown, fallback: string): string {
+  if (typeof raw !== "string") return fallback
+  const letter = raw.trim().toUpperCase()
+  return /^[A-Z]$/.test(letter) ? letter : fallback
 }
 
 function parseSettings(raw: string | null): AppSettings {
@@ -80,15 +184,28 @@ function parseSettings(raw: string | null): AppSettings {
         ...parsed.recording,
         presets: parsed.recording?.presets ?? DEFAULTS.recording.presets,
       },
+      shortcuts: {
+        arm: normalizeKey(parsed.shortcuts?.arm, DEFAULTS.shortcuts.arm),
+        pause: normalizeKey(parsed.shortcuts?.pause, DEFAULTS.shortcuts.pause),
+        stop: normalizeKey(parsed.shortcuts?.stop, DEFAULTS.shortcuts.stop),
+      },
+      integrations: { ...DEFAULTS.integrations, ...parsed.integrations },
+      general: {
+        ...DEFAULTS.general,
+        ...parsed.general,
+        locale: isLocaleId(parsed.general?.locale) ? parsed.general.locale : DEFAULTS.general.locale,
+      },
+      exportDefaults: {
+        ...DEFAULTS.exportDefaults,
+        ...parsed.exportDefaults,
+        format: isOptimizeFormat(parsed.exportDefaults?.format)
+          ? parsed.exportDefaults.format
+          : DEFAULTS.exportDefaults.format,
+      },
     }
   } catch {
     return DEFAULTS
   }
-}
-
-async function loadSettings(): Promise<AppSettings> {
-  const raw = await idbGet(STORAGE_KEY)
-  return parseSettings(raw)
 }
 
 export function applyTheme(theme: ThemeId) {
@@ -101,7 +218,8 @@ export function applyTheme(theme: ThemeId) {
 
 /** Load persisted settings (usable outside React – e.g. annotation overlay window). */
 export async function readStoredSettings(): Promise<AppSettings> {
-  return loadSettings()
+  const { settings } = await loadSettings()
+  return settings
 }
 
 interface SettingsCtx {
@@ -111,6 +229,10 @@ interface SettingsCtx {
   updateSettings: (patch: Partial<AppSettings>) => void
   updateAnnotation: (patch: Partial<AppSettings["annotation"]>) => void
   updateRecording: (patch: Partial<AppSettings["recording"]>) => void
+  updateShortcuts: (patch: Partial<ShortcutBindings>) => void
+  updateIntegrations: (patch: Partial<IntegrationSettings>) => void
+  updateGeneral: (patch: Partial<GeneralSettings>) => void
+  updateExportDefaults: (patch: Partial<ExportDefaults>) => void
   resetSettings: () => void
 }
 
@@ -122,11 +244,40 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false
-    loadSettings().then((loaded) => {
+    loadSettings().then(async ({ settings: loaded, isFresh }) => {
       if (cancelled) return
-      setSettings(loaded)
-      applyTheme(loaded.theme)
+      let next = loaded
+      if (isFresh) {
+        try {
+          const { getLocale } = await import("@/hooks/useBloomBackend")
+          const backend = await getLocale()
+          if (isLocaleId(backend)) {
+            next = { ...loaded, general: { ...loaded.general, locale: backend } }
+          }
+        } catch {
+          /* Vite-only / non-Tauri */
+        }
+      }
+      setSettings(next)
+      applyTheme(next.theme)
       setReady(true)
+      // Rust owns the registered global shortcuts — mirror them into the UI state.
+      void import("@/hooks/useBloomBackend")
+        .then(({ getGlobalShortcuts }) => getGlobalShortcuts())
+        .then(({ arm, pause, stop }) => {
+          if (cancelled) return
+          setSettings((s) => ({
+            ...s,
+            shortcuts: {
+              arm: normalizeKey(arm, s.shortcuts.arm),
+              pause: normalizeKey(pause, s.shortcuts.pause),
+              stop: normalizeKey(stop, s.shortcuts.stop),
+            },
+          }))
+        })
+        .catch(() => {
+          /* Vite-only / non-Tauri */
+        })
     })
     return () => { cancelled = true }
   }, [])
@@ -160,11 +311,39 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setSettings((s) => ({ ...s, recording: { ...s.recording, ...patch } }))
   }, [])
 
+  const updateShortcuts = useCallback((patch: Partial<ShortcutBindings>) => {
+    setSettings((s) => ({ ...s, shortcuts: { ...s.shortcuts, ...patch } }))
+  }, [])
+
+  const updateIntegrations = useCallback((patch: Partial<IntegrationSettings>) => {
+    setSettings((s) => ({ ...s, integrations: { ...s.integrations, ...patch } }))
+  }, [])
+
+  const updateGeneral = useCallback((patch: Partial<GeneralSettings>) => {
+    setSettings((s) => ({ ...s, general: { ...s.general, ...patch } }))
+  }, [])
+
+  const updateExportDefaults = useCallback((patch: Partial<ExportDefaults>) => {
+    setSettings((s) => ({ ...s, exportDefaults: { ...s.exportDefaults, ...patch } }))
+  }, [])
+
   const resetSettings = useCallback(() => setSettings(DEFAULTS), [])
 
   const value = useMemo(
-    () => ({ settings, ready, setTheme, updateSettings, updateAnnotation, updateRecording, resetSettings }),
-    [settings, ready, setTheme, updateSettings, updateAnnotation, updateRecording, resetSettings],
+    () => ({
+      settings,
+      ready,
+      setTheme,
+      updateSettings,
+      updateAnnotation,
+      updateRecording,
+      updateShortcuts,
+      updateIntegrations,
+      updateGeneral,
+      updateExportDefaults,
+      resetSettings,
+    }),
+    [settings, ready, setTheme, updateSettings, updateAnnotation, updateRecording, updateShortcuts, updateIntegrations, updateGeneral, updateExportDefaults, resetSettings],
   )
 
   if (!ready) return null

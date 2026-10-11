@@ -10,7 +10,8 @@ import {
 import type { OptimizeOptions } from "@/types"
 import { cancelOptimize, onOptimizeProgress, optimizeVideo } from "@/hooks/useBloomBackend"
 import { useToast } from "@/hooks/useToast"
-import { sk } from "@/lib/i18n/sk"
+import { getMessagesSync } from "@/lib/i18n/I18nProvider"
+import { localizeError } from "@/lib/i18n/localizeError"
 
 export type QueueItemStatus = "pending" | "running" | "done" | "error" | "cancelled"
 
@@ -70,10 +71,11 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
         try {
           jobId = await optimizeVideo(next.options)
         } catch (e) {
-          error({ title: sk.toast.exportFailed, description: String(e) })
+          const sk = getMessagesSync()
+          error({ title: sk.toast.exportFailed, description: localizeError(e) })
           setItems((prev) =>
             prev.map((i) =>
-              i.id === next.id ? { ...i, status: "error", error: String(e), percent: 0 } : i,
+              i.id === next.id ? { ...i, status: "error", error: localizeError(e), percent: 0 } : i,
             ),
           )
           continue
@@ -100,20 +102,50 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
           const resolver = jobResolversRef.current.get(p.job_id)
           resolver?.(true)
           jobResolversRef.current.delete(p.job_id)
+          const sk = getMessagesSync()
           if (p.cancelled) {
             info({ title: sk.toast.exportCancelled, description: item.label })
             return { ...item, status: "cancelled", percent: 0 }
           }
           if (p.error) {
-            error({ title: sk.toast.exportFailed, description: `${item.label}: ${p.error}` })
-            return { ...item, status: "error", error: p.error, percent: 0 }
+            error({ title: sk.toast.exportFailed, description: `${item.label}: ${localizeError(p.error)}` })
+            return { ...item, status: "error", error: localizeError(p.error), percent: 0 }
           }
           success({ title: sk.toast.exportDone, description: item.label })
+          const outPath = p.output_path ?? undefined
+          if (outPath) {
+            void import("@/hooks/useSettings").then(({ readStoredSettings }) =>
+              readStoredSettings().then((s) => {
+                const integ = s.integrations
+                if (integ.openAfterExport) {
+                  void import("@/hooks/useBloomBackend").then(({ openWithSystemApp }) =>
+                    openWithSystemApp(outPath).catch(() => {}),
+                  )
+                }
+                if (integ.copyPathAfterExport) {
+                  void import("@/hooks/useBloomBackend").then(({ copyText }) =>
+                    copyText(outPath).catch(() => {}),
+                  )
+                }
+                if (integ.notifyOnExport) {
+                  void import("@/lib/integrations").then(({ notifyExportWebhooks }) =>
+                    notifyExportWebhooks({
+                      enabled: true,
+                      slackUrl: integ.slackWebhookUrl,
+                      discordUrl: integ.discordWebhookUrl,
+                      title: item.label,
+                      path: outPath,
+                    }),
+                  )
+                }
+              }),
+            )
+          }
           return {
             ...item,
             status: "done",
             percent: 100,
-            outputPath: p.output_path ?? undefined,
+            outputPath: outPath,
             outputSize: p.output_size_bytes ?? undefined,
           }
         }),
@@ -128,6 +160,7 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
 
   const enqueue = useCallback((jobs: EnqueueJob | EnqueueJob[]) => {
     const list = Array.isArray(jobs) ? jobs : [jobs]
+    const sk = getMessagesSync()
     info({
       title: sk.toast.exportQueued(list.length),
       description: sk.toast.exportQueuedBody,

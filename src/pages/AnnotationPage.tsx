@@ -18,6 +18,7 @@ import {
 } from "lucide-react"
 import { getSafeWebviewWindow } from "@/lib/windowControl"
 import { emit } from "@tauri-apps/api/event"
+import { saveSnapshot as saveSnapshotToLibrary } from "@/hooks/useBloomBackend"
 import { ANNOTATION_COLORS, applyTheme, DEFAULTS, readStoredSettings, type AnnotationTool } from "@/hooks/useSettings"
 import { ANNOTATION_TOOL_HOTKEYS } from "@/lib/hotkeys"
 
@@ -221,11 +222,24 @@ export function AnnotationPage() {
   const saveSnapshot = useCallback(async () => {
     const canvas = canvasRef.current
     if (!canvas) return
+    let ok = false
     try {
       await emit("annotation-save", { png: canvas.toDataURL("image/png") })
+      ok = true
+    } catch { /* ignore */ }
+    try {
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"))
+      if (blob) {
+        const bytes = new Uint8Array(await blob.arrayBuffer())
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+        await saveSnapshotToLibrary(`annotation-${stamp}.png`, Array.from(bytes))
+        ok = true
+      }
+    } catch { /* ignore */ }
+    if (ok) {
       setSaved(true)
       setTimeout(() => setSaved(false), 1600)
-    } catch { /* ignore */ }
+    }
   }, [])
 
   const pickTool = useCallback((tool: Tool) => {

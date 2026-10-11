@@ -24,8 +24,9 @@ import {
   Minimize2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages, getMessagesSync } from "@/lib/i18n/I18nProvider"
 import { fileSrc, formatDurationSecs } from "@/hooks/useBloomBackend"
+import { localizeError } from "@/lib/i18n/localizeError"
 
 const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2] as const
 type FitMode = "contain" | "cover"
@@ -75,6 +76,7 @@ function mergeRefs<T>(...refs: Array<Ref<T> | undefined>) {
 }
 
 function localizeVideoElementError(video: HTMLVideoElement): string {
+  const sk = getMessagesSync()
   switch (video.error?.code) {
     case MediaError.MEDIA_ERR_ABORTED:
       return sk.video.errors.aborted
@@ -90,6 +92,7 @@ function localizeVideoElementError(video: HTMLVideoElement): string {
 }
 
 function speedLabel(rate: number): string {
+  const sk = getMessagesSync()
   const key = String(rate) as keyof typeof sk.video.speeds
   return sk.video.speeds[key] ?? `${rate}×`
 }
@@ -155,6 +158,7 @@ function ControlsBar({
   hideFileActions,
   onBumpControls,
 }: ControlsBarProps) {
+  const sk = useMessages()
   const [speedOpen, setSpeedOpen] = useState(false)
   const [volumeOpen, setVolumeOpen] = useState(false)
   const speedRef = useRef<HTMLDivElement>(null)
@@ -370,6 +374,7 @@ export const BloomVideoPlayer = forwardRef<BloomVideoPlayerHandle, BloomVideoPla
     },
     ref,
   ) {
+    const sk = useMessages()
     const rootRef = useRef<HTMLDivElement>(null)
     const videoRef = useRef<HTMLVideoElement>(null)
     const playAttempts = useRef(0)
@@ -429,7 +434,7 @@ export const BloomVideoPlayer = forwardRef<BloomVideoPlayerHandle, BloomVideoPla
           setControlsVisible(true)
           return
         }
-        setError(e instanceof Error ? e.message : String(e))
+        setError(localizeError(e))
         setStatus("error")
         onPlayStateChange?.(false)
         setControlsVisible(true)

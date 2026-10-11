@@ -26,6 +26,7 @@ fn sample_meta(id: &str, filename: &str, created_at: &str) -> RecordingMeta {
         starred: false,
         tags: vec![],
         folder: String::new(),
+        notes: String::new(),
     }
 }
 
@@ -93,5 +94,64 @@ fn load_and_find_recordings() {
     assert_eq!(found.meta.filename, "old.mp4");
     assert!(find_recording(&dir, "missing").is_none());
 
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn load_and_find_recurse_into_subfolders_and_skip_hidden() {
+    let dir = temp_dir("recursive");
+    fs::create_dir_all(dir.join("Work/Demos")).unwrap();
+    fs::create_dir_all(dir.join(".trash")).unwrap();
+
+    // relative filename resolves against the library root
+    let rel = "Work/Demos/clip.mp4";
+    fs::write(dir.join(rel), b"v").unwrap();
+    let meta = sample_meta("id-nested", rel, "2024-01-01T00:00:00Z");
+    fs::write(meta_path_for(&dir.join(rel)), serde_json::to_string(&meta).unwrap()).unwrap();
+
+    // hidden folders are ignored
+    fs::write(dir.join(".trash/gone.mp4"), b"v").unwrap();
+    let hidden = sample_meta("id-hidden", ".trash/gone.mp4", "2024-02-01T00:00:00Z");
+    fs::write(meta_path_for(&dir.join(".trash/gone.mp4")), serde_json::to_string(&hidden).unwrap()).unwrap();
+
+    // legacy bare filename in a sub-folder falls back to the sidecar's directory
+    fs::write(dir.join("Work/bare.mp4"), b"v").unwrap();
+    let bare = sample_meta("id-bare", "bare.mp4", "2023-01-01T00:00:00Z");
+    fs::write(meta_path_for(&dir.join("Work/bare.mp4")), serde_json::to_string(&bare).unwrap()).unwrap();
+
+    let all = load_all_recordings(&dir);
+    assert_eq!(all.len(), 2);
+    let nested = find_recording(&dir, "id-nested").unwrap();
+    assert_eq!(PathBuf::from(&nested.path), dir.join(rel));
+    let bare = find_recording(&dir, "id-bare").unwrap();
+    assert_eq!(PathBuf::from(&bare.path), dir.join("Work/bare.mp4"));
+    assert!(find_recording(&dir, "id-hidden").is_none());
+
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn sanitize_folder_name_rules() {
+    assert_eq!(sanitize_folder_name("  My Demos "), "My Demos");
+    assert_eq!(sanitize_folder_name("a/b"), "a/b");
+    assert_eq!(sanitize_folder_name("../../etc"), "etc");
+    assert_eq!(sanitize_folder_name("we:ird*name"), "we-ird-name");
+    assert_eq!(sanitize_folder_name(".hidden"), "hidden");
+    assert_eq!(sanitize_folder_name("   "), "");
+}
+
+#[test]
+fn relative_filename_uses_forward_slashes() {
+    let root = Path::new("/lib");
+    assert_eq!(relative_filename(root, Path::new("/lib/a/b/c.mp4")), "a/b/c.mp4");
+    assert_eq!(relative_filename(root, Path::new("/lib/c.mp4")), "c.mp4");
+}
+
+#[test]
+fn unique_path_avoids_collisions() {
+    let dir = temp_dir("unique");
+    fs::write(dir.join("a.mp4"), b"x").unwrap();
+    assert_eq!(unique_path(&dir, "a.mp4"), dir.join("a-2.mp4"));
+    assert_eq!(unique_path(&dir, "b.mp4"), dir.join("b.mp4"));
     fs::remove_dir_all(&dir).ok();
 }

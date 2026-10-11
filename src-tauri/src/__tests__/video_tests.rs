@@ -22,6 +22,11 @@ fn opts(preset: &str, resolution: &str, format: &str) -> OptimizeOptions {
         format: format.to_string(),
         trim_start: None,
         trim_end: None,
+        keep_ranges: vec![],
+        crop_x: None,
+        crop_y: None,
+        crop_w: None,
+        crop_h: None,
         speed: 1.0,
         output_name: None,
         add_to_library: true,
@@ -61,7 +66,24 @@ fn resolution_and_format_helpers() {
     assert_eq!(ext_for_format("mp4"), "mp4");
     assert_eq!(ext_for_format("webm"), "webm");
     assert_eq!(ext_for_format("gif"), "gif");
+    assert_eq!(ext_for_format("mov"), "mov");
+    assert_eq!(ext_for_format("m4v"), "m4v");
+    assert_eq!(ext_for_format("mkv"), "mkv");
+    assert_eq!(ext_for_format("avi"), "avi");
+    assert_eq!(ext_for_format("mpeg"), "mpg");
+    assert_eq!(ext_for_format("mpg"), "mpg");
+    assert_eq!(ext_for_format("ts"), "ts");
+    assert_eq!(ext_for_format("flv"), "flv");
+    assert_eq!(ext_for_format("3gp"), "3gp");
+    assert_eq!(ext_for_format("ogv"), "ogv");
     assert_eq!(ext_for_format("whatever"), "mp4");
+    assert!(is_mp4_family("mp4"));
+    assert!(is_mp4_family("mov"));
+    assert!(is_mp4_family("m4v"));
+    assert!(!is_mp4_family("mkv"));
+    assert!(!is_mp4_family("avi"));
+    assert!(!is_mp4_family("webm"));
+    assert!(!is_mp4_family("mpeg"));
 }
 
 #[test]
@@ -88,6 +110,11 @@ fn can_stream_copy_when_trim_only_h264() {
     assert!(can_stream_copy(&o, &info));
     o.resolution = "720p".into();
     assert!(!can_stream_copy(&o, &info));
+    let mut mov = opts("medium", "original", "mov");
+    mov.trim_start = Some(1.0);
+    mov.trim_end = Some(10.0);
+    assert!(can_stream_copy(&mov, &info));
+    assert!(!can_stream_copy(&opts("medium", "original", "mkv"), &info));
 }
 
 #[test]
@@ -97,6 +124,76 @@ fn stream_copy_args_use_codec_copy() {
     let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mp4", &info, false, false, false);
     assert!(args.windows(2).any(|w| w == ["-c", "copy"]));
     assert!(args.windows(2).any(|w| w == ["-movflags", "+faststart"]));
+}
+
+#[test]
+fn build_args_mov_uses_faststart() {
+    let o = opts("medium", "720p", "mov");
+    let info = sample_info();
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mov", &info, false, false, false);
+    assert!(args.windows(2).any(|w| w == ["-c:v", "libx264"]));
+    assert!(
+        args.windows(2).any(|w| w == ["-c:a", "aac"])
+            || args.windows(2).any(|w| w == ["-c:a", "copy"])
+    );
+    assert!(args.windows(2).any(|w| w == ["-movflags", "+faststart"]));
+}
+
+#[test]
+fn build_args_mkv_no_faststart() {
+    let o = opts("medium", "720p", "mkv");
+    let info = sample_info();
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mkv", &info, false, false, false);
+    assert!(args.windows(2).any(|w| w == ["-c:v", "libx264"]));
+    assert!(args.windows(2).any(|w| w == ["-c:a", "aac"]));
+    assert!(!args.windows(2).any(|w| w == ["-movflags", "+faststart"]));
+}
+
+#[test]
+fn build_args_avi_uses_mp3_audio() {
+    let o = opts("medium", "720p", "avi");
+    let info = sample_info();
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.avi", &info, false, false, false);
+    assert!(args.windows(2).any(|w| w == ["-c:v", "libx264"]));
+    assert!(args.windows(2).any(|w| w == ["-c:a", "libmp3lame"]));
+    assert!(!args.windows(2).any(|w| w == ["-movflags", "+faststart"]));
+}
+
+#[test]
+fn build_args_mpeg_uses_mpeg2() {
+    let o = opts("medium", "720p", "mpeg");
+    let info = sample_info();
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mpg", &info, false, false, false);
+    assert!(args.windows(2).any(|w| w == ["-c:v", "mpeg2video"]));
+    assert!(args.windows(2).any(|w| w == ["-c:a", "mp2"]));
+}
+
+#[test]
+fn build_args_ts_uses_mpegts() {
+    let o = opts("medium", "720p", "ts");
+    let info = sample_info();
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.ts", &info, false, false, false);
+    assert!(args.windows(2).any(|w| w == ["-c:v", "libx264"]));
+    assert!(args.windows(2).any(|w| w == ["-f", "mpegts"]));
+}
+
+#[test]
+fn build_args_ogv_uses_theora() {
+    let o = opts("medium", "720p", "ogv");
+    let info = sample_info();
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.ogv", &info, false, false, false);
+    assert!(args.windows(2).any(|w| w == ["-c:v", "libtheora"]));
+    assert!(args.windows(2).any(|w| w == ["-c:a", "libvorbis"]));
+}
+
+#[test]
+fn build_args_3gp_baseline() {
+    let o = opts("small", "480p", "3gp");
+    let info = sample_info();
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.3gp", &info, false, false, false);
+    assert!(args.windows(2).any(|w| w == ["-c:v", "libx264"]));
+    assert!(args.windows(2).any(|w| w == ["-f", "3gp"]));
+    assert!(args.windows(2).any(|w| w == ["-profile:v", "baseline"]));
 }
 
 #[test]
@@ -152,6 +249,23 @@ fn build_args_denoise_and_normalize() {
 }
 
 #[test]
+fn build_args_copies_audio_when_unchanged() {
+    let o = opts("medium", "720p", "mp4");
+    let info = sample_info();
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mp4", &info, false, false, false);
+    assert!(args.windows(2).any(|w| w == ["-c:a", "copy"]));
+}
+
+#[test]
+fn build_args_reencodes_audio_when_normalized() {
+    let mut o = opts("medium", "720p", "mp4");
+    o.normalize_audio = true;
+    let info = sample_info();
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mp4", &info, false, false, false);
+    assert!(args.windows(2).any(|w| w == ["-c:a", "aac"]));
+}
+
+#[test]
 fn build_args_no_audio_uses_an() {
     let mut o = opts("small", "original", "mp4");
     o.remove_audio = true;
@@ -159,6 +273,13 @@ fn build_args_no_audio_uses_an() {
     info.has_audio = true;
     let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mp4", &info, false, false, false);
     assert!(args.iter().any(|a| a == "-an"));
+}
+
+#[test]
+fn preset_values_favour_speed() {
+    assert_eq!(preset_values("small").x264_preset, "ultrafast");
+    assert_eq!(preset_values("medium").x264_preset, "veryfast");
+    assert_eq!(preset_values("high").x264_preset, "faster");
 }
 
 #[test]
@@ -267,4 +388,80 @@ fn parse_srt_reads_basic_file() {
     assert_eq!(cards.len(), 1);
     assert_eq!(cards[0].text, "Ahoj svet");
     fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn find_fourcc_locates_atoms() {
+    let buf = b"....ftypisom....moov....mdat....";
+    assert_eq!(find_fourcc(buf, b"moov"), Some(16));
+    assert_eq!(find_fourcc(buf, b"mdat"), Some(24));
+    assert!(find_fourcc(buf, b"free").is_none());
+}
+
+#[test]
+fn mp4_faststart_detection_from_header() {
+    let dir = std::env::temp_dir().join(format!("bloom-moov-{}", uuid::Uuid::new_v4()));
+    fs::create_dir_all(&dir).unwrap();
+
+    let fast = dir.join("fast.mp4");
+    let mut head = vec![0u8; 64];
+    head.extend_from_slice(b"moov");
+    head.extend_from_slice(&[0u8; 32]);
+    head.extend_from_slice(b"mdat");
+    fs::write(&fast, &head).unwrap();
+    assert!(mp4_moov_is_faststarted(&fast));
+
+    let slow = dir.join("slow.mp4");
+    let mut tail = vec![0u8; 64];
+    tail.extend_from_slice(b"mdat");
+    tail.extend_from_slice(&[0u8; 32]);
+    tail.extend_from_slice(b"moov");
+    fs::write(&slow, &tail).unwrap();
+    assert!(!mp4_moov_is_faststarted(&slow));
+
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn parse_clicks_skips_bad_lines() {
+    let raw = "{\"t\":1.5,\"x\":100,\"y\":200}\nnot json\n{\"t\":-1,\"x\":1,\"y\":1}\n{\"t\":2,\"x\":3.5,\"y\":4}\n";
+    let clicks = parse_clicks_jsonl(raw);
+    assert_eq!(clicks.len(), 2);
+    assert!((clicks[0].t - 1.5).abs() < f64::EPSILON);
+}
+
+#[test]
+fn spotlight_filter_maps_coords_and_flashes_for_300ms() {
+    let clicks = vec![
+        ClickEvent { t: 1.0, x: 960.0, y: 540.0 },
+        ClickEvent { t: 2.0, x: 99999.0, y: 0.0 }, // outside capture
+    ];
+    let bounds = CaptureBounds { x: 0.0, y: 0.0, width: 1920.0, height: 1080.0 };
+    let vf = build_spotlight_filter(&clicks, 1920, 1080, bounds).unwrap();
+    assert!(vf.contains("between(t,1.000,1.300)"));
+    assert!(!vf.contains("2.000"));
+    assert!(vf.contains("drawbox=x=926:y=506"));
+    assert!(build_spotlight_filter(&[], 1920, 1080, bounds).is_none());
+}
+
+#[test]
+fn spotlight_filter_scales_retina_bounds() {
+    // 2x capture: video is 3840 wide, logical display is 1920.
+    let clicks = vec![ClickEvent { t: 0.5, x: 960.0, y: 540.0 }];
+    let bounds = CaptureBounds { x: 0.0, y: 0.0, width: 1920.0, height: 1080.0 };
+    let vf = build_spotlight_filter(&clicks, 3840, 2160, bounds).unwrap();
+    assert!(vf.contains("x=1852")); // 1920 - 68
+}
+
+#[test]
+fn concat_list_escapes_single_quotes() {
+    assert_eq!(concat_list_line("/a/b.mp4"), "file '/a/b.mp4'\n");
+    assert_eq!(concat_list_line("/a/it's.mp4"), "file '/a/it'\\''s.mp4'\n");
+}
+
+#[test]
+fn companion_paths_sit_next_to_video() {
+    let v = companion_paths(Path::new("/lib/x/clip.mp4"));
+    assert!(v.contains(&PathBuf::from("/lib/x/clip.thumb.jpg")));
+    assert!(v.contains(&PathBuf::from("/lib/x/clip.clicks.jsonl")));
 }

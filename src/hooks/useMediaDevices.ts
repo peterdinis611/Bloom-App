@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useState } from "react"
 import type { MediaInputDevice, MonitorInfo } from "@/types"
 import { listMonitors } from "@/hooks/useBloomBackend"
+import { localizeError } from "@/lib/i18n/localizeError"
 
 interface MediaDevicesState {
   cameras: MediaInputDevice[]
@@ -25,9 +26,9 @@ interface MediaDevicesState {
 }
 
 function fallbackLabel(kind: MediaDeviceKind, index: number): string {
-  if (kind === "videoinput") return `Camera ${index + 1}`
-  if (kind === "audioinput") return `Microphone ${index + 1}`
-  return `Device ${index + 1}`
+  if (kind === "videoinput") return `Kamera ${index + 1}`
+  if (kind === "audioinput") return `Mikrofón ${index + 1}`
+  return `Zariadenie ${index + 1}`
 }
 
 export function useMediaDevices() {
@@ -72,7 +73,7 @@ export function useMediaDevices() {
 
       setState({ cameras, microphones, monitors, hasLabels, loading: false, error: null })
     } catch (e) {
-      setState((s) => ({ ...s, loading: false, error: String(e) }))
+      setState((s) => ({ ...s, loading: false, error: localizeError(e) }))
     }
   }, [])
 

@@ -16,20 +16,22 @@
 
 use std::{
     collections::HashMap,
+    fs::File,
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex, OnceLock,
     },
-    time::Instant,
+    time::{Instant, SystemTime},
 };
 
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 use uuid::Uuid;
 
+use crate::types::RecordingEntry;
 use crate::{meta_path_for, now_iso, RecordingMeta};
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -38,6 +40,38 @@ use crate::{meta_path_for, now_iso, RecordingMeta};
 
 #[derive(Default)]
 pub struct VideoJobs(pub Mutex<HashMap<String, Arc<AtomicBool>>>);
+
+// ── Tool / probe caches (large-file hot path) ───────────────────────────────
+
+type ToolCache = Mutex<Option<Option<PathBuf>>>;
+
+fn ffmpeg_tool_cache() -> &'static ToolCache {
+    static C: OnceLock<ToolCache> = OnceLock::new();
+    C.get_or_init(|| Mutex::new(None))
+}
+
+fn ffprobe_tool_cache() -> &'static ToolCache {
+    static C: OnceLock<ToolCache> = OnceLock::new();
+    C.get_or_init(|| Mutex::new(None))
+}
+
+struct ProbeCacheEntry {
+    size: u64,
+    modified: SystemTime,
+    info: VideoInfo,
+}
+
+fn probe_result_cache() -> &'static Mutex<HashMap<String, ProbeCacheEntry>> {
+    static C: OnceLock<Mutex<HashMap<String, ProbeCacheEntry>>> = OnceLock::new();
+    C.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Clear resolved binary paths after install / PATH changes.
+pub(crate) fn clear_media_tool_cache() {
+    *ffmpeg_tool_cache().lock().unwrap() = None;
+    *ffprobe_tool_cache().lock().unwrap() = None;
+    probe_result_cache().lock().unwrap().clear();
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // Data types
@@ -80,6 +114,12 @@ pub struct SubtitleCard {
     pub end_secs: f64,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct TimeRange {
+    pub start: f64,
+    pub end: f64,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct OptimizeOptions {
     pub input_path: String,
@@ -87,10 +127,19 @@ pub struct OptimizeOptions {
     pub preset: String,
     /// "480p" | "720p" | "1080p" | "original"
     pub resolution: String,
-    /// "mp4" | "webm" | "gif"
+    /// "mp4" | "mov" | "m4v" | "mkv" | "avi" | "mpeg" | "ts" | "flv" | "3gp" | "ogv" | "webm" | "gif"
     pub format: String,
     pub trim_start: Option<f64>,
     pub trim_end: Option<f64>,
+    /// Multiple keep-ranges joined into one output (order preserved).
+    /// When non-empty, overrides trim_start/trim_end.
+    #[serde(default)]
+    pub keep_ranges: Vec<TimeRange>,
+    /// Normalized spatial crop (0–1). All four must be set to apply.
+    pub crop_x: Option<f64>,
+    pub crop_y: Option<f64>,
+    pub crop_w: Option<f64>,
+    pub crop_h: Option<f64>,
     /// Playback speed multiplier (1.0 = normal, 2.0 = 2× faster).
     #[serde(default = "default_speed")]
     pub speed: f64,
@@ -295,7 +344,13 @@ fn find_binary(stem: &str) -> Option<PathBuf> {
 }
 
 fn find_ffmpeg() -> Option<PathBuf> {
-    find_binary("ffmpeg").or_else(find_ffmpeg_via_package_manager)
+    let mut slot = ffmpeg_tool_cache().lock().unwrap();
+    if let Some(cached) = slot.as_ref() {
+        return cached.clone();
+    }
+    let found = find_binary("ffmpeg").or_else(find_ffmpeg_via_package_manager);
+    *slot = Some(found.clone());
+    found
 }
 
 pub(crate) fn find_ffmpeg_path() -> Option<PathBuf> {
@@ -336,17 +391,28 @@ fn find_ffmpeg_via_package_manager() -> Option<PathBuf> {
 
 /// Prefer ffprobe next to the resolved ffmpeg binary (same Cellar / install prefix).
 pub(crate) fn find_ffprobe(ffmpeg: Option<&Path>) -> Option<PathBuf> {
+    // When caller already resolved ffmpeg, prefer sibling without poisoning the cache
+    // with a wrong absolute lookup on first call.
     if let Some(ffmpeg_path) = ffmpeg {
         if let Some(parent) = ffmpeg_path.parent() {
             for name in ["ffprobe", "ffprobe.exe"] {
                 let cand = parent.join(name);
                 if is_executable(&cand) {
+                    let mut slot = ffprobe_tool_cache().lock().unwrap();
+                    *slot = Some(Some(cand.clone()));
                     return Some(cand);
                 }
             }
         }
     }
-    find_binary("ffprobe")
+
+    let mut slot = ffprobe_tool_cache().lock().unwrap();
+    if let Some(cached) = slot.as_ref() {
+        return cached.clone();
+    }
+    let found = find_binary("ffprobe");
+    *slot = Some(found.clone());
+    found
 }
 
 fn read_version_with_timeout(ffmpeg: &Path, timeout_ms: u64) -> Option<String> {
@@ -376,11 +442,11 @@ fn read_version_with_timeout(ffmpeg: &Path, timeout_ms: u64) -> Option<String> {
 
 fn install_hint() -> String {
     #[cfg(target_os = "macos")]
-    return "Install ffmpeg with Homebrew:  brew install ffmpeg".to_string();
+    return "Nainštaluj ffmpeg: brew install ffmpeg".to_string();
     #[cfg(target_os = "windows")]
-    return "Install ffmpeg with winget:  winget install Gyan.FFmpeg".to_string();
+    return "Nainštaluj ffmpeg: winget install Gyan.FFmpeg".to_string();
     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-    return "Install ffmpeg with your package manager, e.g.  sudo apt install ffmpeg".to_string();
+    return "Nainštaluj ffmpeg cez správcu balíkov, napr. sudo apt install ffmpeg".to_string();
 }
 
 #[cfg(target_os = "linux")]
@@ -421,7 +487,7 @@ fn install_ffmpeg_argv() -> Result<(PathBuf, Vec<String>), String> {
     #[cfg(target_os = "windows")]
     {
         let winget = find_winget().ok_or_else(|| {
-            "winget is not available. Install ffmpeg manually or update Windows App Installer.".to_string()
+            "winget nie je dostupný. Nainštaluj ffmpeg ručne alebo aktualizuj Windows App Installer.".to_string()
         })?;
         return Ok((
             winget,
@@ -471,12 +537,12 @@ fn install_ffmpeg_argv() -> Result<(PathBuf, Vec<String>), String> {
                 ));
             }
         }
-        return Err("Install ffmpeg manually, e.g.  sudo apt install ffmpeg".into());
+        return Err("Nainštaluj ffmpeg ručne, napr. sudo apt install ffmpeg".into());
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
-        Err("Automatic ffmpeg install is not supported on this platform.".into())
+        Err("Automatická inštalácia ffmpeg nie je na tejto platforme podporovaná.".into())
     }
 }
 
@@ -560,7 +626,7 @@ export NONINTERACTIVE=1
 #[cfg(target_os = "windows")]
 fn run_ffmpeg_install() -> Result<(), String> {
     let winget = find_winget().ok_or_else(|| {
-        "winget is not available. Install ffmpeg manually or update Windows App Installer.".to_string()
+        "winget nie je dostupný. Nainštaluj ffmpeg ručne alebo aktualizuj Windows App Installer.".to_string()
     })?;
     let mut cmd = Command::new(&winget);
     cmd.args([
@@ -632,7 +698,7 @@ fn run_ffmpeg_install() -> Result<(), String> {
 
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 fn run_ffmpeg_install() -> Result<(), String> {
-    Err("Automatic ffmpeg install is not supported on this platform.".into())
+    Err("Automatická inštalácia ffmpeg nie je na tejto platforme podporovaná.".into())
 }
 
 fn install_ffmpeg_blocking() -> FfmpegInstallResult {
@@ -640,7 +706,7 @@ fn install_ffmpeg_blocking() -> FfmpegInstallResult {
     if before.available {
         return FfmpegInstallResult {
             success: true,
-            message: "ffmpeg is already installed.".into(),
+            message: "ffmpeg je už nainštalovaný.".into(),
             status: before,
         };
     }
@@ -674,7 +740,7 @@ fn install_ffmpeg_blocking() -> FfmpegInstallResult {
     } else {
         FfmpegInstallResult {
             success: false,
-            message: "Install finished but ffmpeg was not detected. Try Recheck or restart Bloom.".into(),
+            message: "Inštalácia prebehla, ale ffmpeg sa nenašiel. Skús Skontrolovať alebo reštartuj Bloom.".into(),
             status,
         }
     }
@@ -696,9 +762,33 @@ fn parse_frame_rate(s: &str) -> f64 {
 }
 
 pub(crate) fn probe(ffprobe: &Path, path: &str) -> Result<VideoInfo, String> {
+    // Cap how much of a multi-GB file ffprobe reads before giving up on discovery.
     let output = Command::new(ffprobe)
         .args([
-            "-v", "quiet",
+            "-v", "error",
+            "-probesize", "5M",
+            "-analyzeduration", "2M",
+            "-print_format", "json",
+            "-show_entries",
+            "format=duration,bit_rate,size:stream=codec_type,codec_name,width,height,avg_frame_rate",
+            path,
+        ])
+        .output()
+        .map_err(|e| format!("ffprobe failed: {e}"))?;
+
+    if !output.status.success() {
+        return probe_fallback(ffprobe, path);
+    }
+
+    parse_probe_json(&output.stdout, path)
+}
+
+fn probe_fallback(ffprobe: &Path, path: &str) -> Result<VideoInfo, String> {
+    let output = Command::new(ffprobe)
+        .args([
+            "-v", "error",
+            "-probesize", "32M",
+            "-analyzeduration", "5M",
             "-print_format", "json",
             "-show_format",
             "-show_streams",
@@ -708,11 +798,14 @@ pub(crate) fn probe(ffprobe: &Path, path: &str) -> Result<VideoInfo, String> {
         .map_err(|e| format!("ffprobe failed: {e}"))?;
 
     if !output.status.success() {
-        return Err("ffprobe could not read the file".into());
+        return Err("ffprobe nedokázal prečítať súbor".into());
     }
+    parse_probe_json(&output.stdout, path)
+}
 
+fn parse_probe_json(stdout: &[u8], path: &str) -> Result<VideoInfo, String> {
     let json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).map_err(|e| format!("ffprobe parse error: {e}"))?;
+        serde_json::from_slice(stdout).map_err(|e| format!("ffprobe parse error: {e}"))?;
 
     let empty = Vec::new();
     let streams = json.get("streams").and_then(|s| s.as_array()).unwrap_or(&empty);
@@ -771,6 +864,39 @@ pub(crate) fn probe(ffprobe: &Path, path: &str) -> Result<VideoInfo, String> {
     })
 }
 
+/// Probe with mtime/size cache — avoids re-reading multi-GB files in the same session.
+pub(crate) fn probe_cached(ffprobe: &Path, path: &str) -> Result<VideoInfo, String> {
+    let meta = std::fs::metadata(path).ok();
+    let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+    let modified = meta
+        .and_then(|m| m.modified().ok())
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+
+    {
+        let cache = probe_result_cache().lock().unwrap();
+        if let Some(entry) = cache.get(path) {
+            if entry.size == size && entry.modified == modified {
+                return Ok(entry.info.clone());
+            }
+        }
+    }
+
+    let info = probe(ffprobe, path)?;
+    let mut cache = probe_result_cache().lock().unwrap();
+    if cache.len() > 64 {
+        cache.clear();
+    }
+    cache.insert(
+        path.to_string(),
+        ProbeCacheEntry {
+            size,
+            modified,
+            info: info.clone(),
+        },
+    );
+    Ok(info)
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Argument building
 // ────────────────────────────────────────────────────────────────────────────
@@ -787,14 +913,15 @@ struct PresetValues {
 fn preset_values(preset: &str) -> PresetValues {
     match preset {
         "small" => PresetValues {
-            x264_preset: "veryfast",
+            // Prioritise throughput on long / large captures.
+            x264_preset: "ultrafast",
             x264_crf: "30",
             vp9_crf: "37",
             audio_bitrate: "96k",
             vt_quality: "72",
         },
         "high" => PresetValues {
-            x264_preset: "medium",
+            x264_preset: "faster",
             x264_crf: "20",
             vp9_crf: "27",
             audio_bitrate: "192k",
@@ -802,7 +929,7 @@ fn preset_values(preset: &str) -> PresetValues {
         },
         // "medium" and any unknown value
         _ => PresetValues {
-            x264_preset: "faster",
+            x264_preset: "veryfast",
             x264_crf: "25",
             vp9_crf: "32",
             audio_bitrate: "128k",
@@ -825,8 +952,27 @@ fn ext_for_format(format: &str) -> &'static str {
     match format {
         "webm" => "webm",
         "gif" => "gif",
+        "mov" => "mov",
+        "mkv" => "mkv",
+        "avi" => "avi",
+        "m4v" => "m4v",
+        "mpeg" | "mpg" => "mpg",
+        "ts" => "ts",
+        "flv" => "flv",
+        "3gp" => "3gp",
+        "ogv" => "ogv",
         _ => "mp4",
     }
+}
+
+/// MP4 / MOV / M4V share H.264+AAC and can use +faststart / stream-copy.
+fn is_mp4_family(format: &str) -> bool {
+    matches!(format, "mp4" | "mov" | "m4v")
+}
+
+/// Containers that use the shared H.264/HEVC + AAC encode path.
+fn uses_h264_aac_path(format: &str) -> bool {
+    matches!(format, "mp4" | "mov" | "m4v" | "mkv" | "ts" | "flv")
 }
 
 fn effective_speed(speed: f64) -> f64 {
@@ -901,7 +1047,7 @@ fn is_h264_codec(codec: &str) -> bool {
 
 /// Trim-only export without re-encode when filters/codecs unchanged.
 pub(crate) fn can_stream_copy(opts: &OptimizeOptions, info: &VideoInfo) -> bool {
-    opts.format == "mp4"
+    is_mp4_family(&opts.format)
         && opts.resolution == "original"
         && effective_speed(opts.speed) == 1.0
         && !opts.use_hevc
@@ -909,7 +1055,45 @@ pub(crate) fn can_stream_copy(opts: &OptimizeOptions, info: &VideoInfo) -> bool 
         && !opts.normalize_audio
         && !opts.remove_audio
         && !has_subtitles(opts)
+        && !has_spatial_crop(opts)
+        && opts.keep_ranges.len() <= 1
         && is_h264_codec(&info.codec)
+}
+
+fn has_spatial_crop(opts: &OptimizeOptions) -> bool {
+    matches!(
+        (opts.crop_x, opts.crop_y, opts.crop_w, opts.crop_h),
+        (Some(x), Some(y), Some(w), Some(h))
+            if w > 0.02 && h > 0.02 && (x > 0.001 || y > 0.001 || w < 0.999 || h < 0.999)
+    )
+}
+
+fn crop_filter(opts: &OptimizeOptions) -> Option<String> {
+    let (x, y, w, h) = match (opts.crop_x, opts.crop_y, opts.crop_w, opts.crop_h) {
+        (Some(x), Some(y), Some(w), Some(h)) if w > 0.02 && h > 0.02 => (x, y, w, h),
+        _ => return None,
+    };
+    // ffmpeg crop uses pixels; express as fractions of iw/ih.
+    Some(format!(
+        "crop=iw*{w:.4}:ih*{h:.4}:iw*{x:.4}:ih*{y:.4}"
+    ))
+}
+
+fn effective_keep_ranges(opts: &OptimizeOptions) -> Vec<(f64, f64)> {
+    if !opts.keep_ranges.is_empty() {
+        return opts
+            .keep_ranges
+            .iter()
+            .filter(|r| r.end > r.start + 0.05)
+            .map(|r| (r.start, r.end))
+            .collect();
+    }
+    match (opts.trim_start, opts.trim_end) {
+        (Some(s), Some(e)) if e > s => vec![(s, e)],
+        (Some(s), None) => vec![(s, f64::MAX)],
+        (None, Some(e)) if e > 0.0 => vec![(0.0, e)],
+        _ => vec![],
+    }
 }
 
 fn build_stream_copy_args(opts: &OptimizeOptions, input: &str, output: &str) -> Vec<String> {
@@ -948,6 +1132,9 @@ fn denoise_filter(preset: &str) -> &'static str {
 }
 
 fn append_video_filters(vf: &mut Vec<String>, opts: &OptimizeOptions, height: Option<u32>, format: &str) {
+    if let Some(crop) = crop_filter(opts) {
+        vf.push(crop);
+    }
     if format == "gif" {
         vf.push("fps=12".into());
         vf.push(scale_filter(height.unwrap_or(480), &opts.preset));
@@ -976,18 +1163,34 @@ fn append_audio_filters(af: &mut Vec<String>, opts: &OptimizeOptions, speed: f64
     }
 }
 
-fn append_mp4_video_codec(a: &mut Vec<String>, opts: &OptimizeOptions, pv: &PresetValues, hw_h264: bool, hw_hevc: bool, nvenc: bool) {
-    if opts.use_hevc {
+fn append_mp4_video_codec(
+    a: &mut Vec<String>,
+    opts: &OptimizeOptions,
+    pv: &PresetValues,
+    hw_h264: bool,
+    hw_hevc: bool,
+    nvenc: bool,
+    faststart: bool,
+    use_hevc: bool,
+) {
+    let push_faststart = |out: &mut Vec<String>| {
+        if faststart {
+            out.extend(["-movflags".into(), "+faststart".into()]);
+        }
+    };
+
+    if use_hevc {
         if hw_hevc {
             a.extend([
                 "-c:v", "hevc_videotoolbox",
                 "-q:v", pv.vt_quality,
                 "-tag:v", "hvc1",
                 "-allow_sw", "1",
+                "-realtime", "1",
                 "-pix_fmt", "yuv420p",
-                "-movflags", "+faststart",
             ]
             .map(String::from));
+            push_faststart(a);
             return;
         }
         a.extend([
@@ -995,10 +1198,10 @@ fn append_mp4_video_codec(a: &mut Vec<String>, opts: &OptimizeOptions, pv: &Pres
             "-preset", pv.x264_preset,
             "-crf", pv.x264_crf,
             "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart",
             "-tag:v", "hvc1",
         ]
         .map(String::from));
+        push_faststart(a);
         a.push("-threads".into());
         a.push("0".into());
         return;
@@ -1008,22 +1211,28 @@ fn append_mp4_video_codec(a: &mut Vec<String>, opts: &OptimizeOptions, pv: &Pres
             "-c:v", "h264_videotoolbox",
             "-q:v", pv.vt_quality,
             "-allow_sw", "1",
+            "-realtime", "1",
             "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart",
         ]
         .map(String::from));
+        push_faststart(a);
         return;
     }
     if nvenc {
+        let nv_preset = match opts.preset.as_str() {
+            "small" => "p1",
+            "high" => "p5",
+            _ => "p4",
+        };
         a.extend([
             "-c:v", "h264_nvenc",
-            "-preset", "p4",
+            "-preset", nv_preset,
             "-rc", "vbr",
             "-cq", pv.x264_crf,
             "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart",
         ]
         .map(String::from));
+        push_faststart(a);
         return;
     }
     a.extend([
@@ -1031,12 +1240,22 @@ fn append_mp4_video_codec(a: &mut Vec<String>, opts: &OptimizeOptions, pv: &Pres
         "-preset", pv.x264_preset,
         "-crf", pv.x264_crf,
         "-pix_fmt", "yuv420p",
-        "-movflags", "+faststart",
         "-tune", "fastdecode",
     ]
     .map(String::from));
+    push_faststart(a);
     a.push("-threads".into());
     a.push("0".into());
+}
+
+/// Stream-copy audio when we are not changing it (big win on long clips).
+fn can_copy_audio(opts: &OptimizeOptions, info: &VideoInfo, speed: f64) -> bool {
+    info.has_audio
+        && !opts.remove_audio
+        && !opts.normalize_audio
+        && effective_speed(speed) == 1.0
+        && is_mp4_family(&opts.format)
+        && opts.keep_ranges.len() <= 1
 }
 
 pub fn analyze_video_info(info: &VideoInfo) -> VideoAnalyze {
@@ -1194,7 +1413,10 @@ fn build_args(
     hw_hevc: bool,
     nvenc: bool,
 ) -> Vec<String> {
-    if can_stream_copy(opts, info) {
+    let ranges = effective_keep_ranges(opts);
+    let multi = ranges.len() > 1;
+
+    if !multi && can_stream_copy(opts, info) {
         return build_stream_copy_args(opts, input, output);
     }
 
@@ -1202,45 +1424,122 @@ fn build_args(
 
     a.extend(hwaccel_input_args());
 
-    if let Some(start) = opts.trim_start {
-        if start > 0.0 {
-            a.push("-ss".into());
-            a.push(format!("{start:.3}"));
+    if !multi {
+        if let Some((start, _)) = ranges.first() {
+            if *start > 0.0 && *start < 1.0e9 {
+                a.push("-ss".into());
+                a.push(format!("{start:.3}"));
+            }
+        } else if let Some(start) = opts.trim_start {
+            if start > 0.0 {
+                a.push("-ss".into());
+                a.push(format!("{start:.3}"));
+            }
         }
     }
+
     a.push("-i".into());
     a.push(input.to_string());
 
-    if let Some(dur) = trim_duration(opts) {
-        a.push("-t".into());
-        a.push(format!("{dur:.3}"));
+    if !multi {
+        if let Some((start, end)) = ranges.first() {
+            if *end < 1.0e9 {
+                a.push("-t".into());
+                a.push(format!("{:.3}", end - start));
+            }
+        } else if let Some(dur) = trim_duration(opts) {
+            a.push("-t".into());
+            a.push(format!("{dur:.3}"));
+        }
     }
 
     let height = resolution_height(&opts.resolution);
     let pv = preset_values(&opts.preset);
     let format = opts.format.as_str();
     let speed = effective_speed(opts.speed);
-    let use_audio = info.has_audio && !opts.remove_audio;
+    let use_audio = info.has_audio && !opts.remove_audio && format != "gif";
+    let copy_audio = can_copy_audio(opts, info, opts.speed) && !multi;
 
-    let mut vf: Vec<String> = Vec::new();
-    append_video_filters(&mut vf, opts, height, format);
-    if !vf.is_empty() {
-        a.push("-vf".into());
-        a.push(vf.join(","));
-    }
+    if multi {
+        // Join keep-ranges with filter_complex, then apply shared video filters.
+        let mut parts: Vec<String> = Vec::new();
+        let mut concat_in = String::new();
+        for (i, (start, end)) in ranges.iter().enumerate() {
+            let end_clamped = if *end >= 1.0e9 { *start + 36000.0 } else { *end };
+            parts.push(format!(
+                "[0:v]trim=start={start:.3}:end={end_clamped:.3},setpts=PTS-STARTPTS[v{i}]"
+            ));
+            if use_audio {
+                parts.push(format!(
+                    "[0:a]atrim=start={start:.3}:end={end_clamped:.3},asetpts=PTS-STARTPTS[a{i}]"
+                ));
+                concat_in.push_str(&format!("[v{i}][a{i}]"));
+            } else {
+                concat_in.push_str(&format!("[v{i}]"));
+            }
+        }
+        let n = ranges.len();
+        if use_audio {
+            parts.push(format!("{concat_in}concat=n={n}:v=1:a=1[vc][ac]"));
+        } else {
+            parts.push(format!("{concat_in}concat=n={n}:v=1:a=0[vc]"));
+        }
 
-    if use_audio && format != "gif" {
-        let mut af: Vec<String> = Vec::new();
-        append_audio_filters(&mut af, opts, speed);
-        if !af.is_empty() {
-            a.push("-af".into());
-            a.push(af.join(","));
+        let mut post: Vec<String> = Vec::new();
+        append_video_filters(&mut post, opts, height, format);
+        if post.is_empty() {
+            parts.push("[vc]null[outv]".into());
+        } else {
+            parts.push(format!("[vc]{}[outv]", post.join(",")));
+        }
+
+        a.push("-filter_complex".into());
+        a.push(parts.join(";"));
+        a.extend(["-map".into(), "[outv]".into()]);
+        if use_audio {
+            let mut af: Vec<String> = Vec::new();
+            append_audio_filters(&mut af, opts, speed);
+            if af.is_empty() {
+                a.extend(["-map".into(), "[ac]".into()]);
+            } else {
+                a.extend(["-map".into(), "[ac]".into()]);
+                a.push("-af".into());
+                a.push(af.join(","));
+            }
+        }
+    } else {
+        let mut vf: Vec<String> = Vec::new();
+        append_video_filters(&mut vf, opts, height, format);
+        if !vf.is_empty() {
+            a.push("-vf".into());
+            a.push(vf.join(","));
+        }
+
+        if use_audio && !copy_audio {
+            let mut af: Vec<String> = Vec::new();
+            append_audio_filters(&mut af, opts, speed);
+            if !af.is_empty() {
+                a.push("-af".into());
+                a.push(af.join(","));
+            }
         }
     }
 
     match format {
         "webm" => {
-            a.extend(["-c:v", "libvpx-vp9", "-b:v", "0", "-crf", pv.vp9_crf, "-row-mt", "1"].map(String::from));
+            let cpu_used = match opts.preset.as_str() {
+                "small" => "8",
+                "high" => "2",
+                _ => "4",
+            };
+            a.extend([
+                "-c:v", "libvpx-vp9",
+                "-b:v", "0",
+                "-crf", pv.vp9_crf,
+                "-row-mt", "1",
+                "-deadline", "realtime",
+                "-cpu-used", cpu_used,
+            ].map(String::from));
             if use_audio {
                 a.extend(["-c:a", "libopus", "-b:a", pv.audio_bitrate].map(String::from));
             } else {
@@ -1250,8 +1549,103 @@ fn build_args(
         "gif" => {
             a.extend(["-loop", "0", "-an"].map(String::from));
         }
+        "avi" => {
+            // AVI + H.264; MP3 audio for widest player compatibility.
+            a.extend([
+                "-c:v", "libx264",
+                "-preset", pv.x264_preset,
+                "-crf", pv.x264_crf,
+                "-pix_fmt", "yuv420p",
+            ]
+            .map(String::from));
+            a.push("-threads".into());
+            a.push("0".into());
+            if use_audio {
+                a.extend(["-c:a", "libmp3lame", "-b:a", pv.audio_bitrate].map(String::from));
+            } else {
+                a.push("-an".into());
+            }
+        }
+        "mpeg" | "mpg" => {
+            let v_bitrate = match opts.preset.as_str() {
+                "small" => "2500k",
+                "high" => "8000k",
+                _ => "5000k",
+            };
+            a.extend([
+                "-c:v", "mpeg2video",
+                "-b:v", v_bitrate,
+                "-maxrate", v_bitrate,
+                "-bufsize", "4M",
+                "-pix_fmt", "yuv420p",
+            ]
+            .map(String::from));
+            if use_audio {
+                a.extend(["-c:a", "mp2", "-b:a", "192k"].map(String::from));
+            } else {
+                a.push("-an".into());
+            }
+        }
+        "ogv" => {
+            let qv = match opts.preset.as_str() {
+                "small" => "5",
+                "high" => "8",
+                _ => "7",
+            };
+            a.extend([
+                "-c:v", "libtheora",
+                "-q:v", qv,
+                "-pix_fmt", "yuv420p",
+            ]
+            .map(String::from));
+            if use_audio {
+                a.extend(["-c:a", "libvorbis", "-q:a", "5"].map(String::from));
+            } else {
+                a.push("-an".into());
+            }
+        }
+        "3gp" => {
+            a.extend([
+                "-c:v", "libx264",
+                "-preset", pv.x264_preset,
+                "-crf", pv.x264_crf,
+                "-profile:v", "baseline",
+                "-level", "3.0",
+                "-pix_fmt", "yuv420p",
+                "-f", "3gp",
+            ]
+            .map(String::from));
+            a.push("-threads".into());
+            a.push("0".into());
+            if use_audio {
+                a.extend(["-c:a", "aac", "-b:a", "96k", "-ac", "1", "-ar", "22050"].map(String::from));
+            } else {
+                a.push("-an".into());
+            }
+        }
+        _ if uses_h264_aac_path(format) => {
+            // mp4 | mov | m4v | mkv | ts | flv
+            let faststart = is_mp4_family(format);
+            let allow_hevc = matches!(format, "mp4" | "mov" | "m4v" | "mkv") && opts.use_hevc;
+            append_mp4_video_codec(&mut a, opts, &pv, hw_h264, hw_hevc, nvenc, faststart, allow_hevc);
+            if format == "ts" {
+                a.extend(["-f", "mpegts"].map(String::from));
+            } else if format == "flv" {
+                a.extend(["-f", "flv"].map(String::from));
+            }
+            if use_audio {
+                if copy_audio && is_mp4_family(format) {
+                    a.extend(["-c:a", "copy"].map(String::from));
+                } else {
+                    a.extend(["-c:a", "aac", "-b:a", pv.audio_bitrate].map(String::from));
+                }
+            } else {
+                a.push("-an".into());
+            }
+        }
         _ => {
-            append_mp4_video_codec(&mut a, opts, &pv, hw_h264, hw_hevc, nvenc);
+            // Unknown → treat as MP4
+            append_mp4_video_codec(&mut a, opts, &pv, hw_h264, hw_hevc, nvenc, true, opts.use_hevc);
             if use_audio {
                 a.extend(["-c:a", "aac", "-b:a", pv.audio_bitrate].map(String::from));
             } else {
@@ -1266,10 +1660,20 @@ fn build_args(
 }
 
 fn trim_duration(opts: &OptimizeOptions) -> Option<f64> {
-    match (opts.trim_start, opts.trim_end) {
-        (Some(s), Some(e)) if e > s => Some(e - s),
-        (None, Some(e)) if e > 0.0 => Some(e),
-        _ => None,
+    let ranges = effective_keep_ranges(opts);
+    if ranges.is_empty() {
+        return None;
+    }
+    let mut total = 0.0;
+    for (s, e) in ranges {
+        if e < 1.0e9 {
+            total += e - s;
+        }
+    }
+    if total > 0.0 {
+        Some(total)
+    } else {
+        None
     }
 }
 
@@ -1304,6 +1708,7 @@ fn build_output_path(opts: &OptimizeOptions, input: &Path) -> PathBuf {
 // ────────────────────────────────────────────────────────────────────────────
 
 /// Rewrites MP4 in place so the moov atom is at the front — no re-encode.
+/// Skips work when moov already precedes mdat in the file header (already faststarted).
 pub(crate) fn remux_mp4_faststart(ffmpeg: &Path, path: &Path) -> Result<(), String> {
     let ext = path
         .extension()
@@ -1311,6 +1716,10 @@ pub(crate) fn remux_mp4_faststart(ffmpeg: &Path, path: &Path) -> Result<(), Stri
         .unwrap_or("")
         .to_ascii_lowercase();
     if ext != "mp4" {
+        return Ok(());
+    }
+
+    if mp4_moov_is_faststarted(path) {
         return Ok(());
     }
 
@@ -1340,17 +1749,40 @@ pub(crate) fn remux_mp4_faststart(ffmpeg: &Path, path: &Path) -> Result<(), Stri
 
     if !status.success() || !tmp.exists() {
         let _ = std::fs::remove_file(&tmp);
-        return Err("faststart remux failed".into());
+        return Err("Remux faststart zlyhal".into());
     }
 
     std::fs::rename(&tmp, path).map_err(|e| format!("Could not replace recording: {e}"))
+}
+
+/// True when `moov` appears before `mdat` in the first ~1 MiB (instant seek / playback).
+fn mp4_moov_is_faststarted(path: &Path) -> bool {
+    let Ok(mut file) = File::open(path) else {
+        return false;
+    };
+    let mut buf = vec![0u8; 1024 * 1024];
+    let Ok(n) = file.read(&mut buf) else {
+        return false;
+    };
+    let hay = &buf[..n];
+    let moov = find_fourcc(hay, b"moov");
+    let mdat = find_fourcc(hay, b"mdat");
+    match (moov, mdat) {
+        (Some(mv), Some(md)) => mv < md,
+        (Some(_), None) => true,
+        _ => false,
+    }
+}
+
+fn find_fourcc(hay: &[u8], needle: &[u8; 4]) -> Option<usize> {
+    hay.windows(4).position(|w| w == needle)
 }
 
 // ────────────────────────────────────────────────────────────────────────────
 // Thumbnail
 // ────────────────────────────────────────────────────────────────────────────
 
-fn thumbnail_path_for(video: &Path) -> PathBuf {
+pub(crate) fn thumbnail_path_for(video: &Path) -> PathBuf {
     video.with_extension("thumb.jpg")
 }
 
@@ -1373,6 +1805,8 @@ fn make_thumbnail_scaled(
             "-loglevel", "error",
             "-ss", &format!("{at_secs:.3}"),
             "-i", &video.to_string_lossy(),
+            "-an",
+            "-sn",
             "-frames:v", "1",
             "-vf", &vf,
             "-q:v", if height >= 200 { "5" } else { "6" },
@@ -1384,12 +1818,12 @@ fn make_thumbnail_scaled(
         .map_err(|e| format!("ffmpeg failed: {e}"))?;
 
     if !status.success() || !out.exists() {
-        return Err("Could not generate thumbnail".into());
+        return Err("Nepodarilo sa vytvoriť miniatúru".into());
     }
     Ok(out.to_path_buf())
 }
 
-fn filmstrip_path_for(video: &Path, index: u32) -> PathBuf {
+pub(crate) fn filmstrip_path_for(video: &Path, index: u32) -> PathBuf {
     let stem = video
         .file_stem()
         .and_then(|s| s.to_str())
@@ -1442,6 +1876,13 @@ pub fn compute_export_estimate(info: &VideoInfo, opts: &OptimizeOptions) -> Expo
         size = match opts.format.as_str() {
             "gif" => size * 0.45,
             "webm" => size * 0.92,
+            "avi" => size * 1.05,
+            "mkv" => size * 0.98,
+            "mpeg" | "mpg" => size * 1.35,
+            "ogv" => size * 1.15,
+            "3gp" => size * 0.55,
+            "ts" | "flv" => size * 1.02,
+            "m4v" => size,
             _ => size,
         };
 
@@ -1449,8 +1890,8 @@ pub fn compute_export_estimate(info: &VideoInfo, opts: &OptimizeOptions) -> Expo
             duration_secs: out_duration,
             size_bytes: size.max(1024.0) as u64,
             resolution_label: opts.resolution.clone(),
-            format_label: if opts.use_hevc && opts.format == "mp4" {
-                "HEVC MP4".into()
+            format_label: if opts.use_hevc && is_mp4_family(&opts.format) {
+                format!("HEVC {}", opts.format.to_uppercase())
             } else {
                 opts.format.to_uppercase()
             },
@@ -1486,7 +1927,7 @@ fn replace_original_file(
     size_bytes: u64,
 ) -> Result<PathBuf, String> {
     if !temp_output.exists() {
-        return Err("Temporary export file missing".into());
+        return Err("Dočasný export súbor chýba".into());
     }
     let _ = std::fs::remove_file(input);
     std::fs::rename(temp_output, input).map_err(|e| format!("Could not replace original: {e}"))?;
@@ -1502,17 +1943,28 @@ fn replace_original_file(
 // Sidecar for optimised output (so it shows up in the library)
 // ────────────────────────────────────────────────────────────────────────────
 
-fn write_output_sidecar(input: &Path, output: &Path, opts: &OptimizeOptions, duration_secs: f64, size_bytes: u64) {
+fn write_output_sidecar(
+    root: Option<&Path>,
+    input: &Path,
+    output: &Path,
+    opts: &OptimizeOptions,
+    duration_secs: f64,
+    size_bytes: u64,
+) {
     // Inherit from the original recording's sidecar when available.
     let base: Option<RecordingMeta> = std::fs::read_to_string(meta_path_for(input))
         .ok()
         .and_then(|raw| serde_json::from_str(&raw).ok());
 
-    let filename = output
-        .file_name()
-        .and_then(|f| f.to_str())
-        .unwrap_or("optimized")
-        .to_string();
+    // Relative to the library root so files in sub-folders resolve correctly.
+    let filename = match root {
+        Some(r) if output.starts_with(r) => crate::util::relative_filename(r, output),
+        _ => output
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or("optimized")
+            .to_string(),
+    };
     let title_stem = output.file_stem().and_then(|s| s.to_str()).unwrap_or("optimized").to_string();
 
     let meta = RecordingMeta {
@@ -1533,7 +1985,8 @@ fn write_output_sidecar(input: &Path, output: &Path, opts: &OptimizeOptions, dur
         ),
         starred: false,
         tags: vec![],
-        folder: String::new(),
+        folder: base.as_ref().map(|m| m.folder.clone()).unwrap_or_default(),
+        notes: base.as_ref().map(|m| m.notes.clone()).unwrap_or_default(),
     };
 
     if let Ok(json) = serde_json::to_string_pretty(&meta) {
@@ -1711,7 +2164,8 @@ fn run_optimize(
         }
     } else {
         if add_to_library && opts.format != "gif" {
-            write_output_sidecar(&input, &output, &opts, out_duration, size);
+            let root = crate::bloom_dir(&app).ok();
+            write_output_sidecar(root.as_deref(), &input, &output, &opts, out_duration, size);
             let _ = make_thumbnail(&ffmpeg_thumb, &output, (out_duration * 0.1).max(0.0));
         }
         output
@@ -1719,9 +2173,8 @@ fn run_optimize(
 
     let final_size = std::fs::metadata(&final_path).map(|m| m.len()).unwrap_or(size);
 
-    if opts.format == "mp4" {
-        let _ = remux_mp4_faststart(&ffmpeg_thumb, &final_path);
-    }
+    // Encode / stream-copy already use -movflags +faststart — skip a second full-file remux
+    // (was rewriting multi-GB outputs after every export).
 
     emit(OptimizeProgress {
         job_id: job_id.clone(),
@@ -1745,33 +2198,49 @@ pub fn check_ffmpeg() -> FfmpegStatus {
 
 #[tauri::command]
 pub async fn install_ffmpeg() -> Result<FfmpegInstallResult, String> {
-    tauri::async_runtime::spawn_blocking(install_ffmpeg_blocking)
-        .await
-        .map_err(|e| format!("Install task failed: {e}"))
+    tauri::async_runtime::spawn_blocking(|| {
+        let result = install_ffmpeg_blocking();
+        clear_media_tool_cache();
+        result
+    })
+    .await
+    .map_err(|e| format!("Install task failed: {e}"))
 }
 
 #[tauri::command]
-pub fn get_video_info(path: String) -> Result<VideoInfo, String> {
-    let ffmpeg = find_ffmpeg();
-    let ffprobe = find_ffprobe(ffmpeg.as_deref()).ok_or_else(|| "ffprobe not found".to_string())?;
-    probe(&ffprobe, &path)
+pub async fn get_video_info(path: String) -> Result<VideoInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let ffmpeg = find_ffmpeg();
+        let ffprobe = find_ffprobe(ffmpeg.as_deref()).ok_or_else(|| "ffprobe not found".to_string())?;
+        probe_cached(&ffprobe, &path)
+    })
+    .await
+    .map_err(|e| format!("Probe task failed: {e}"))?
 }
 
 #[tauri::command]
-pub fn get_thumbnail(app: tauri::AppHandle, id: String, at_secs: Option<f64>) -> Result<String, String> {
-    let dir = crate::bloom_dir(&app)?;
-    let entry = crate::find_recording(&dir, &id).ok_or_else(|| format!("Recording {id} not found"))?;
-    let video = PathBuf::from(&entry.path);
+pub async fn get_thumbnail(
+    app: tauri::AppHandle,
+    id: String,
+    at_secs: Option<f64>,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = crate::bloom_dir(&app)?;
+        let entry = crate::find_recording(&dir, &id).ok_or_else(|| format!("Recording {id} not found"))?;
+        let video = PathBuf::from(&entry.path);
 
-    let thumb = thumbnail_path_for(&video);
-    if thumb.exists() {
-        return Ok(thumb.to_string_lossy().into_owned());
-    }
+        let thumb = thumbnail_path_for(&video);
+        if thumb.exists() {
+            return Ok(thumb.to_string_lossy().into_owned());
+        }
 
-    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg not found".to_string())?;
-    let at = at_secs.unwrap_or_else(|| (entry.meta.duration_secs * 0.1).max(0.0));
-    let path = make_thumbnail(&ffmpeg, &video, at)?;
-    Ok(path.to_string_lossy().into_owned())
+        let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg nie je nainštalovaný".to_string())?;
+        let at = at_secs.unwrap_or_else(|| (entry.meta.duration_secs * 0.1).max(0.0));
+        let path = make_thumbnail(&ffmpeg, &video, at)?;
+        Ok(path.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| format!("Thumbnail task failed: {e}"))?
 }
 
 #[tauri::command]
@@ -1780,16 +2249,16 @@ pub fn optimize_video(
     state: tauri::State<VideoJobs>,
     options: OptimizeOptions,
 ) -> Result<String, String> {
-    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg not found. Install it and try again.".to_string())?;
-    let ffprobe = find_ffprobe(Some(&ffmpeg)).ok_or_else(|| "ffprobe not found. Install ffmpeg and try again.".to_string())?;
+    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg nie je nainštalovaný. Nainštaluj ho a skús znova.".to_string())?;
+    let ffprobe = find_ffprobe(Some(&ffmpeg)).ok_or_else(|| "ffprobe nie je nainštalovaný. Nainštaluj ffmpeg a skús znova.".to_string())?;
 
     let input = PathBuf::from(&options.input_path);
     if !input.exists() {
-        return Err("Input video does not exist".into());
+        return Err("Vstupné video neexistuje".into());
     }
 
     // Determine total duration for progress (trimmed window or full clip).
-    let info = probe(&ffprobe, &options.input_path)?;
+    let info = probe_cached(&ffprobe, &options.input_path)?;
     let total_secs = trim_duration(&options).unwrap_or(info.duration_secs)
         / effective_speed(options.speed);
 
@@ -1847,49 +2316,128 @@ pub fn optimize_video(
 }
 
 #[tauri::command]
-pub fn analyze_video(path: String) -> Result<VideoAnalyze, String> {
-    let ffprobe = find_ffprobe(find_ffmpeg().as_deref())
-        .ok_or_else(|| "ffprobe not found".to_string())?;
-    let info = probe(&ffprobe, &path)?;
-    Ok(analyze_video_info(&info))
+pub async fn analyze_video(path: String) -> Result<VideoAnalyze, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let ffprobe = find_ffprobe(find_ffmpeg().as_deref())
+            .ok_or_else(|| "ffprobe not found".to_string())?;
+        let info = probe_cached(&ffprobe, &path)?;
+        Ok(analyze_video_info(&info))
+    })
+    .await
+    .map_err(|e| format!("Analyze task failed: {e}"))?
 }
 
 #[tauri::command]
-pub fn get_filmstrip(path: String, frame_count: Option<u32>) -> Result<Vec<String>, String> {
-    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg not found".to_string())?;
-    let ffprobe = find_ffprobe(Some(&ffmpeg)).ok_or_else(|| "ffprobe not found".to_string())?;
-    let info = probe(&ffprobe, &path)?;
-    let video = PathBuf::from(&path);
+pub async fn get_filmstrip(
+    path: String,
+    frame_count: Option<u32>,
+    duration_hint: Option<f64>,
+) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || build_filmstrip(&path, frame_count, duration_hint))
+        .await
+        .map_err(|e| format!("Filmstrip task failed: {e}"))?
+}
+
+fn build_filmstrip(
+    path: &str,
+    frame_count: Option<u32>,
+    duration_hint: Option<f64>,
+) -> Result<Vec<String>, String> {
+    let video = PathBuf::from(path);
     if !video.exists() {
-        return Err("Video file does not exist".into());
+        return Err("Video súbor neexistuje".into());
     }
 
     let count = frame_count.unwrap_or(12).clamp(6, 20);
-    let duration = info.duration_secs.max(0.1);
-    let mut paths = Vec::with_capacity(count as usize);
 
+    // Fast path: all strip frames already on disk — no probe, no ffmpeg.
+    let mut cached = Vec::with_capacity(count as usize);
+    let mut all_cached = true;
     for i in 0..count {
-        let t = if count <= 1 {
-            0.0
-        } else {
-            duration * i as f64 / (count - 1) as f64
-        };
         let thumb = filmstrip_path_for(&video, i);
-        if !thumb.exists() {
-            make_thumbnail_scaled(&ffmpeg, &video, t, &thumb, 72)?;
+        if thumb.exists() {
+            cached.push(thumb.to_string_lossy().into_owned());
+        } else {
+            all_cached = false;
+            break;
         }
-        paths.push(thumb.to_string_lossy().into_owned());
+    }
+    if all_cached {
+        return Ok(cached);
     }
 
-    Ok(paths)
+    let duration = if let Some(d) = duration_hint.filter(|d| *d > 0.05) {
+        d
+    } else {
+        let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg nie je nainštalovaný".to_string())?;
+        let ffprobe = find_ffprobe(Some(&ffmpeg)).ok_or_else(|| "ffprobe not found".to_string())?;
+        probe_cached(&ffprobe, path)?.duration_secs.max(0.1)
+    };
+
+    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg nie je nainštalovaný".to_string())?;
+
+    // Parallel keyframe seeks (bounded) — big win on multi-GB sources.
+    let jobs: Vec<(u32, f64, PathBuf)> = (0..count)
+        .map(|i| {
+            let t = if count <= 1 {
+                0.0
+            } else {
+                duration * i as f64 / (count - 1) as f64
+            };
+            (i, t, filmstrip_path_for(&video, i))
+        })
+        .collect();
+
+    let errors = Mutex::new(Vec::<String>::new());
+    let next = AtomicUsize::new(0);
+    let parallelism = 4usize.min(count as usize).max(1);
+
+    std::thread::scope(|scope| {
+        for _ in 0..parallelism {
+            let ffmpeg = &ffmpeg;
+            let video = &video;
+            let jobs = &jobs;
+            let errors = &errors;
+            let next = &next;
+            scope.spawn(move || {
+                loop {
+                    let idx = next.fetch_add(1, Ordering::Relaxed);
+                    if idx >= jobs.len() {
+                        break;
+                    }
+                    let (_i, t, thumb) = &jobs[idx];
+                    if thumb.exists() {
+                        continue;
+                    }
+                    if let Err(e) = make_thumbnail_scaled(ffmpeg, video, *t, thumb, 72) {
+                        errors.lock().unwrap().push(e);
+                    }
+                }
+            });
+        }
+    });
+
+    let errs = errors.into_inner().unwrap();
+    if !errs.is_empty() && jobs.iter().any(|(_, _, p)| !p.exists()) {
+        return Err(errs.into_iter().next().unwrap_or_else(|| "Filmstrip zlyhal".into()));
+    }
+
+    Ok(jobs
+        .into_iter()
+        .map(|(_, _, p)| p.to_string_lossy().into_owned())
+        .collect())
 }
 
 #[tauri::command]
-pub fn estimate_export(options: OptimizeOptions) -> Result<ExportEstimate, String> {
-    let ffprobe = find_ffprobe(find_ffmpeg().as_deref())
-        .ok_or_else(|| "ffprobe not found".to_string())?;
-    let info = probe(&ffprobe, &options.input_path)?;
-    Ok(compute_export_estimate(&info, &options))
+pub async fn estimate_export(options: OptimizeOptions) -> Result<ExportEstimate, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let ffprobe = find_ffprobe(find_ffmpeg().as_deref())
+            .ok_or_else(|| "ffprobe not found".to_string())?;
+        let info = probe_cached(&ffprobe, &options.input_path)?;
+        Ok(compute_export_estimate(&info, &options))
+    })
+    .await
+    .map_err(|e| format!("Estimate task failed: {e}"))?
 }
 
 #[tauri::command]
@@ -1898,6 +2446,401 @@ pub fn cancel_optimize(state: tauri::State<VideoJobs>, job_id: String) -> Result
         flag.store(true, Ordering::Relaxed);
     }
     Ok(())
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Concat + click spotlight
+// ────────────────────────────────────────────────────────────────────────────
+
+/// Side files that travel with a video (thumbnail, filmstrip, click track).
+pub(crate) fn companion_paths(video: &Path) -> Vec<PathBuf> {
+    let mut v = vec![thumbnail_path_for(video), video.with_extension("clicks.jsonl")];
+    for i in 0..24 {
+        v.push(filmstrip_path_for(video, i));
+    }
+    v
+}
+
+/// Probe `output`, write its sidecar + thumbnail and return a library entry.
+fn register_new_output(
+    root: &Path,
+    ffmpeg: &Path,
+    ffprobe: Option<&Path>,
+    output: &Path,
+    base: &RecordingMeta,
+    title: String,
+    target_label: String,
+) -> Result<RecordingEntry, String> {
+    let size = std::fs::metadata(output).map(|m| m.len()).unwrap_or(0);
+    if size == 0 {
+        return Err("ffmpeg produced an empty file".into());
+    }
+    let duration = ffprobe
+        .and_then(|p| probe(p, &output.to_string_lossy()).ok())
+        .map(|i| i.duration_secs)
+        .unwrap_or(0.0);
+
+    let meta = RecordingMeta {
+        id: Uuid::new_v4().to_string(),
+        title,
+        filename: crate::util::relative_filename(root, output),
+        created_at: now_iso(),
+        duration_secs: duration,
+        file_size_bytes: size,
+        source: base.source.clone(),
+        quality: base.quality.clone(),
+        has_microphone: base.has_microphone,
+        has_system_audio: base.has_system_audio,
+        target_label,
+        starred: false,
+        tags: base.tags.clone(),
+        folder: base.folder.clone(),
+        notes: String::new(),
+    };
+    let meta_path = meta_path_for(output);
+    let json = serde_json::to_string_pretty(&meta).map_err(|e| format!("Serialise error: {e}"))?;
+    std::fs::write(&meta_path, json).map_err(|e| format!("Cannot write sidecar: {e}"))?;
+    let _ = make_thumbnail(ffmpeg, output, (duration * 0.1).max(0.0));
+
+    Ok(RecordingEntry {
+        meta,
+        path: output.to_string_lossy().into_owned(),
+        meta_path: meta_path.to_string_lossy().into_owned(),
+    })
+}
+
+fn run_ffmpeg_blocking(ffmpeg: &Path, args: &[String]) -> Result<(), String> {
+    let out = Command::new(ffmpeg)
+        .args(args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("Could not start ffmpeg: {e}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        let text = String::from_utf8_lossy(&out.stderr);
+        Err(tail_lines(&text, 4))
+    }
+}
+
+/// One `file '…'` line for the concat demuxer list.
+pub(crate) fn concat_list_line(path: &str) -> String {
+    format!("file '{}'\n", path.replace('\'', "'\\''"))
+}
+
+fn concat_blocking(
+    app: tauri::AppHandle,
+    ids: Vec<String>,
+    output_name: Option<String>,
+) -> Result<RecordingEntry, String> {
+    if ids.len() < 2 {
+        return Err("Select at least two recordings to join".into());
+    }
+    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg nie je nainštalovaný. Nainštaluj ho a skús znova.".to_string())?;
+    let ffprobe = find_ffprobe(Some(&ffmpeg));
+    let root = crate::bloom_dir(&app)?;
+
+    let mut entries = Vec::with_capacity(ids.len());
+    for id in &ids {
+        let e = crate::find_recording(&root, id).ok_or_else(|| format!("Recording {id} not found"))?;
+        if !Path::new(&e.path).exists() {
+            return Err(format!("Video file missing for {}", e.meta.title));
+        }
+        entries.push(e);
+    }
+
+    let first_path = PathBuf::from(&entries[0].path);
+    let out_dir = first_path.parent().unwrap_or(&root).to_path_buf();
+    let base_name = match output_name.as_ref().filter(|n| !n.trim().is_empty()) {
+        Some(n) => {
+            let stem = Path::new(n).file_stem().and_then(|s| s.to_str()).unwrap_or(n);
+            crate::library::sanitize_stem(stem).replace(' ', "-")
+        }
+        None => format!(
+            "{}-joined",
+            crate::library::sanitize_stem(&entries[0].meta.title).replace(' ', "-")
+        ),
+    };
+    let output = crate::util::unique_path(&out_dir, &format!("{base_name}.mp4"));
+
+    let list_path = out_dir.join(format!(".bloom-concat-{}.txt", Uuid::new_v4()));
+    let mut list = String::new();
+    for e in &entries {
+        list.push_str(&concat_list_line(&e.path));
+    }
+    std::fs::write(&list_path, list).map_err(|e| format!("Cannot write concat list: {e}"))?;
+
+    let head: Vec<String> = [
+        "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "concat", "-safe", "0",
+        "-i",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    let out_str = output.to_string_lossy().into_owned();
+
+    let mut copy_args = head.clone();
+    copy_args.push(list_path.to_string_lossy().into_owned());
+    copy_args.extend(
+        ["-c", "copy", "-movflags", "+faststart", &out_str]
+            .iter()
+            .map(|s| s.to_string()),
+    );
+
+    let mut result = run_ffmpeg_blocking(&ffmpeg, &copy_args);
+    if result.is_err() {
+        // Mixed codecs / containers: fall back to a re-encode.
+        let _ = std::fs::remove_file(&output);
+        let mut enc_args = head;
+        enc_args.push(list_path.to_string_lossy().into_owned());
+        enc_args.extend(
+            [
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", &out_str,
+            ]
+            .iter()
+            .map(|s| s.to_string()),
+        );
+        result = run_ffmpeg_blocking(&ffmpeg, &enc_args);
+    }
+    let _ = std::fs::remove_file(&list_path);
+    if let Err(e) = result {
+        let _ = std::fs::remove_file(&output);
+        return Err(if e.is_empty() { "ffmpeg concat failed".into() } else { e });
+    }
+
+    let title = output
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("joined")
+        .to_string();
+    let entry = register_new_output(
+        &root,
+        &ffmpeg,
+        ffprobe.as_deref(),
+        &output,
+        &entries[0].meta,
+        title,
+        format!("Joined · {} clips", entries.len()),
+    )?;
+    let locale = app.state::<crate::i18n::LocaleState>();
+    let _ = crate::i18n::refresh_tray_menu(&app, crate::i18n::current_locale(&locale));
+    Ok(entry)
+}
+
+/// Join recordings (in the given order) with the ffmpeg concat demuxer.
+/// Stream-copies when possible and falls back to a re-encode.
+#[tauri::command]
+pub async fn concat_recordings(
+    app: tauri::AppHandle,
+    ids: Vec<String>,
+    output_name: Option<String>,
+) -> Result<RecordingEntry, String> {
+    tauri::async_runtime::spawn_blocking(move || concat_blocking(app, ids, output_name))
+        .await
+        .map_err(|e| format!("Concat task failed: {e}"))?
+}
+
+/// Logical rectangle of the captured display (same coordinate space as the click track).
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct CaptureBounds {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub(crate) struct ClickEvent {
+    pub t: f64,
+    pub x: f64,
+    pub y: f64,
+}
+
+/// Parse a `.clicks.jsonl` file (`{"t":secs,"x":..,"y":..}` per line); bad lines are skipped.
+pub(crate) fn parse_clicks_jsonl(raw: &str) -> Vec<ClickEvent> {
+    raw.lines()
+        .filter_map(|l| serde_json::from_str::<ClickEvent>(l.trim()).ok())
+        .filter(|c| c.t.is_finite() && c.t >= 0.0 && c.x.is_finite() && c.y.is_finite())
+        .collect()
+}
+
+const SPOTLIGHT_MAX_CLICKS: usize = 300;
+const SPOTLIGHT_FLASH_SECS: f64 = 0.3;
+
+/// Build an ffmpeg `-vf` chain that flashes a highlight ring + dot at every click
+/// for 0.3 s. Uses `drawbox` + timeline `enable` (cheap, no per-pixel expressions).
+pub(crate) fn build_spotlight_filter(
+    clicks: &[ClickEvent],
+    video_w: u32,
+    video_h: u32,
+    bounds: CaptureBounds,
+) -> Option<String> {
+    if video_w == 0 || video_h == 0 || bounds.width <= 0.0 || bounds.height <= 0.0 {
+        return None;
+    }
+    let scale = (video_h as f64 / 1080.0).max(0.5);
+    let ring = (34.0 * scale).round() as i64;
+    let dot = (7.0 * scale).round().max(2.0) as i64;
+    let thick = (4.0 * scale).round().max(2.0) as i64;
+
+    let mut parts: Vec<String> = Vec::new();
+    for c in clicks.iter().take(SPOTLIGHT_MAX_CLICKS) {
+        let nx = (c.x - bounds.x) / bounds.width;
+        let ny = (c.y - bounds.y) / bounds.height;
+        if !(0.0..=1.0).contains(&nx) || !(0.0..=1.0).contains(&ny) {
+            continue;
+        }
+        let cx = (nx * video_w as f64).round() as i64;
+        let cy = (ny * video_h as f64).round() as i64;
+        let t0 = c.t;
+        let t1 = c.t + SPOTLIGHT_FLASH_SECS;
+        let enable = format!("enable='between(t,{t0:.3},{t1:.3})'");
+        parts.push(format!(
+            "drawbox=x={}:y={}:w={}:h={}:color=yellow@0.85:t={thick}:{enable}",
+            (cx - ring).max(0),
+            (cy - ring).max(0),
+            ring * 2,
+            ring * 2,
+        ));
+        parts.push(format!(
+            "drawbox=x={}:y={}:w={}:h={}:color=yellow@0.9:t=fill:{enable}",
+            (cx - dot).max(0),
+            (cy - dot).max(0),
+            dot * 2,
+            dot * 2,
+        ));
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(","))
+    }
+}
+
+fn default_capture_bounds(app: &tauri::AppHandle) -> Option<CaptureBounds> {
+    let win = app.get_webview_window("main")?;
+    let m = win.primary_monitor().ok().flatten()?;
+    let scale = m.scale_factor().max(0.1);
+    Some(CaptureBounds {
+        x: m.position().x as f64 / scale,
+        y: m.position().y as f64 / scale,
+        width: m.size().width as f64 / scale,
+        height: m.size().height as f64 / scale,
+    })
+}
+
+fn spotlight_blocking(
+    app: tauri::AppHandle,
+    id: String,
+    clicks_path: Option<String>,
+    output_name: Option<String>,
+    capture_bounds: Option<CaptureBounds>,
+) -> Result<RecordingEntry, String> {
+    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg nie je nainštalovaný. Nainštaluj ho a skús znova.".to_string())?;
+    let ffprobe = find_ffprobe(Some(&ffmpeg)).ok_or_else(|| "ffprobe nie je nainštalovaný. Nainštaluj ffmpeg a skús znova.".to_string())?;
+    let root = crate::bloom_dir(&app)?;
+    let entry = crate::find_recording(&root, &id).ok_or_else(|| format!("Recording {id} not found"))?;
+    let input = PathBuf::from(&entry.path);
+    if !input.exists() {
+        return Err("Vstupné video neexistuje".into());
+    }
+
+    let clicks_file = clicks_path
+        .filter(|p| !p.trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| input.with_extension("clicks.jsonl"));
+    let raw = std::fs::read_to_string(&clicks_file)
+        .map_err(|e| format!("Cannot read click track {}: {e}", clicks_file.display()))?;
+    let clicks = parse_clicks_jsonl(&raw);
+    if clicks.is_empty() {
+        return Err("Click track is empty".into());
+    }
+
+    let info = probe(&ffprobe, &input.to_string_lossy())?;
+    let bounds = capture_bounds
+        .or_else(|| default_capture_bounds(&app))
+        .unwrap_or(CaptureBounds {
+            x: 0.0,
+            y: 0.0,
+            width: info.width as f64,
+            height: info.height as f64,
+        });
+    let vf = build_spotlight_filter(&clicks, info.width, info.height, bounds)
+        .ok_or_else(|| "No clicks fall inside the captured area".to_string())?;
+
+    let out_dir = input.parent().unwrap_or(&root).to_path_buf();
+    let base_name = match output_name.as_ref().filter(|n| !n.trim().is_empty()) {
+        Some(n) => {
+            let stem = Path::new(n).file_stem().and_then(|s| s.to_str()).unwrap_or(n);
+            crate::library::sanitize_stem(stem).replace(' ', "-")
+        }
+        None => format!(
+            "{}-spotlight",
+            input.file_stem().and_then(|s| s.to_str()).unwrap_or("video")
+        ),
+    };
+    let output = crate::util::unique_path(&out_dir, &format!("{base_name}.mp4"));
+
+    let copy_audio = matches!(
+        input.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).as_deref(),
+        Some("mp4") | Some("m4v") | Some("mov")
+    );
+    let mut args: Vec<String> = vec![
+        "-hide_banner".into(), "-loglevel".into(), "error".into(), "-y".into(),
+        "-i".into(), input.to_string_lossy().into_owned(),
+        "-vf".into(), vf,
+        "-c:v".into(), "libx264".into(), "-preset".into(), "veryfast".into(),
+        "-crf".into(), "20".into(), "-pix_fmt".into(), "yuv420p".into(),
+    ];
+    if copy_audio {
+        args.extend(["-c:a".into(), "copy".into()]);
+    } else {
+        args.extend(["-c:a".into(), "aac".into(), "-b:a".into(), "160k".into()]);
+    }
+    args.extend(["-movflags".into(), "+faststart".into(), output.to_string_lossy().into_owned()]);
+
+    if let Err(e) = run_ffmpeg_blocking(&ffmpeg, &args) {
+        let _ = std::fs::remove_file(&output);
+        return Err(if e.is_empty() { "ffmpeg spotlight failed".into() } else { e });
+    }
+
+    let title = output
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("spotlight")
+        .to_string();
+    let entry = register_new_output(
+        &root,
+        &ffmpeg,
+        Some(&ffprobe),
+        &output,
+        &entry.meta,
+        title,
+        "Click spotlight".to_string(),
+    )?;
+    let locale = app.state::<crate::i18n::LocaleState>();
+    let _ = crate::i18n::refresh_tray_menu(&app, crate::i18n::current_locale(&locale));
+    Ok(entry)
+}
+
+/// Burn a highlight flash at every recorded click (reads `<video>.clicks.jsonl`
+/// unless `clicks_path` is given) into a new library recording.
+#[tauri::command]
+pub async fn apply_click_spotlight(
+    app: tauri::AppHandle,
+    id: String,
+    clicks_path: Option<String>,
+    output_name: Option<String>,
+    capture_bounds: Option<CaptureBounds>,
+) -> Result<RecordingEntry, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        spotlight_blocking(app, id, clicks_path, output_name, capture_bounds)
+    })
+    .await
+    .map_err(|e| format!("Spotlight task failed: {e}"))?
 }
 
 // ────────────────────────────────────────────────────────────────────────────

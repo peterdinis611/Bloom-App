@@ -1,23 +1,31 @@
 import { createContext, useCallback, useContext, useRef, useState, type CSSProperties } from "react"
-import { Check, CircleAlert, Info, X } from "lucide-react"
+import { Check, CircleAlert, Info, TriangleAlert, X } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { sk } from "@/lib/i18n/sk"
+import { getMessagesSync } from "@/lib/i18n/I18nProvider"
 
-export type ToastVariant = "success" | "error" | "info"
+export type ToastVariant = "success" | "error" | "info" | "warning"
 
 const TOAST_DURATION_MS = 4800
+const TOAST_WITH_ACTIONS_MS = 9000
 const TOAST_EXIT_MS = 240
+
+export interface ToastAction {
+  label: string
+  onClick: () => void
+}
 
 interface ToastItem {
   id: number
   title: string
   description?: string
   variant: ToastVariant
+  actions?: ToastAction[]
 }
 
 interface ToastInput {
   title: string
   description?: string
+  actions?: ToastAction[]
 }
 
 interface ToastContextValue {
@@ -25,6 +33,7 @@ interface ToastContextValue {
   success: (input: ToastInput) => void
   error: (input: ToastInput) => void
   info: (input: ToastInput) => void
+  warning: (input: ToastInput) => void
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null)
@@ -33,6 +42,7 @@ const VARIANT_ICONS = {
   success: Check,
   error: CircleAlert,
   info: Info,
+  warning: TriangleAlert,
 } as const
 
 function ToastCard({
@@ -46,7 +56,9 @@ function ToastCard({
   exiting: boolean
   onDismiss: (id: number) => void
 }) {
+  const sk = getMessagesSync()
   const Icon = VARIANT_ICONS[item.variant]
+  const duration = item.actions?.length ? TOAST_WITH_ACTIONS_MS : TOAST_DURATION_MS
 
   return (
     <div
@@ -69,6 +81,23 @@ function ToastCard({
         <div className="bloom-toast__content">
           <p className="bloom-toast__title">{item.title}</p>
           {item.description && <p className="bloom-toast__desc">{item.description}</p>}
+          {item.actions && item.actions.length > 0 && (
+            <div className="bloom-toast__actions">
+              {item.actions.map((action) => (
+                <button
+                  key={action.label}
+                  type="button"
+                  className="bloom-toast__action"
+                  onClick={() => {
+                    action.onClick()
+                    onDismiss(item.id)
+                  }}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <button
@@ -84,7 +113,7 @@ function ToastCard({
       {!exiting && (
         <div
           className="bloom-toast__progress"
-          style={{ animationDuration: `${TOAST_DURATION_MS}ms` }}
+          style={{ animationDuration: `${duration}ms` }}
           aria-hidden
         />
       )}
@@ -152,9 +181,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   )
 
   const scheduleDismiss = useCallback(
-    (id: number) => {
+    (id: number, ms: number) => {
       clearTimer(id)
-      const timer = window.setTimeout(() => dismiss(id), TOAST_DURATION_MS)
+      const timer = window.setTimeout(() => dismiss(id), ms)
       timersRef.current.set(id, timer)
     },
     [clearTimer, dismiss],
@@ -168,9 +197,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         title: input.title,
         description: input.description,
         variant: input.variant ?? "info",
+        actions: input.actions,
       }
       setToasts((prev) => [...prev.slice(-4), item])
-      scheduleDismiss(id)
+      const ms = input.actions?.length ? TOAST_WITH_ACTIONS_MS : TOAST_DURATION_MS
+      scheduleDismiss(id, ms)
     },
     [scheduleDismiss],
   )
@@ -180,6 +211,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     success: (input) => push({ ...input, variant: "success" }),
     error: (input) => push({ ...input, variant: "error" }),
     info: (input) => push({ ...input, variant: "info" }),
+    warning: (input) => push({ ...input, variant: "warning" }),
   }
 
   return (

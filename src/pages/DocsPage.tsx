@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { BookOpen, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages } from "@/lib/i18n/I18nProvider"
 import { DOC_SECTIONS, type DocBlock } from "@/lib/docsContent"
 import { PageScrollArea } from "@/components/layout/PageScrollArea"
 import { MacGroup, MacPageHeader } from "@/components/mac/MacUIKit"
@@ -41,6 +41,18 @@ function DocBlockView({ block }: { block: DocBlock }) {
       </div>
     )
   }
+  if (block.type === "example") {
+    return (
+      <div className="rounded-xl border border-accent/25 bg-accent/5 p-3.5">
+        <p className="mb-2 text-[12px] font-semibold tracking-wide text-accent">{block.title}</p>
+        <ol className="list-inside list-decimal space-y-1.5 text-[13px] leading-relaxed text-foreground/90">
+          {block.steps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+      </div>
+    )
+  }
   return (
     <div className="divide-y divide-border/50 rounded-xl border border-border/60 bg-secondary/20">
       {block.rows.map((row) => (
@@ -56,6 +68,7 @@ function DocBlockView({ block }: { block: DocBlock }) {
 }
 
 export function DocsPage({ active = true }: { active?: boolean }) {
+  const sk = useMessages()
   const [sectionId, setSectionId] = useState(DOC_SECTIONS[0]?.id ?? "start")
   const section = DOC_SECTIONS.find((s) => s.id === sectionId) ?? DOC_SECTIONS[0]
 

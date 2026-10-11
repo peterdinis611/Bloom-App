@@ -1176,6 +1176,31 @@
   color: color-mix(in srgb, var(--toast-title, var(--foreground)) 62%, var(--muted-foreground));
 }
 
+.bloom-toast__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+}
+
+.bloom-toast__action {
+  border: 1px solid color-mix(in srgb, var(--toast-accent) 35%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--toast-accent) 12%, transparent);
+  color: var(--toast-title, var(--foreground));
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  padding: 0.28rem 0.55rem;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.bloom-toast__action:hover {
+  background: color-mix(in srgb, var(--toast-accent) 22%, transparent);
+  border-color: color-mix(in srgb, var(--toast-accent) 55%, var(--border));
+}
+
 .bloom-toast__close {
   flex-shrink: 0;
   display: grid;
@@ -1242,6 +1267,13 @@
   --toast-border: var(--status-info-border);
   --toast-surface: color-mix(in srgb, var(--status-info-bg) 55%, var(--surface));
   --toast-title: var(--status-info-fg);
+}
+
+.bloom-toast--warning {
+  --toast-accent: var(--status-warning-fg);
+  --toast-border: var(--status-warning-border);
+  --toast-surface: color-mix(in srgb, var(--status-warning-bg) 55%, var(--surface));
+  --toast-title: var(--status-warning-fg);
 }
 
 .bloom-toast--enter {
@@ -1407,11 +1439,14 @@
   -webkit-backdrop-filter: saturate(160%) blur(20px);
 }
 .mac-traffic {
+  position: relative;
+  z-index: 2;
   width: 12px;
   height: 12px;
   border-radius: 50%;
   border: none;
-  cursor: default;
+  cursor: pointer;
+  pointer-events: auto;
   transition: filter 0.12s;
 }
 .mac-traffic:hover { filter: brightness(1.08); }
@@ -1419,6 +1454,7 @@
 .mac-traffic-close { background: #ff5f57; }
 .mac-traffic-minimize { background: #febc2e; }
 .mac-traffic-maximize { background: #28c840; }
+.mac-traffic-maximized { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, #0a7a24 55%, transparent); }
 
 .mac-sidebar {
   background: color-mix(in srgb, var(--sidebar) 94%, transparent);
@@ -1912,4 +1948,80 @@
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent),
     0 8px 20px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* ── Onboarding (industrial film bay) ─────────────────────────────────────── */
+
+.onboard-overlay {
+  background:
+    radial-gradient(ellipse 70% 50% at 50% 20%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 60%),
+    color-mix(in srgb, var(--background) 72%, black);
+  backdrop-filter: blur(18px) saturate(1.1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  animation: onboard-fade 0.28s ease-out both;
+}
+
+.onboard-card {
+  position: relative;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, var(--accent) 20%);
+  background:
+    linear-gradient(165deg, color-mix(in srgb, var(--card) 92%, var(--accent) 8%) 0%, var(--card) 48%),
+    var(--card);
+  animation: onboard-rise 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.onboard-leader {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(
+    180deg,
+    var(--accent) 0%,
+    color-mix(in srgb, var(--accent) 40%, transparent) 100%
+  );
+}
+
+.onboard-step {
+  animation: fade-up 0.28s ease-out both;
+}
+
+@keyframes onboard-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes onboard-rise {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.share-sheet-hero {
+  background:
+    radial-gradient(ellipse 80% 120% at 0% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 55%),
+    linear-gradient(165deg, color-mix(in srgb, var(--card) 88%, var(--accent) 12%), var(--card));
+}
+
+.news-hero {
+  position: relative;
+}
+.news-hero::before {
+  content: "";
+  position: absolute;
+  inset: -0.5rem 0 auto;
+  height: 120px;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 80% at 12% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%);
+  opacity: 0.9;
+}
+.news-bullet {
+  animation: fade-up 0.3s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboard-overlay,
+  .onboard-card,
+  .onboard-step,
+  .news-bullet {
+    animation: none !important;
+  }
 }

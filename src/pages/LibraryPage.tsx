@@ -18,6 +18,7 @@ import {
   Mic,
   Volume2,
   Video,
+  CopyPlus,
   ScanSearch,
   Check,
   CircleAlert,
@@ -33,6 +34,12 @@ import {
   Scissors,
   Download,
   FileUp,
+  Image,
+  ClipboardCopy,
+  StickyNote,
+  Wrench,
+  Combine,
+  MousePointerClick,
 } from "lucide-react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { getCurrentWindow } from "@tauri-apps/api/window"
@@ -46,7 +53,6 @@ import {
   updateRecordingMeta,
   batchDeleteRecordings,
   deleteAllRecordings,
-  shareRecording,
   revealInFinder,
   validateRecording,
   importRecording,
@@ -56,16 +62,27 @@ import {
   fileSrc,
   formatBytes,
   formatDurationSecs,
+  copyText,
+  copyFile,
+  duplicateRecording,
+  concatRecordings,
+  applyClickSpotlight,
+  openLibraryFolder,
+  regenerateThumbnails,
+  repairSidecars,
+  onLibraryChanged,
+  onAutoOptimizeDone,
 } from "@/hooks/useBloomBackend"
 import { useExportQueue } from "@/hooks/useExportQueue"
 import { VideoPlayerModal } from "@/components/video/VideoPlayerModal"
 import { EditorModal } from "@/components/editor/EditorModal"
 import { BatchOptimizeModal } from "@/components/BatchOptimizeModal"
 import { ConfirmDeleteAll } from "@/components/library/ConfirmDeleteAll"
+import { ShareVideoSheet } from "@/components/library/ShareVideoSheet"
 import { PageScrollArea } from "@/components/layout/PageScrollArea"
 import { MacPageHeader } from "@/components/mac/MacUIKit"
 import { MacSelect } from "@/components/mac/MacSelect"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages, getMessagesSync } from "@/lib/i18n/I18nProvider"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -77,10 +94,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { useToast } from "@/hooks/useToast"
+import { useSettings } from "@/hooks/useSettings"
+import { localizeError } from "@/lib/i18n/localizeError"
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function relativeDate(iso: string): string {
+  const sk = getMessagesSync()
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return sk.library.dates.unknown
   const now = Date.now()
@@ -94,13 +120,6 @@ function relativeDate(iso: string): string {
   return d.toLocaleDateString("sk-SK", { month: "short", day: "numeric", year: "numeric" })
 }
 
-const SOURCE_META: Record<string, { icon: React.FC<{ className?: string }>; label: string; tint: string }> = {
-  screen: { icon: Monitor, label: sk.library.sources.screen, tint: "text-accent bg-primary/12" },
-  camera: { icon: Camera, label: sk.library.sources.camera, tint: "tone-fg-success bg-[var(--status-success-bg)]" },
-  both: { icon: Layers, label: sk.library.sources.both, tint: "tone-fg-info bg-[var(--status-info-bg)]" },
-  import: { icon: FileUp, label: sk.library.sources.import, tint: "tone-fg-info bg-[var(--status-info-bg)]" },
-}
-
 // ── Empty library hero ───────────────────────────────────────────────────────
 function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, onInstallFfmpeg, checkingFfmpeg, installingFfmpeg }: {
   onStartRecording?: () => void
@@ -110,6 +129,7 @@ function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, onInstallFfmp
   checkingFfmpeg: boolean
   installingFfmpeg: boolean
 }) {
+  const sk = useMessages()
   const hints = [
     { icon: Monitor, label: sk.library.screenCapture, tint: "text-accent bg-primary/12 border-primary/20" },
     { icon: Camera, label: sk.library.webcam, tint: "tone-fg-success tone-soft-success border" },
@@ -214,6 +234,7 @@ function StatPill({ icon: Icon, label, value }: {
 function ConfirmDelete({ title, open, onCancel, onConfirm }: {
   title: string; open: boolean; onCancel: () => void; onConfirm: () => void
 }) {
+  const sk = useMessages()
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
       <DialogContent className="[&>button]:hidden">
@@ -236,7 +257,7 @@ function ConfirmDelete({ title, open, onCancel, onConfirm }: {
 }
 
 // ── Recording card ─────────────────────────────────────────────────────────
-function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, onEdit, onToggleStar, onShare, validation, busy, ffmpegReady, batchMode, selected, onSelect, tagValue, onTagChange, onTagCommit, onFolderChange, showMetaInputs }: {
+function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, onEdit, onToggleStar, onShare, onCopyPath, onCopyFile, onDuplicate, onGif, onSpotlight, validation, busy, ffmpegReady, batchMode, selected, onSelect, tagValue, onTagChange, onTagCommit, onFolderChange, onNotesChange, showMetaInputs }: {
   entry: RecordingEntry
   onPlay: () => void
   onDelete: () => void
@@ -246,6 +267,11 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
   onEdit: () => void
   onToggleStar: () => void
   onShare: () => void
+  onCopyPath: () => void
+  onCopyFile: () => void
+  onDuplicate: () => void
+  onGif: () => void
+  onSpotlight?: () => void
   validation?: ValidationResult
   busy: boolean
   ffmpegReady: boolean
@@ -256,19 +282,35 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
   onTagChange?: (value: string) => void
   onTagCommit?: () => void
   onFolderChange?: (folder: string) => void
+  onNotesChange?: (notes: string) => void
   showMetaInputs?: boolean
 }) {
+  const sk = useMessages()
+  const sourceMeta: Record<string, { icon: React.FC<{ className?: string }>; label: string; tint: string }> = {
+    screen: { icon: Monitor, label: sk.library.sources.screen, tint: "text-accent bg-primary/12" },
+    camera: { icon: Camera, label: sk.library.sources.camera, tint: "tone-fg-success bg-[var(--status-success-bg)]" },
+    both: { icon: Layers, label: sk.library.sources.both, tint: "tone-fg-info bg-[var(--status-info-bg)]" },
+    import: { icon: FileUp, label: sk.library.sources.import, tint: "tone-fg-info bg-[var(--status-info-bg)]" },
+  }
   const meta = entry.meta
   const starred = meta.starred ?? false
   const tags = meta.tags ?? []
   const folder = meta.folder ?? ""
-  const src = SOURCE_META[meta.source] ?? SOURCE_META.screen
+  const notes = meta.notes ?? ""
+  const src = sourceMeta[meta.source] ?? sourceMeta.screen
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(meta.title)
   const [thumb, setThumb] = useState<string | null>(null)
+  const [notesOpen, setNotesOpen] = useState(Boolean(notes.trim()))
+  const [notesDraft, setNotesDraft] = useState(notes)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { if (editing) inputRef.current?.select() }, [editing])
+
+  useEffect(() => {
+    setNotesDraft(notes)
+    if (notes.trim()) setNotesOpen(true)
+  }, [notes, meta.id])
 
   // Lazily fetch a thumbnail (backend only regenerates if missing).
   useEffect(() => {
@@ -286,6 +328,10 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
     setEditing(false)
     if (next && next !== meta.title) onRename(next)
     else setDraft(meta.title)
+  }
+
+  const commitNotes = () => {
+    if (notesDraft !== notes) onNotesChange?.(notesDraft)
   }
 
   return (
@@ -355,7 +401,7 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
 
           <p className="mt-0.5 text-[11px] text-muted-foreground">{relativeDate(meta.created_at)}</p>
 
-          {(folder || tags.length > 0) && (
+          {(folder || tags.length > 0 || notes.trim()) && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1">
               {folder && (
                 <span className="flex items-center gap-0.5 rounded-md bg-secondary px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground">
@@ -367,6 +413,11 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
                   <Tag className="size-2.5" /> {t}
                 </span>
               ))}
+              {notes.trim() && (
+                <span className="flex items-center gap-0.5 rounded-md bg-accent/12 px-1.5 py-0.5 text-[10px] font-bold text-accent">
+                  <StickyNote className="size-2.5" /> {sk.library.notes}
+                </span>
+              )}
             </div>
           )}
 
@@ -397,11 +448,44 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
         <div className="flex flex-wrap gap-1">
           <ActionBtn icon={Play} label={sk.library.actions.play} onClick={onPlay} primary />
           {ffmpegReady && <ActionBtn icon={Scissors} label={sk.library.actions.edit} onClick={onEdit} accent />}
+          {ffmpegReady && <ActionBtn icon={Image} label={sk.library.actions.gif} onClick={onGif} />}
+          {ffmpegReady && onSpotlight && (meta.source === "screen" || meta.source === "both") && (
+            <ActionBtn icon={MousePointerClick} label={sk.library.actions.spotlight} onClick={onSpotlight} disabled={busy} />
+          )}
           <ActionBtn icon={ScanSearch} label={sk.library.actions.verify} onClick={onValidate} disabled={busy} />
           <ActionBtn icon={FolderOpen} label={sk.library.actions.reveal} onClick={onReveal} />
           <ActionBtn icon={Share2} label={sk.library.actions.share} onClick={onShare} />
+          <ActionBtn icon={Copy} label={sk.library.actions.copyPath} onClick={onCopyPath} />
+          <ActionBtn icon={ClipboardCopy} label={sk.library.actions.copyFile} onClick={onCopyFile} />
+          <ActionBtn icon={CopyPlus} label={sk.library.actions.duplicate} onClick={onDuplicate} disabled={busy} />
+          <ActionBtn
+            icon={StickyNote}
+            label={sk.library.notes}
+            onClick={() => setNotesOpen((o) => !o)}
+            accent={Boolean(notes.trim())}
+          />
           <ActionBtn icon={Trash2} label={sk.library.delete} onClick={onDelete} danger />
         </div>
+
+        {notesOpen && !batchMode && (
+          <div className="rounded-xl border border-border/50 bg-[var(--surface)]/80 p-2.5">
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <p className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground">
+                <StickyNote className="size-3 text-accent" />
+                {sk.library.notes}
+              </p>
+              <span className="text-[10px] text-muted-foreground">{sk.library.notesHint}</span>
+            </div>
+            <textarea
+              value={notesDraft}
+              onChange={(e) => setNotesDraft(e.target.value)}
+              onBlur={commitNotes}
+              rows={3}
+              placeholder={sk.library.notesPlaceholder}
+              className="w-full resize-y rounded-lg border border-border/50 bg-background/60 px-3 py-2 text-[12.5px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-primary/40"
+            />
+          </div>
+        )}
 
         {showMetaInputs && !batchMode && (
           <div className="flex flex-wrap items-center gap-2">
@@ -456,6 +540,8 @@ interface LibraryPageProps {
   active?: boolean
   openRecordingId?: string | null
   onOpenRecordingHandled?: () => void
+  editRecordingId?: string | null
+  onEditRecordingHandled?: () => void
 }
 
 export function LibraryPage({
@@ -463,7 +549,11 @@ export function LibraryPage({
   active = true,
   openRecordingId = null,
   onOpenRecordingHandled,
+  editRecordingId = null,
+  onEditRecordingHandled,
 }: LibraryPageProps) {
+  const sk = useMessages()
+  const { settings } = useSettings()
   const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
   const [entries, setEntries] = useState<RecordingEntry[]>([])
   const [stats, setStats] = useState<LibraryStats | null>(null)
@@ -495,6 +585,9 @@ export function LibraryPage({
   const [tagDraft, setTagDraft] = useState<Record<string, string>>({})
   const [importBusy, setImportBusy] = useState(false)
   const [dragActive, setDragActive] = useState(false)
+  const [shareEntry, setShareEntry] = useState<RecordingEntry | null>(null)
+  const [concatBusy, setConcatBusy] = useState(false)
+  const [maintBusy, setMaintBusy] = useState<"thumbs" | "repair" | null>(null)
 
   const recheckFfmpeg = useCallback(async (showToast = false) => {
     setCheckingFfmpeg(true)
@@ -518,7 +611,7 @@ export function LibraryPage({
       if (showToast) {
         toastError({
           title: sk.library.ffmpeg.toastCheckFailed,
-          description: String(e),
+          description: localizeError(e),
         })
       }
     } finally {
@@ -549,7 +642,7 @@ export function LibraryPage({
     } catch (e) {
       toastError({
         title: sk.library.ffmpeg.toastInstallFailed,
-        description: String(e),
+        description: localizeError(e),
       })
     } finally {
       setInstallingFfmpeg(false)
@@ -564,7 +657,7 @@ export function LibraryPage({
       setEntries(recs)
       setStats(st)
     } catch (e) {
-      const msg = String(e)
+      const msg = localizeError(e)
       setError(msg)
       toastError({ title: sk.toast.loadFailed, description: msg })
     } finally {
@@ -572,7 +665,7 @@ export function LibraryPage({
     }
   }, [toastError])
 
-  const { activeCount } = useExportQueue()
+  const { activeCount, enqueue } = useExportQueue()
   const prevQueueActive = useRef(0)
 
   useEffect(() => { load() }, [load])
@@ -582,6 +675,35 @@ export function LibraryPage({
   }, [activeCount, load])
   useEffect(() => { recheckFfmpeg() }, [recheckFfmpeg])
 
+  /** Refresh without the full-page spinner (watcher / background events). */
+  const silentReload = useCallback(async () => {
+    try {
+      const [recs, st] = await Promise.all([listRecordings(), getLibraryStats()])
+      setEntries(recs)
+      setStats(st)
+    } catch { /* keep current list */ }
+  }, [])
+
+  // Backend events: debounced reload on library changes / auto-optimize.
+  useEffect(() => {
+    let timer: number | undefined
+    const schedule = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => { void silentReload() }, 400)
+    }
+    const unsubs: Array<() => void> = []
+    let disposed = false
+    const track = (p: Promise<() => void>) =>
+      p.then((fn) => { if (disposed) fn(); else unsubs.push(fn) }).catch(() => {})
+    track(onLibraryChanged(schedule))
+    track(onAutoOptimizeDone(schedule))
+    return () => {
+      disposed = true
+      window.clearTimeout(timer)
+      unsubs.forEach((fn) => fn())
+    }
+  }, [silentReload])
+
   useEffect(() => {
     if (!openRecordingId || loading) return
     const entry = entries.find((e) => e.meta.id === openRecordingId)
@@ -590,6 +712,15 @@ export function LibraryPage({
       onOpenRecordingHandled?.()
     }
   }, [openRecordingId, entries, loading, onOpenRecordingHandled])
+
+  useEffect(() => {
+    if (!editRecordingId || loading) return
+    const entry = entries.find((e) => e.meta.id === editRecordingId)
+    if (entry) {
+      setEditing(entry)
+      onEditRecordingHandled?.()
+    }
+  }, [editRecordingId, entries, loading, onEditRecordingHandled])
 
   const importPaths = useCallback(async (paths: string[]) => {
     if (paths.length === 0) return
@@ -606,7 +737,7 @@ export function LibraryPage({
         description: paths.length === 1 ? paths[0].split("/").pop() : `${paths.length} súborov`,
       })
     } catch (e) {
-      toastError({ title: sk.library.importFailed, description: String(e) })
+      toastError({ title: sk.library.importFailed, description: localizeError(e) })
     } finally {
       setImportBusy(false)
       setDragActive(false)
@@ -617,14 +748,20 @@ export function LibraryPage({
     try {
       const selected = await open({
         multiple: true,
-        filters: [{ name: "Video", extensions: ["mp4", "webm", "mov", "mkv", "m4v"] }],
+        filters: [{
+          name: "Video",
+          extensions: [
+            "mp4", "m4v", "mov", "webm", "mkv", "avi", "mpeg", "mpg", "ts", "mts", "m2ts",
+            "flv", "f4v", "wmv", "asf", "3gp", "ogv", "vob", "mxf",
+          ],
+        }],
         title: sk.library.importBtn,
       })
       if (!selected) return
       const paths = Array.isArray(selected) ? selected : [selected]
       await importPaths(paths)
     } catch (e) {
-      toastError({ title: sk.library.importFailed, description: String(e) })
+      toastError({ title: sk.library.importFailed, description: localizeError(e) })
     }
   }, [importPaths, toastError])
 
@@ -663,7 +800,9 @@ export function LibraryPage({
     return list.filter((e) =>
       e.meta.title.toLowerCase().includes(q)
       || e.meta.source.includes(q)
-      || (e.meta.tags ?? []).some((t) => t.toLowerCase().includes(q)),
+      || (e.meta.tags ?? []).some((t) => t.toLowerCase().includes(q))
+      || (e.meta.notes ?? "").toLowerCase().includes(q)
+      || (e.meta.folder ?? "").toLowerCase().includes(q),
     )
   }, [entries, debouncedQuery, starredOnly, folderFilter])
 
@@ -682,7 +821,7 @@ export function LibraryPage({
       setEntries((prev) => prev.map((e) => (e.meta.id === id ? { ...e, meta } : e)))
       toastSuccess({ title: sk.toast.renamed(title) })
     } catch (e) {
-      const msg = String(e)
+      const msg = localizeError(e)
       setError(msg)
       toastError({ title: sk.toast.actionFailed, description: msg })
     }
@@ -697,9 +836,26 @@ export function LibraryPage({
       if (st) setStats(st)
       toastSuccess({ title: sk.toast.deleted })
     } catch (e) {
-      const msg = String(e)
+      const msg = localizeError(e)
       setError(msg)
       toastError({ title: sk.toast.actionFailed, description: msg })
+    }
+  }
+
+  const handleDuplicate = async (id: string) => {
+    setBusyId(id)
+    try {
+      const copy = await duplicateRecording(id)
+      setEntries((prev) => [copy, ...prev])
+      const st = await getLibraryStats().catch(() => null)
+      if (st) setStats(st)
+      toastSuccess({ title: sk.toast.duplicated(copy.meta.title) })
+    } catch (e) {
+      const msg = localizeError(e)
+      setError(msg)
+      toastError({ title: sk.toast.actionFailed, description: msg })
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -715,7 +871,7 @@ export function LibraryPage({
       if (st) setStats(st)
       toastSuccess({ title: sk.toast.batchDeleted(ids.length) })
     } catch (e) {
-      const msg = String(e)
+      const msg = localizeError(e)
       setError(msg)
       toastError({ title: sk.toast.actionFailed, description: msg })
     }
@@ -741,7 +897,7 @@ export function LibraryPage({
       setValidations({})
       toastSuccess({ title: sk.toast.deletedAll(count) })
     } catch (e) {
-      const msg = String(e)
+      const msg = localizeError(e)
       setError(msg)
       toastError({ title: sk.toast.actionFailed, description: msg })
     } finally {
@@ -754,7 +910,7 @@ export function LibraryPage({
       const meta = await updateRecordingMeta(id, { starred: !starred })
       setEntries((prev) => prev.map((e) => (e.meta.id === id ? { ...e, meta } : e)))
     } catch (e) {
-      setError(String(e))
+      setError(localizeError(e))
     }
   }
 
@@ -765,7 +921,19 @@ export function LibraryPage({
       setEntries((prev) => prev.map((e) => (e.meta.id === id ? { ...e, meta } : e)))
       toastSuccess({ title: sk.toast.folderSet(trimmed) })
     } catch (e) {
-      const msg = String(e)
+      const msg = localizeError(e)
+      setError(msg)
+      toastError({ title: sk.toast.actionFailed, description: msg })
+    }
+  }
+
+  const handleSetNotes = async (id: string, notes: string) => {
+    try {
+      const meta = await updateRecordingMeta(id, { notes })
+      setEntries((prev) => prev.map((e) => (e.meta.id === id ? { ...e, meta } : e)))
+      toastSuccess({ title: sk.toast.notesSaved })
+    } catch (e) {
+      const msg = localizeError(e)
       setError(msg)
       toastError({ title: sk.toast.actionFailed, description: msg })
     }
@@ -783,7 +951,7 @@ export function LibraryPage({
       setTagDraft((d) => ({ ...d, [id]: "" }))
       toastSuccess({ title: sk.toast.tagAdded(raw) })
     } catch (e) {
-      const msg = String(e)
+      const msg = localizeError(e)
       setError(msg)
       toastError({ title: sk.toast.actionFailed, description: msg })
     }
@@ -812,11 +980,74 @@ export function LibraryPage({
         })
       }
     } catch (e) {
-      const msg = String(e)
+      const msg = localizeError(e)
       setError(msg)
       toastError({ title: sk.toast.validateFail, description: msg })
     } finally {
       setBusyId(null)
+    }
+  }
+
+  const handleConcat = async () => {
+    // Keep library order (newest-first) reversed → oldest first, which is the natural play order.
+    const picked = entries.filter((e) => selectedIds.has(e.meta.id)).reverse()
+    if (picked.length < 2) {
+      toastInfo({ title: sk.library.concatNeedTwo })
+      return
+    }
+    setConcatBusy(true)
+    try {
+      const entry = await concatRecordings(picked.map((e) => e.meta.id))
+      setEntries((prev) => [entry, ...prev.filter((e) => e.meta.id !== entry.meta.id)])
+      setSelectedIds(new Set())
+      setBatchMode(false)
+      const st = await getLibraryStats().catch(() => null)
+      if (st) setStats(st)
+      toastSuccess({ title: sk.toast.concatDone(entry.meta.title) })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setConcatBusy(false)
+    }
+  }
+
+  const handleSpotlight = async (id: string) => {
+    setBusyId(id)
+    try {
+      const entry = await applyClickSpotlight(id)
+      setEntries((prev) => [entry, ...prev.filter((e) => e.meta.id !== entry.meta.id)])
+      const st = await getLibraryStats().catch(() => null)
+      if (st) setStats(st)
+      toastSuccess({ title: sk.toast.spotlightDone(entry.meta.title) })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const handleRegenThumbs = async () => {
+    setMaintBusy("thumbs")
+    try {
+      const { updated } = await regenerateThumbnails(false)
+      toastSuccess({ title: sk.toast.thumbsRegenerated(updated) })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setMaintBusy(null)
+    }
+  }
+
+  const handleRepair = async () => {
+    setMaintBusy("repair")
+    try {
+      const { repaired } = await repairSidecars()
+      toastSuccess({ title: sk.toast.sidecarsRepaired(repaired) })
+      await silentReload()
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setMaintBusy(null)
     }
   }
 
@@ -838,6 +1069,18 @@ export function LibraryPage({
         subtitle={loading ? sk.library.loading : stats ? sk.library.recordingCount(stats.total_recordings) : sk.library.subtitle}
         actions={
           <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void openLibraryFolder().catch((e) =>
+                  toastError({ title: sk.toast.actionFailed, description: localizeError(e) }),
+                )
+              }}
+              className="text-[10px] font-bold"
+            >
+              <FolderOpen className="size-3" /> {sk.library.openFolder}
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -872,6 +1115,27 @@ export function LibraryPage({
                 <Sparkles className="size-3" /> ffmpeg
               </Badge>
             )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" title={sk.library.maintenance}>
+                  <Wrench className={cn("size-4", maintBusy && "animate-pulse")} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  disabled={maintBusy !== null || !ffmpeg?.available}
+                  onClick={() => { void handleRegenThumbs() }}
+                >
+                  <RefreshCw className="size-3" /> {sk.library.regenThumbs}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={maintBusy !== null}
+                  onClick={() => { void handleRepair() }}
+                >
+                  <Wrench className="size-3" /> {sk.library.repairSidecars}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               variant="outline"
               size="icon"
@@ -977,6 +1241,17 @@ export function LibraryPage({
               <Sparkles className="size-3" /> {sk.library.optimiseSelected(selectedIds.size)}
             </button>
           )}
+          {batchMode && selectedIds.size > 0 && ffmpeg?.available && (
+            <button
+              onClick={() => { void handleConcat() }}
+              disabled={concatBusy || selectedIds.size < 2}
+              title={selectedIds.size < 2 ? sk.library.concatNeedTwo : undefined}
+              className="flex items-center gap-1 rounded-lg border border-border/60 px-2.5 py-1.5 text-[11px] font-bold text-foreground hover:bg-secondary disabled:opacity-40"
+            >
+              <Combine className={cn("size-3", concatBusy && "animate-pulse")} />
+              {concatBusy ? sk.library.concatBusy : sk.library.concatSelected(selectedIds.size)}
+            </button>
+          )}
           {batchMode && selectedIds.size > 0 && (
             <button
               onClick={handleBatchDelete}
@@ -1046,18 +1321,44 @@ export function LibraryPage({
                 selected={selectedIds.has(entry.meta.id)}
                 onSelect={() => toggleSelect(entry.meta.id)}
                 onPlay={() => setPlaying(entry)}
-                onDelete={() => setConfirmId(entry.meta.id)}
-                onReveal={() => revealInFinder(entry.path).catch((e) => setError(String(e)))}
-                onShare={async () => {
-                  try {
-                    const result = await shareRecording(entry.meta.id)
-                    const title =
-                      sk.library.shareSuccess[result.mode] ?? sk.library.shareOpened
-                    toastSuccess({ title })
-                  } catch (e) {
-                    toastError({ title: sk.library.shareFailed, description: String(e) })
+                onDelete={() => {
+                  if (settings.general.confirmDelete) {
+                    setConfirmId(entry.meta.id)
+                  } else {
+                    void handleDelete(entry.meta.id)
                   }
                 }}
+                onReveal={() => revealInFinder(entry.path).catch((e) => setError(localizeError(e)))}
+                onShare={() => setShareEntry(entry)}
+                onCopyPath={() => {
+                  void copyText(entry.path)
+                    .then(() => toastSuccess({ title: sk.toast.pathCopied }))
+                    .catch((e) => toastError({ title: sk.toast.actionFailed, description: localizeError(e) }))
+                }}
+                onCopyFile={() => {
+                  void copyFile(entry.path)
+                    .then(() => toastSuccess({ title: sk.toast.fileCopied }))
+                    .catch((e) => toastError({ title: sk.toast.actionFailed, description: localizeError(e) }))
+                }}
+                onDuplicate={() => { void handleDuplicate(entry.meta.id) }}
+                onGif={() => {
+                  enqueue({
+                    label: `GIF · ${entry.meta.title}`,
+                    options: {
+                      input_path: entry.path,
+                      preset: "medium",
+                      resolution: "480p",
+                      format: "gif",
+                      add_to_library: false,
+                      output_name: `${entry.meta.title.replace(/\s+/g, "-").slice(0, 40)}.gif`,
+                    },
+                  })
+                  toastSuccess({
+                    title: sk.toast.gifQueued,
+                    description: sk.toast.gifQueuedBody,
+                  })
+                }}
+                onSpotlight={() => { void handleSpotlight(entry.meta.id) }}
                 onRename={(title) => handleRename(entry.meta.id, title)}
                 onValidate={() => handleValidate(entry.meta.id)}
                 onEdit={() => setEditing(entry)}
@@ -1068,6 +1369,9 @@ export function LibraryPage({
                 onTagCommit={() => handleAddTag(entry.meta.id)}
                 onFolderChange={(folder) => {
                   if (folder !== (entry.meta.folder ?? "")) handleSetFolder(entry.meta.id, folder)
+                }}
+                onNotesChange={(notes) => {
+                  if (notes !== (entry.meta.notes ?? "")) void handleSetNotes(entry.meta.id, notes)
                 }}
               />
             ))}
@@ -1080,6 +1384,11 @@ export function LibraryPage({
       {playing && (
         <VideoPlayerModal entry={playing} open onClose={() => setPlaying(null)} />
       )}
+      <ShareVideoSheet
+        entry={shareEntry}
+        open={Boolean(shareEntry)}
+        onClose={() => setShareEntry(null)}
+      />
       {confirmEntry && (
         <ConfirmDelete
           title={confirmEntry.meta.title}

@@ -2,7 +2,7 @@ import type { PipPosition, PipSize } from "@/lib/capture"
 import type { RecordingQuality } from "@/lib/videoOptions"
 
 // ── App state ──────────────────────────────────────────────────────────────
-export type RecordingStatus = "idle" | "preparing" | "countdown" | "recording" | "paused" | "processing" | "done"
+export type RecordingStatus = "idle" | "preparing" | "region" | "countdown" | "recording" | "paused" | "processing" | "done"
 
 export type RecordingSource = "screen" | "camera" | "both"
 
@@ -60,6 +60,8 @@ export interface RecordingMeta {
   starred?: boolean
   tags?: string[]
   folder?: string
+  /** Free-form user notes */
+  notes?: string
 }
 
 /** Mirrors RecordingEntry in Rust */
@@ -90,6 +92,51 @@ export interface LibraryDirectoryInfo {
   path: string
   is_custom: boolean
   default_path: string
+  /** Files moved by the last set_library_directory(.., migrate = true). */
+  migrated_files?: number
+}
+
+/** Mirrors CapturePermissions in Rust. */
+export interface CapturePermissions {
+  screen: boolean
+  microphone: boolean
+  camera: boolean
+}
+
+/** Mirrors CaptureWindow in Rust (snake_case). */
+export interface CaptureWindow {
+  id: string
+  title: string
+  app_name: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** Mirrors IncompleteSession in Rust. */
+export interface IncompleteSession {
+  path: string
+  filename: string
+  size_bytes: number
+}
+
+export interface ClickTrackSummary {
+  path: string
+  count: number
+}
+
+export interface ClickSpotlightOptions {
+  clicksPath?: string
+  outputName?: string
+  captureBounds?: { x: number; y: number; width: number; height: number }
+}
+
+export interface AutoOptimizeDone {
+  id: string
+  path: string
+  size_bytes: number
+  duration_secs: number
 }
 
 /** Mirrors MonitorInfo in Rust */
@@ -146,7 +193,19 @@ export interface VideoInfo {
 
 export type OptimizePreset = "small" | "medium" | "high"
 export type OptimizeResolution = "480p" | "720p" | "1080p" | "original"
-export type OptimizeFormat = "mp4" | "webm" | "gif"
+export type OptimizeFormat =
+  | "mp4"
+  | "mov"
+  | "m4v"
+  | "mkv"
+  | "avi"
+  | "mpeg"
+  | "ts"
+  | "flv"
+  | "3gp"
+  | "ogv"
+  | "webm"
+  | "gif"
 
 /** Payload sent to optimize_video (mirrors OptimizeOptions in Rust). */
 export interface OptimizeOptions {
@@ -156,6 +215,13 @@ export interface OptimizeOptions {
   format: OptimizeFormat
   trim_start?: number | null
   trim_end?: number | null
+  /** Multiple keep-ranges joined into one output (overrides single trim). */
+  keep_ranges?: { start: number; end: number }[]
+  /** Normalized spatial crop 0–1. */
+  crop_x?: number | null
+  crop_y?: number | null
+  crop_w?: number | null
+  crop_h?: number | null
   /** Playback speed multiplier (1 = normal, 2 = 2× faster). */
   speed?: number
   output_name?: string | null
