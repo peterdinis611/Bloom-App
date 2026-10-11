@@ -8,7 +8,8 @@ use tauri::{
 };
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
-use crate::i18n::{self, current_strings, LocaleState, TRAY_ID};
+use crate::config::{load_config, save_config, ShortcutConfig};
+use crate::i18n::{self, current_locale, current_strings, strings, LocaleState, Strings, TRAY_ID};
 
 #[derive(Clone)]
 pub struct ShortcutBindings {
@@ -28,6 +29,95 @@ impl Default for ShortcutBindings {
 }
 
 pub struct ShortcutStateStore(pub Mutex<ShortcutBindings>);
+
+/// Live recording status mirrored from the UI (drives tray menu + tooltip).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RecordingTray {
+    pub active: bool,
+    pub paused: bool,
+    pub elapsed_secs: u32,
+}
+
+pub struct RecordingTrayState(pub Mutex<RecordingTray>);
+
+impl Default for RecordingTrayState {
+    fn default() -> Self {
+        Self(Mutex::new(RecordingTray::default()))
+    }
+}
+
+/// `MM:SS` (or `H:MM:SS` past an hour).
+pub(crate) fn format_elapsed(secs: u32) -> String {
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    let s = secs % 60;
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m:02}:{s:02}")
+    }
+}
+
+/// Tooltip text, e.g. `Bloom · REC 03:42` or `Bloom · paused`.
+pub(crate) fn tooltip_text(rec: RecordingTray, s: &Strings) -> String {
+    if !rec.active {
+        s.tray_tooltip.to_string()
+    } else if rec.paused {
+        format!("{} · {}", s.tray_tooltip, s.tray_paused)
+    } else {
+        format!("{} · REC {}", s.tray_tooltip, format_elapsed(rec.elapsed_secs))
+    }
+}
+
+/// Current recording state (inactive when the state is not managed yet).
+pub(crate) fn recording_tray(app: &AppHandle) -> RecordingTray {
+    app.try_state::<RecordingTrayState>()
+        .and_then(|st| st.0.lock().ok().map(|g| *g))
+        .unwrap_or_default()
+}
+
+/// Update recording status. Rebuilds the menu only when active/paused flips;
+/// the per-second elapsed tick just refreshes the tooltip.
+#[tauri::command]
+pub fn set_recording_state(
+    app: AppHandle,
+    state: State<'_, RecordingTrayState>,
+    locale: State<'_, LocaleState>,
+    active: bool,
+    paused: bool,
+    elapsed_secs: u32,
+) -> Result<(), String> {
+    let next = RecordingTray {
+        active,
+        paused: active && paused,
+        elapsed_secs: if active { elapsed_secs } else { 0 },
+    };
+    let prev = {
+        let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+        let prev = *guard;
+        *guard = next;
+        prev
+    };
+
+    let loc = current_locale(&locale);
+    if prev.active != next.active || prev.paused != next.paused {
+        i18n::refresh_tray_menu(&app, loc)?;
+    } else if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let s = strings(loc);
+        let _ = tray.set_tooltip(Some(tooltip_text(next, &s)));
+    }
+    Ok(())
+}
+
+fn bindings_from_config(cfg: &ShortcutConfig) -> Option<ShortcutBindings> {
+    let arm = code_from_key(&cfg.arm)?;
+    let pause = code_from_key(&cfg.pause)?;
+    let stop = code_from_key(&cfg.stop)?;
+    if arm == pause || arm == stop || pause == stop {
+        return None;
+    }
+    Some(ShortcutBindings { arm, pause, stop })
+}
 
 fn code_from_key(key: &str) -> Option<Code> {
     match key.to_uppercase().as_str() {
@@ -104,9 +194,23 @@ fn emit_shortcut(app: &AppHandle, id: &str) {
     }
 }
 
+/// Load persisted shortcuts (falling back to defaults), store them and register.
+/// A registration failure (e.g. key taken by another app) is logged, not fatal.
 pub fn register_shortcuts(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let bindings = ShortcutBindings::default();
-    apply_shortcuts(app, &bindings)?;
+    let bindings = load_config(app)
+        .ok()
+        .and_then(|c| c.shortcuts)
+        .and_then(|sc| bindings_from_config(&sc))
+        .unwrap_or_default();
+
+    if let Some(store) = app.try_state::<ShortcutStateStore>() {
+        if let Ok(mut guard) = store.0.lock() {
+            *guard = bindings.clone();
+        }
+    }
+    if let Err(e) = apply_shortcuts(app, &bindings) {
+        eprintln!("Bloom: could not register global shortcuts: {e}");
+    }
     Ok(())
 }
 
@@ -171,6 +275,15 @@ pub fn set_global_shortcuts(
         stop: stop_code,
     };
     apply_shortcuts(&app, &bindings)?;
+
+    let mut cfg = load_config(&app).unwrap_or_default();
+    cfg.shortcuts = Some(ShortcutConfig {
+        arm: key_from_code(bindings.arm).to_string(),
+        pause: key_from_code(bindings.pause).to_string(),
+        stop: key_from_code(bindings.stop).to_string(),
+    });
+    save_config(&app, &cfg)?;
+
     if let Ok(mut guard) = state.0.lock() {
         *guard = bindings;
     }
@@ -197,7 +310,7 @@ pub fn build_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon.unwrap())
         .menu(&menu)
-        .tooltip(s.tray_tooltip)
+        .tooltip(tooltip_text(recording_tray(app), &s))
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
             match id {
@@ -274,4 +387,38 @@ pub fn build_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .build(app)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::i18n::{strings, Locale};
+
+    #[test]
+    fn elapsed_formats() {
+        assert_eq!(format_elapsed(0), "00:00");
+        assert_eq!(format_elapsed(222), "03:42");
+        assert_eq!(format_elapsed(3723), "1:02:03");
+    }
+
+    #[test]
+    fn tooltip_reflects_state() {
+        let s = strings(Locale::En);
+        let idle = RecordingTray::default();
+        assert_eq!(tooltip_text(idle, &s), "Bloom");
+        let rec = RecordingTray { active: true, paused: false, elapsed_secs: 222 };
+        assert_eq!(tooltip_text(rec, &s), "Bloom · REC 03:42");
+        let paused = RecordingTray { active: true, paused: true, elapsed_secs: 222 };
+        assert_eq!(tooltip_text(paused, &s), "Bloom · paused");
+    }
+
+    #[test]
+    fn config_shortcuts_validate() {
+        let ok = ShortcutConfig { arm: "a".into(), pause: "B".into(), stop: "c".into() };
+        assert!(bindings_from_config(&ok).is_some());
+        let dup = ShortcutConfig { arm: "a".into(), pause: "a".into(), stop: "c".into() };
+        assert!(bindings_from_config(&dup).is_none());
+        let bad = ShortcutConfig { arm: "1".into(), pause: "b".into(), stop: "c".into() };
+        assert!(bindings_from_config(&bad).is_none());
+    }
 }

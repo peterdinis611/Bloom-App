@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { RotateCcw, Trash2, Check, FolderOpen, RefreshCw, Shield, Mic, Video, Sparkles } from "lucide-react"
+import { RotateCcw, Trash2, Check, FolderOpen, RefreshCw, Shield, Mic, Video, Sparkles, Monitor, Wrench, Play, LifeBuoy } from "lucide-react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,9 +9,22 @@ import { RECORDING_QUALITIES } from "@/lib/videoOptions"
 import { THEMES } from "@/lib/themes"
 import { ANNOTATION_COLORS, useSettings, type AnnotationTool } from "@/hooks/useSettings"
 import {
+  checkCapturePermissions,
   deleteAllRecordings,
+  discardIncompleteSession,
   formatBytes,
   getAppInfo,
+  getAutoOptimizeAfterRecord,
+  getDiskSpaceMinMb,
+  listIncompleteSessions,
+  listRecentRecordings,
+  onLibraryChanged,
+  openLibraryFolder,
+  recoverIncompleteSession,
+  regenerateThumbnails,
+  repairSidecars,
+  setAutoOptimizeAfterRecord,
+  setDiskSpaceMinMb,
   getFilenameTemplate,
   getLibraryDirectory,
   getLibraryStats,
@@ -23,7 +36,7 @@ import {
   type AppInfo,
   type FilenamePreview,
 } from "@/hooks/useBloomBackend"
-import type { LibraryDirectoryInfo } from "@/types"
+import type { CapturePermissions, IncompleteSession, LibraryDirectoryInfo, RecordingEntry } from "@/types"
 import { useToast } from "@/hooks/useToast"
 import { ConfirmDeleteAll } from "@/components/library/ConfirmDeleteAll"
 import { PageScrollArea } from "@/components/layout/PageScrollArea"
@@ -37,7 +50,14 @@ import { checkForAppUpdate } from "@/lib/updater"
 import { PrivacyPolicyModal } from "@/components/legal/PrivacyPolicyModal"
 import { openPrivacySettings } from "@/lib/privacySettings"
 
-export function SettingsPage({ active = true }: { active?: boolean }) {
+export function SettingsPage({
+  active = true,
+  onOpenRecording,
+}: {
+  active?: boolean
+  /** Open a recording in the library (play). */
+  onOpenRecording?: (id: string) => void
+}) {
   const sk = useMessages()
   const {
     settings,
@@ -65,6 +85,15 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
   const [trayBusy, setTrayBusy] = useState(false)
   const [purgeBusy, setPurgeBusy] = useState(false)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
+  const [migrateOnChoose, setMigrateOnChoose] = useState(true)
+  const [autoOptimize, setAutoOptimize] = useState(false)
+  const [diskMinDraft, setDiskMinDraft] = useState("")
+  const [thumbsBusy, setThumbsBusy] = useState(false)
+  const [repairBusy, setRepairBusy] = useState(false)
+  const [incomplete, setIncomplete] = useState<IncompleteSession[]>([])
+  const [incompleteBusy, setIncompleteBusy] = useState<string | null>(null)
+  const [permissions, setPermissions] = useState<CapturePermissions | null>(null)
+  const [recent, setRecent] = useState<RecordingEntry[]>([])
   const integ = settings.integrations
   const general = settings.general
   const exportDefaults = settings.exportDefaults
@@ -114,6 +143,35 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
       setLibrarySize(0)
     }
   }, [])
+
+  const refreshIncomplete = useCallback(() => {
+    void listIncompleteSessions().then(setIncomplete).catch(() => setIncomplete([]))
+  }, [])
+
+  const refreshRecent = useCallback(() => {
+    void listRecentRecordings(5).then(setRecent).catch(() => setRecent([]))
+  }, [])
+
+  const refreshPermissions = useCallback(() => {
+    void checkCapturePermissions().then(setPermissions).catch(() => setPermissions(null))
+  }, [])
+
+  useEffect(() => {
+    refreshIncomplete()
+    refreshRecent()
+    refreshPermissions()
+    void getAutoOptimizeAfterRecord().then(setAutoOptimize).catch(() => {})
+    void getDiskSpaceMinMb().then((mb) => setDiskMinDraft(String(mb))).catch(() => {})
+    let unlisten: (() => void) | undefined
+    let disposed = false
+    void onLibraryChanged(() => {
+      refreshRecent()
+      refreshIncomplete()
+    })
+      .then((fn) => { if (disposed) fn(); else unlisten = fn })
+      .catch(() => {})
+    return () => { disposed = true; unlisten?.() }
+  }, [refreshIncomplete, refreshRecent, refreshPermissions])
 
   useEffect(() => {
     void refreshLibraryStats()
@@ -168,10 +226,16 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
     try {
       const selected = await open({ directory: true, multiple: false, title: sk.settings.libraryFolder })
       if (!selected || Array.isArray(selected)) return
-      const info = await setLibraryDirectory(selected)
+      const info = await setLibraryDirectory(selected, migrateOnChoose)
       setLibraryDir(info)
       await refreshLibraryStats()
-      toastSuccess({ title: sk.settings.libraryFolder, description: info.path })
+      refreshRecent()
+      toastSuccess({
+        title: sk.settings.libraryFolder,
+        description: migrateOnChoose && info.migrated_files
+          ? `${info.path} · ${sk.toast.libraryFolderMigrated(info.migrated_files)}`
+          : info.path,
+      })
     } catch (e) {
       toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
     } finally {
@@ -236,6 +300,85 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
       setPurgeBusy(false)
     }
   }
+
+  const handleToggleAutoOptimize = async () => {
+    const next = !autoOptimize
+    setAutoOptimize(next)
+    try {
+      setAutoOptimize(await setAutoOptimizeAfterRecord(next))
+    } catch (e) {
+      setAutoOptimize(!next)
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    }
+  }
+
+  const commitDiskMin = async () => {
+    const mb = Math.max(0, Math.floor(Number(diskMinDraft) || 0))
+    try {
+      setDiskMinDraft(String(await setDiskSpaceMinMb(mb)))
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    }
+  }
+
+  const handleRegenThumbs = async () => {
+    setThumbsBusy(true)
+    try {
+      const { updated } = await regenerateThumbnails(false)
+      toastSuccess({ title: sk.toast.thumbsRegenerated(updated) })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setThumbsBusy(false)
+    }
+  }
+
+  const handleRepairSidecars = async () => {
+    setRepairBusy(true)
+    try {
+      const { repaired } = await repairSidecars()
+      await refreshLibraryStats()
+      toastSuccess({ title: sk.toast.sidecarsRepaired(repaired) })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setRepairBusy(false)
+    }
+  }
+
+  const handleRecover = async (filename: string) => {
+    setIncompleteBusy(filename)
+    try {
+      const meta = await recoverIncompleteSession(filename)
+      toastSuccess({ title: sk.toast.sessionRecovered(meta.title) })
+      refreshIncomplete()
+      refreshRecent()
+      await refreshLibraryStats()
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setIncompleteBusy(null)
+    }
+  }
+
+  const handleDiscard = async (filename: string) => {
+    setIncompleteBusy(filename)
+    try {
+      await discardIncompleteSession(filename)
+      toastSuccess({ title: sk.toast.sessionDiscarded })
+      refreshIncomplete()
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setIncompleteBusy(null)
+    }
+  }
+
+  const permissionRows: { key: keyof CapturePermissions; label: string; icon: typeof Monitor }[] = [
+    { key: "screen", label: sk.settings.permScreen, icon: Monitor },
+    { key: "microphone", label: sk.settings.permMic, icon: Mic },
+    { key: "camera", label: sk.settings.permCamera, icon: Video },
+  ]
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -395,6 +538,26 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
             <MacToggle
               on={settings.recording.cameraBlur}
               onChange={() => updateRecording({ cameraBlur: !settings.recording.cameraBlur })}
+            />
+          </MacRow>
+          <MacRow
+            label={sk.settings.autoOptimize}
+            hint={sk.settings.autoOptimizeHint}
+            onClick={() => { void handleToggleAutoOptimize() }}
+          >
+            <MacToggle on={autoOptimize} onChange={() => { void handleToggleAutoOptimize() }} />
+          </MacRow>
+          <MacRow label={sk.settings.diskSpaceMin} hint={sk.settings.diskSpaceMinHint}>
+            <Input
+              type="number"
+              min={0}
+              step={50}
+              value={diskMinDraft}
+              placeholder="200"
+              onChange={(e) => setDiskMinDraft(e.target.value)}
+              onBlur={() => { void commitDiskMin() }}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur() }}
+              className="w-20 text-right"
             />
           </MacRow>
         </MacGroup>
@@ -574,6 +737,31 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
           </MacRow>
         </MacGroup>
 
+        <MacGroupHeader>{sk.settings.permissions}</MacGroupHeader>
+        <MacGroup>
+          {permissionRows.map(({ key, label, icon: Icon }) => {
+            const ok = permissions?.[key]
+            return (
+              <MacRow key={key} label={label} hint={key === "screen" ? sk.settings.permissionsHint : undefined}>
+                <span
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-semibold",
+                    permissions === null ? "border-border/60 text-muted-foreground" : ok ? "tone-soft-success" : "tone-soft-warning",
+                  )}
+                >
+                  <Icon className="size-3" />
+                  {permissions === null ? "—" : ok ? sk.settings.permGranted : sk.settings.permNotGranted}
+                </span>
+              </MacRow>
+            )
+          })}
+          <MacRow label={sk.settings.permRefresh}>
+            <Button variant="outline" size="sm" className="text-[11px]" onClick={refreshPermissions}>
+              <RefreshCw className="size-3" /> {sk.settings.permRefresh}
+            </Button>
+          </MacRow>
+        </MacGroup>
+
         <MacGroupHeader>{sk.settings.integrations}</MacGroupHeader>
         <MacGroup>
           <MacRow
@@ -685,6 +873,18 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
                 >
                   <FolderOpen className="size-3" /> {sk.settings.libraryFolderChoose}
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void openLibraryFolder().catch((e) =>
+                      toastError({ title: sk.toast.actionFailed, description: localizeError(e) }),
+                    )
+                  }}
+                  className="text-[11px]"
+                >
+                  <FolderOpen className="size-3" /> {sk.settings.libraryFolderOpen}
+                </Button>
                 {libraryDir?.is_custom && (
                   <Button
                     variant="ghost"
@@ -698,6 +898,13 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
                 )}
               </div>
             </div>
+          </MacRow>
+          <MacRow
+            label={sk.settings.libraryFolderMigrate}
+            hint={sk.settings.libraryFolderMigrateHint}
+            onClick={() => setMigrateOnChoose((v) => !v)}
+          >
+            <MacToggle on={migrateOnChoose} onChange={() => setMigrateOnChoose((v) => !v)} />
           </MacRow>
           <MacRow
             label={sk.settings.filenameTemplate}
@@ -756,6 +963,30 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
               {sk.settings.purgeOrphansBtn}
             </Button>
           </MacRow>
+          <MacRow label={sk.settings.regenThumbs} hint={sk.settings.regenThumbsHint}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={thumbsBusy}
+              onClick={() => { void handleRegenThumbs() }}
+              className="text-[11px]"
+            >
+              <RefreshCw className={cn("size-3", thumbsBusy && "animate-spin")} />
+              {sk.settings.regenThumbsBtn}
+            </Button>
+          </MacRow>
+          <MacRow label={sk.settings.repairSidecars} hint={sk.settings.repairSidecarsHint}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={repairBusy}
+              onClick={() => { void handleRepairSidecars() }}
+              className="text-[11px]"
+            >
+              <Wrench className={cn("size-3", repairBusy && "animate-pulse")} />
+              {sk.settings.repairSidecarsBtn}
+            </Button>
+          </MacRow>
           <MacRow
             label={sk.settings.deleteAll}
             hint={sk.settings.deleteAllHint(libraryCount, formatBytes(librarySize))}
@@ -778,6 +1009,67 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
                 ffmpeg {appInfo.ffmpegAvailable ? (appInfo.ffmpegVersion ?? "ok") : "—"}
               </p>
             </MacRow>
+          )}
+        </MacGroup>
+
+        <MacGroupHeader>{sk.settings.incompleteSessions}</MacGroupHeader>
+        <MacGroup>
+          {incomplete.length === 0 ? (
+            <MacRow label={sk.settings.incompleteNone} hint={sk.settings.incompleteSessionsHint} />
+          ) : (
+            incomplete.map((s) => (
+              <MacRow
+                key={s.filename}
+                label={s.filename}
+                hint={formatBytes(s.size_bytes)}
+              >
+                <div className="flex gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={incompleteBusy === s.filename}
+                    onClick={() => { void handleRecover(s.filename) }}
+                    className="text-[11px]"
+                  >
+                    <LifeBuoy className="size-3" /> {sk.settings.recoverBtn}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={incompleteBusy === s.filename}
+                    onClick={() => { void handleDiscard(s.filename) }}
+                    className="border tone-soft-error text-[11px]"
+                  >
+                    <Trash2 className="size-3" /> {sk.settings.discardBtn}
+                  </Button>
+                </div>
+              </MacRow>
+            ))
+          )}
+        </MacGroup>
+
+        <MacGroupHeader>{sk.settings.recentRecordings}</MacGroupHeader>
+        <MacGroup>
+          {recent.length === 0 ? (
+            <MacRow label={sk.settings.recentNone} />
+          ) : (
+            recent.map((r) => (
+              <MacRow
+                key={r.meta.id}
+                label={r.meta.title}
+                hint={`${formatBytes(r.meta.file_size_bytes)} · ${new Date(r.meta.created_at).toLocaleString()}`}
+              >
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-[11px]"
+                  disabled={!onOpenRecording}
+                  onClick={() => onOpenRecording?.(r.meta.id)}
+                >
+                  <Play className="size-3" /> {sk.settings.recentOpen}
+                </Button>
+              </MacRow>
+            ))
           )}
         </MacGroup>
       </PageScrollArea>

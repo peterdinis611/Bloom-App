@@ -37,6 +37,9 @@ import {
   Image,
   ClipboardCopy,
   StickyNote,
+  Wrench,
+  Combine,
+  MousePointerClick,
 } from "lucide-react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { getCurrentWindow } from "@tauri-apps/api/window"
@@ -62,6 +65,13 @@ import {
   copyText,
   copyFile,
   duplicateRecording,
+  concatRecordings,
+  applyClickSpotlight,
+  openLibraryFolder,
+  regenerateThumbnails,
+  repairSidecars,
+  onLibraryChanged,
+  onAutoOptimizeDone,
 } from "@/hooks/useBloomBackend"
 import { useExportQueue } from "@/hooks/useExportQueue"
 import { VideoPlayerModal } from "@/components/video/VideoPlayerModal"
@@ -84,6 +94,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { useToast } from "@/hooks/useToast"
 import { useSettings } from "@/hooks/useSettings"
 import { localizeError } from "@/lib/i18n/localizeError"
@@ -241,7 +257,7 @@ function ConfirmDelete({ title, open, onCancel, onConfirm }: {
 }
 
 // ── Recording card ─────────────────────────────────────────────────────────
-function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, onEdit, onToggleStar, onShare, onCopyPath, onCopyFile, onDuplicate, onGif, validation, busy, ffmpegReady, batchMode, selected, onSelect, tagValue, onTagChange, onTagCommit, onFolderChange, onNotesChange, showMetaInputs }: {
+function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, onEdit, onToggleStar, onShare, onCopyPath, onCopyFile, onDuplicate, onGif, onSpotlight, validation, busy, ffmpegReady, batchMode, selected, onSelect, tagValue, onTagChange, onTagCommit, onFolderChange, onNotesChange, showMetaInputs }: {
   entry: RecordingEntry
   onPlay: () => void
   onDelete: () => void
@@ -255,6 +271,7 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
   onCopyFile: () => void
   onDuplicate: () => void
   onGif: () => void
+  onSpotlight?: () => void
   validation?: ValidationResult
   busy: boolean
   ffmpegReady: boolean
@@ -432,6 +449,9 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
           <ActionBtn icon={Play} label={sk.library.actions.play} onClick={onPlay} primary />
           {ffmpegReady && <ActionBtn icon={Scissors} label={sk.library.actions.edit} onClick={onEdit} accent />}
           {ffmpegReady && <ActionBtn icon={Image} label={sk.library.actions.gif} onClick={onGif} />}
+          {ffmpegReady && onSpotlight && (meta.source === "screen" || meta.source === "both") && (
+            <ActionBtn icon={MousePointerClick} label={sk.library.actions.spotlight} onClick={onSpotlight} disabled={busy} />
+          )}
           <ActionBtn icon={ScanSearch} label={sk.library.actions.verify} onClick={onValidate} disabled={busy} />
           <ActionBtn icon={FolderOpen} label={sk.library.actions.reveal} onClick={onReveal} />
           <ActionBtn icon={Share2} label={sk.library.actions.share} onClick={onShare} />
@@ -566,6 +586,8 @@ export function LibraryPage({
   const [importBusy, setImportBusy] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const [shareEntry, setShareEntry] = useState<RecordingEntry | null>(null)
+  const [concatBusy, setConcatBusy] = useState(false)
+  const [maintBusy, setMaintBusy] = useState<"thumbs" | "repair" | null>(null)
 
   const recheckFfmpeg = useCallback(async (showToast = false) => {
     setCheckingFfmpeg(true)
@@ -652,6 +674,35 @@ export function LibraryPage({
     prevQueueActive.current = activeCount
   }, [activeCount, load])
   useEffect(() => { recheckFfmpeg() }, [recheckFfmpeg])
+
+  /** Refresh without the full-page spinner (watcher / background events). */
+  const silentReload = useCallback(async () => {
+    try {
+      const [recs, st] = await Promise.all([listRecordings(), getLibraryStats()])
+      setEntries(recs)
+      setStats(st)
+    } catch { /* keep current list */ }
+  }, [])
+
+  // Backend events: debounced reload on library changes / auto-optimize.
+  useEffect(() => {
+    let timer: number | undefined
+    const schedule = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => { void silentReload() }, 400)
+    }
+    const unsubs: Array<() => void> = []
+    let disposed = false
+    const track = (p: Promise<() => void>) =>
+      p.then((fn) => { if (disposed) fn(); else unsubs.push(fn) }).catch(() => {})
+    track(onLibraryChanged(schedule))
+    track(onAutoOptimizeDone(schedule))
+    return () => {
+      disposed = true
+      window.clearTimeout(timer)
+      unsubs.forEach((fn) => fn())
+    }
+  }, [silentReload])
 
   useEffect(() => {
     if (!openRecordingId || loading) return
@@ -937,6 +988,69 @@ export function LibraryPage({
     }
   }
 
+  const handleConcat = async () => {
+    // Keep library order (newest-first) reversed → oldest first, which is the natural play order.
+    const picked = entries.filter((e) => selectedIds.has(e.meta.id)).reverse()
+    if (picked.length < 2) {
+      toastInfo({ title: sk.library.concatNeedTwo })
+      return
+    }
+    setConcatBusy(true)
+    try {
+      const entry = await concatRecordings(picked.map((e) => e.meta.id))
+      setEntries((prev) => [entry, ...prev.filter((e) => e.meta.id !== entry.meta.id)])
+      setSelectedIds(new Set())
+      setBatchMode(false)
+      const st = await getLibraryStats().catch(() => null)
+      if (st) setStats(st)
+      toastSuccess({ title: sk.toast.concatDone(entry.meta.title) })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setConcatBusy(false)
+    }
+  }
+
+  const handleSpotlight = async (id: string) => {
+    setBusyId(id)
+    try {
+      const entry = await applyClickSpotlight(id)
+      setEntries((prev) => [entry, ...prev.filter((e) => e.meta.id !== entry.meta.id)])
+      const st = await getLibraryStats().catch(() => null)
+      if (st) setStats(st)
+      toastSuccess({ title: sk.toast.spotlightDone(entry.meta.title) })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const handleRegenThumbs = async () => {
+    setMaintBusy("thumbs")
+    try {
+      const { updated } = await regenerateThumbnails(false)
+      toastSuccess({ title: sk.toast.thumbsRegenerated(updated) })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setMaintBusy(null)
+    }
+  }
+
+  const handleRepair = async () => {
+    setMaintBusy("repair")
+    try {
+      const { repaired } = await repairSidecars()
+      toastSuccess({ title: sk.toast.sidecarsRepaired(repaired) })
+      await silentReload()
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setMaintBusy(null)
+    }
+  }
+
   const confirmEntry = entries.find((e) => e.meta.id === confirmId)
 
   return (
@@ -955,6 +1069,18 @@ export function LibraryPage({
         subtitle={loading ? sk.library.loading : stats ? sk.library.recordingCount(stats.total_recordings) : sk.library.subtitle}
         actions={
           <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void openLibraryFolder().catch((e) =>
+                  toastError({ title: sk.toast.actionFailed, description: localizeError(e) }),
+                )
+              }}
+              className="text-[10px] font-bold"
+            >
+              <FolderOpen className="size-3" /> {sk.library.openFolder}
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -989,6 +1115,27 @@ export function LibraryPage({
                 <Sparkles className="size-3" /> ffmpeg
               </Badge>
             )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" title={sk.library.maintenance}>
+                  <Wrench className={cn("size-4", maintBusy && "animate-pulse")} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  disabled={maintBusy !== null || !ffmpeg?.available}
+                  onClick={() => { void handleRegenThumbs() }}
+                >
+                  <RefreshCw className="size-3" /> {sk.library.regenThumbs}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={maintBusy !== null}
+                  onClick={() => { void handleRepair() }}
+                >
+                  <Wrench className="size-3" /> {sk.library.repairSidecars}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               variant="outline"
               size="icon"
@@ -1092,6 +1239,17 @@ export function LibraryPage({
               className="flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-[11px] font-bold text-primary hover:bg-primary/15"
             >
               <Sparkles className="size-3" /> {sk.library.optimiseSelected(selectedIds.size)}
+            </button>
+          )}
+          {batchMode && selectedIds.size > 0 && ffmpeg?.available && (
+            <button
+              onClick={() => { void handleConcat() }}
+              disabled={concatBusy || selectedIds.size < 2}
+              title={selectedIds.size < 2 ? sk.library.concatNeedTwo : undefined}
+              className="flex items-center gap-1 rounded-lg border border-border/60 px-2.5 py-1.5 text-[11px] font-bold text-foreground hover:bg-secondary disabled:opacity-40"
+            >
+              <Combine className={cn("size-3", concatBusy && "animate-pulse")} />
+              {concatBusy ? sk.library.concatBusy : sk.library.concatSelected(selectedIds.size)}
             </button>
           )}
           {batchMode && selectedIds.size > 0 && (
@@ -1200,6 +1358,7 @@ export function LibraryPage({
                     description: sk.toast.gifQueuedBody,
                   })
                 }}
+                onSpotlight={() => { void handleSpotlight(entry.meta.id) }}
                 onRename={(title) => handleRename(entry.meta.id, title)}
                 onValidate={() => handleValidate(entry.meta.id)}
                 onEdit={() => setEditing(entry)}

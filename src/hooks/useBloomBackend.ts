@@ -14,6 +14,12 @@ import type {
   ExportEstimate,
   FfmpegStatus,
   FfmpegInstallResult,
+  AutoOptimizeDone,
+  CapturePermissions,
+  CaptureWindow,
+  ClickSpotlightOptions,
+  ClickTrackSummary,
+  IncompleteSession,
   LibraryDirectoryInfo,
   LibraryStats,
   MonitorInfo,
@@ -39,8 +45,15 @@ export async function getLibraryDirectory(): Promise<LibraryDirectoryInfo> {
   return invoke<LibraryDirectoryInfo>("get_library_directory")
 }
 
-export async function setLibraryDirectory(path: string | null): Promise<LibraryDirectoryInfo> {
-  return invoke<LibraryDirectoryInfo>("set_library_directory", { path })
+/**
+ * Switch the library folder (null = default). With `migrate`, existing
+ * recordings are moved to the new folder; `migrated_files` reports the count.
+ */
+export async function setLibraryDirectory(
+  path: string | null,
+  migrate = false,
+): Promise<LibraryDirectoryInfo> {
+  return invoke<LibraryDirectoryInfo>("set_library_directory", { path, migrate })
 }
 
 /** Disk space info for the volume that holds the library directory. */
@@ -293,6 +306,114 @@ export async function copyFileTo(src: string, dest: string): Promise<void> {
 /** Update ⌘⇧ global shortcuts (single letters A–Z). */
 export async function setGlobalShortcuts(arm: string, pause: string, stop: string): Promise<void> {
   return invoke<void>("set_global_shortcuts", { arm, pause, stop })
+}
+
+/** Current global shortcut letters as stored in Rust (source of truth). */
+export async function getGlobalShortcuts(): Promise<{ arm: string; pause: string; stop: string }> {
+  const [arm, pause, stop] = await invoke<[string, string, string]>("get_global_shortcuts")
+  return { arm, pause, stop }
+}
+
+/** Sync recording state into the tray icon / tooltip. */
+export async function setRecordingState(
+  active: boolean,
+  paused: boolean,
+  elapsedSecs: number,
+): Promise<void> {
+  return invoke<void>("set_recording_state", {
+    active,
+    paused,
+    elapsedSecs: Math.max(0, Math.floor(elapsedSecs)),
+  })
+}
+
+// ── Permissions / capture targets ──────────────────────────────────────────
+
+export async function checkCapturePermissions(): Promise<CapturePermissions> {
+  return invoke<CapturePermissions>("check_capture_permissions")
+}
+
+/** On-screen application windows (macOS only; empty elsewhere). */
+export async function listCaptureWindows(): Promise<CaptureWindow[]> {
+  return invoke<CaptureWindow[]>("list_capture_windows")
+}
+
+// ── Library maintenance ────────────────────────────────────────────────────
+
+export async function regenerateThumbnails(force = false): Promise<{ updated: number }> {
+  return invoke<{ updated: number }>("regenerate_thumbnails", { force })
+}
+
+export async function repairSidecars(): Promise<{ repaired: number }> {
+  return invoke<{ repaired: number }>("repair_sidecars")
+}
+
+export async function listIncompleteSessions(): Promise<IncompleteSession[]> {
+  return invoke<IncompleteSession[]>("list_incomplete_sessions")
+}
+
+export async function recoverIncompleteSession(filename: string): Promise<RecordingMeta> {
+  return invoke<RecordingMeta>("recover_incomplete_session", { filename })
+}
+
+export async function discardIncompleteSession(filename: string): Promise<void> {
+  return invoke<void>("discard_incomplete_session", { filename })
+}
+
+export async function getAutoOptimizeAfterRecord(): Promise<boolean> {
+  return invoke<boolean>("get_auto_optimize_after_record")
+}
+
+export async function setAutoOptimizeAfterRecord(enabled: boolean): Promise<boolean> {
+  return invoke<boolean>("set_auto_optimize_after_record", { enabled })
+}
+
+export async function getDiskSpaceMinMb(): Promise<number> {
+  return invoke<number>("get_disk_space_min_mb")
+}
+
+export async function setDiskSpaceMinMb(mb: number): Promise<number> {
+  return invoke<number>("set_disk_space_min_mb", { mb: Math.max(0, Math.floor(mb)) })
+}
+
+// ── Concat / click spotlight ───────────────────────────────────────────────
+
+/** Join recordings (in order) into a new library entry. Needs ffmpeg. */
+export async function concatRecordings(ids: string[], outputName?: string): Promise<RecordingEntry> {
+  return invoke<RecordingEntry>("concat_recordings", { ids, outputName: outputName ?? null })
+}
+
+/** Burn a highlight flash at each recorded click into a new recording. */
+export async function applyClickSpotlight(
+  id: string,
+  opts: ClickSpotlightOptions = {},
+): Promise<RecordingEntry> {
+  return invoke<RecordingEntry>("apply_click_spotlight", {
+    id,
+    clicksPath: opts.clicksPath ?? null,
+    outputName: opts.outputName ?? null,
+    captureBounds: opts.captureBounds ?? null,
+  })
+}
+
+/** Start logging mouse clicks next to the video at `sessionPath`. Returns clicks file path. */
+export async function startClickTracker(sessionPath: string): Promise<string> {
+  return invoke<string>("start_click_tracker", { sessionPath })
+}
+
+export async function stopClickTracker(): Promise<ClickTrackSummary | null> {
+  return invoke<ClickTrackSummary | null>("stop_click_tracker")
+}
+
+// ── Backend events ─────────────────────────────────────────────────────────
+
+/** Library contents changed on disk (watcher / migrate / etc). */
+export async function onLibraryChanged(cb: () => void): Promise<UnlistenFn> {
+  return listen("library-changed", () => cb())
+}
+
+export async function onAutoOptimizeDone(cb: (d: AutoOptimizeDone) => void): Promise<UnlistenFn> {
+  return listen<AutoOptimizeDone>("auto-optimize-done", (e) => cb(e.payload))
 }
 
 /** Otvorí súbor v predvolenej systémovej aplikácii (QuickTime, VLC…). */

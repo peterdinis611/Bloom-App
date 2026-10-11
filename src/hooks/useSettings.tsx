@@ -261,12 +261,23 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setSettings(next)
       applyTheme(next.theme)
       setReady(true)
-      const { arm, pause, stop } = next.shortcuts
-      if (arm !== "R" || pause !== "P" || stop !== "S") {
-        void import("@/hooks/useBloomBackend").then(({ setGlobalShortcuts }) => {
-          setGlobalShortcuts(arm, pause, stop).catch(() => {})
+      // Rust owns the registered global shortcuts — mirror them into the UI state.
+      void import("@/hooks/useBloomBackend")
+        .then(({ getGlobalShortcuts }) => getGlobalShortcuts())
+        .then(({ arm, pause, stop }) => {
+          if (cancelled) return
+          setSettings((s) => ({
+            ...s,
+            shortcuts: {
+              arm: normalizeKey(arm, s.shortcuts.arm),
+              pause: normalizeKey(pause, s.shortcuts.pause),
+              stop: normalizeKey(stop, s.shortcuts.stop),
+            },
+          }))
         })
-      }
+        .catch(() => {
+          /* Vite-only / non-Tauri */
+        })
     })
     return () => { cancelled = true }
   }, [])

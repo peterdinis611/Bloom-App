@@ -148,7 +148,7 @@ function AppShell() {
               />
             )}
             {view === "news" && <WhatsNewPage active />}
-            {view === "settings" && <SettingsPage active />}
+            {view === "settings" && <SettingsPage active onOpenRecording={handleOpenRecording} />}
             {view === "docs" && <DocsPage active />}
           </main>
         </div>

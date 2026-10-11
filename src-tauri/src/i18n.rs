@@ -4,8 +4,8 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use tauri::{
-    menu::MenuBuilder,
-    AppHandle, Emitter, Manager, State,
+    menu::{MenuBuilder, MenuItemBuilder},
+    AppHandle, Emitter, State,
 };
 
 use crate::config::{load_config, save_config};
@@ -112,6 +112,9 @@ pub struct Strings {
     pub err_video_empty: &'static str,
     pub err_sidecar_missing: &'static str,
     pub err_invalid_template: &'static str,
+    pub err_video_corrupt: &'static str,
+    pub err_disk_low: &'static str,
+    pub tray_paused: &'static str,
 }
 
 pub fn strings(locale: Locale) -> Strings {
@@ -138,6 +141,9 @@ pub fn strings(locale: Locale) -> Strings {
             err_video_empty: "Video súbor je prázdny (0 bajtov)",
             err_sidecar_missing: "Metadata (.bloom.json) chýbajú",
             err_invalid_template: "Neplatná šablóna názvu súboru",
+            err_video_corrupt: "Video súbor je poškodený alebo nečitateľný",
+            err_disk_low: "Nedostatok miesta na disku – nahrávanie bolo zastavené",
+            tray_paused: "pozastavené",
         },
         Locale::En => Strings {
             tray_show: "Show Bloom",
@@ -161,6 +167,9 @@ pub fn strings(locale: Locale) -> Strings {
             err_video_empty: "Video file is empty (0 bytes)",
             err_sidecar_missing: "Metadata sidecar (.bloom.json) is missing",
             err_invalid_template: "Invalid filename template",
+            err_video_corrupt: "Video file is corrupt or unreadable",
+            err_disk_low: "Low disk space – recording stopped",
+            tray_paused: "paused",
         },
         Locale::Cs => Strings {
             tray_show: "Zobrazit Bloom",
@@ -184,6 +193,9 @@ pub fn strings(locale: Locale) -> Strings {
             err_video_empty: "Video soubor je prázdný (0 bajtů)",
             err_sidecar_missing: "Metadata (.bloom.json) chybí",
             err_invalid_template: "Neplatná šablona názvu souboru",
+            err_video_corrupt: "Video soubor je poškozený nebo nečitelný",
+            err_disk_low: "Nedostatek místa na disku – nahrávání bylo zastaveno",
+            tray_paused: "pozastaveno",
         },
         Locale::De => Strings {
             tray_show: "Bloom anzeigen",
@@ -207,6 +219,9 @@ pub fn strings(locale: Locale) -> Strings {
             err_video_empty: "Videodatei ist leer (0 Bytes)",
             err_sidecar_missing: "Metadaten (.bloom.json) fehlen",
             err_invalid_template: "Ungültige Dateinamensvorlage",
+            err_video_corrupt: "Videodatei ist beschädigt oder unlesbar",
+            err_disk_low: "Zu wenig Speicherplatz – Aufnahme gestoppt",
+            tray_paused: "pausiert",
         },
         Locale::Pl => Strings {
             tray_show: "Pokaż Bloom",
@@ -230,6 +245,9 @@ pub fn strings(locale: Locale) -> Strings {
             err_video_empty: "Plik wideo jest pusty (0 bajtów)",
             err_sidecar_missing: "Brak metadanych (.bloom.json)",
             err_invalid_template: "Nieprawidłowy szablon nazwy pliku",
+            err_video_corrupt: "Plik wideo jest uszkodzony lub nieczytelny",
+            err_disk_low: "Za mało miejsca na dysku – nagrywanie zatrzymane",
+            tray_paused: "wstrzymano",
         },
         Locale::Hu => Strings {
             tray_show: "Bloom megjelenítése",
@@ -253,6 +271,9 @@ pub fn strings(locale: Locale) -> Strings {
             err_video_empty: "A videófájl üres (0 bájt)",
             err_sidecar_missing: "Hiányoznak a metaadatok (.bloom.json)",
             err_invalid_template: "Érvénytelen fájlnévsablon",
+            err_video_corrupt: "A videófájl sérült vagy olvashatatlan",
+            err_disk_low: "Kevés a szabad lemezterület – a felvétel leállt",
+            tray_paused: "szüneteltetve",
         },
     }
 }
@@ -303,12 +324,23 @@ fn truncate_label(title: &str, max: usize) -> String {
 }
 
 pub fn build_tray_menu(app: &AppHandle, s: &Strings) -> Result<tauri::menu::Menu<tauri::Wry>, String> {
+    let rec = crate::tray::recording_tray(app);
+    let item = |id: &str, label: &str, enabled: bool| {
+        MenuItemBuilder::with_id(id, label)
+            .enabled(enabled)
+            .build(app)
+            .map_err(|e| e.to_string())
+    };
+    let start = item("start", s.tray_start, !rec.active)?;
+    let pause = item("pause", s.tray_pause, rec.active)?;
+    let stop = item("stop", s.tray_stop, rec.active)?;
+
     let mut builder = MenuBuilder::new(app)
         .text("show", s.tray_show)
-        .text("start", s.tray_start)
+        .item(&start)
         .text("last", s.tray_last)
-        .text("pause", s.tray_pause)
-        .text("stop", s.tray_stop)
+        .item(&pause)
+        .item(&stop)
         .separator()
         .text("library", s.tray_library);
 
@@ -340,7 +372,7 @@ pub fn refresh_tray_menu(app: &AppHandle, locale: Locale) -> Result<(), String> 
     let menu = build_tray_menu(app, &s)?;
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
-        let _ = tray.set_tooltip(Some(s.tray_tooltip));
+        let _ = tray.set_tooltip(Some(crate::tray::tooltip_text(crate::tray::recording_tray(app), &s)));
     }
     Ok(())
 }

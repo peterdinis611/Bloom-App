@@ -1269,6 +1269,13 @@
   --toast-title: var(--status-info-fg);
 }
 
+.bloom-toast--warning {
+  --toast-accent: var(--status-warning-fg);
+  --toast-border: var(--status-warning-border);
+  --toast-surface: color-mix(in srgb, var(--status-warning-bg) 55%, var(--surface));
+  --toast-title: var(--status-warning-fg);
+}
+
 .bloom-toast--enter {
   animation: bloom-toast-enter 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
   animation-delay: var(--toast-stagger, 0ms);

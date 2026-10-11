@@ -92,6 +92,51 @@ export interface LibraryDirectoryInfo {
   path: string
   is_custom: boolean
   default_path: string
+  /** Files moved by the last set_library_directory(.., migrate = true). */
+  migrated_files?: number
+}
+
+/** Mirrors CapturePermissions in Rust. */
+export interface CapturePermissions {
+  screen: boolean
+  microphone: boolean
+  camera: boolean
+}
+
+/** Mirrors CaptureWindow in Rust (snake_case). */
+export interface CaptureWindow {
+  id: string
+  title: string
+  app_name: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** Mirrors IncompleteSession in Rust. */
+export interface IncompleteSession {
+  path: string
+  filename: string
+  size_bytes: number
+}
+
+export interface ClickTrackSummary {
+  path: string
+  count: number
+}
+
+export interface ClickSpotlightOptions {
+  clicksPath?: string
+  outputName?: string
+  captureBounds?: { x: number; y: number; width: number; height: number }
+}
+
+export interface AutoOptimizeDone {
+  id: string
+  path: string
+  size_bytes: number
+  duration_secs: number
 }
 
 /** Mirrors MonitorInfo in Rust */

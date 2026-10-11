@@ -421,3 +421,47 @@ fn mp4_faststart_detection_from_header() {
 
     fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn parse_clicks_skips_bad_lines() {
+    let raw = "{\"t\":1.5,\"x\":100,\"y\":200}\nnot json\n{\"t\":-1,\"x\":1,\"y\":1}\n{\"t\":2,\"x\":3.5,\"y\":4}\n";
+    let clicks = parse_clicks_jsonl(raw);
+    assert_eq!(clicks.len(), 2);
+    assert!((clicks[0].t - 1.5).abs() < f64::EPSILON);
+}
+
+#[test]
+fn spotlight_filter_maps_coords_and_flashes_for_300ms() {
+    let clicks = vec![
+        ClickEvent { t: 1.0, x: 960.0, y: 540.0 },
+        ClickEvent { t: 2.0, x: 99999.0, y: 0.0 }, // outside capture
+    ];
+    let bounds = CaptureBounds { x: 0.0, y: 0.0, width: 1920.0, height: 1080.0 };
+    let vf = build_spotlight_filter(&clicks, 1920, 1080, bounds).unwrap();
+    assert!(vf.contains("between(t,1.000,1.300)"));
+    assert!(!vf.contains("2.000"));
+    assert!(vf.contains("drawbox=x=926:y=506"));
+    assert!(build_spotlight_filter(&[], 1920, 1080, bounds).is_none());
+}
+
+#[test]
+fn spotlight_filter_scales_retina_bounds() {
+    // 2x capture: video is 3840 wide, logical display is 1920.
+    let clicks = vec![ClickEvent { t: 0.5, x: 960.0, y: 540.0 }];
+    let bounds = CaptureBounds { x: 0.0, y: 0.0, width: 1920.0, height: 1080.0 };
+    let vf = build_spotlight_filter(&clicks, 3840, 2160, bounds).unwrap();
+    assert!(vf.contains("x=1852")); // 1920 - 68
+}
+
+#[test]
+fn concat_list_escapes_single_quotes() {
+    assert_eq!(concat_list_line("/a/b.mp4"), "file '/a/b.mp4'\n");
+    assert_eq!(concat_list_line("/a/it's.mp4"), "file '/a/it'\\''s.mp4'\n");
+}
+
+#[test]
+fn companion_paths_sit_next_to_video() {
+    let v = companion_paths(Path::new("/lib/x/clip.mp4"));
+    assert!(v.contains(&PathBuf::from("/lib/x/clip.thumb.jpg")));
+    assert!(v.contains(&PathBuf::from("/lib/x/clip.clicks.jsonl")));
+}

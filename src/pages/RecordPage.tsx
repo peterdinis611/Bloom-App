@@ -47,7 +47,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { PipOverlay } from "@/components/record/PipOverlay"
 import { emit, listen } from "@tauri-apps/api/event"
 import { cn, formatDuration } from "@/lib/utils"
-import type { MonitorInfo, RecordingEntry, RecordingSettings, RecordingSource, RecordingStatus, ScreenTarget } from "@/types"
+import type { CaptureWindow, MonitorInfo, RecordingEntry, RecordingSettings, RecordingSource, RecordingStatus, ScreenTarget } from "@/types"
 import {
   getBloomDir,
   openSession,
@@ -61,6 +61,11 @@ import {
   getRecording,
   copyText,
   suggestRecordingFilename,
+  setRecordingState,
+  startClickTracker,
+  stopClickTracker,
+  checkCapturePermissions,
+  listCaptureWindows,
 } from "@/hooks/useBloomBackend"
 import { useMediaDevices } from "@/hooks/useMediaDevices"
 import { useSettings } from "@/hooks/useSettings"
@@ -141,6 +146,15 @@ function monitorToTarget(m: MonitorInfo, index: number): ScreenTarget {
 function defaultTarget(): ScreenTarget {
   const sk = getMessagesSync()
   return { id: "default", label: sk.record.primaryDisplay, type: "screen", index: 1 }
+}
+
+function windowToTarget(w: CaptureWindow): ScreenTarget {
+  return {
+    id: w.id,
+    label: w.title?.trim() || w.app_name || w.id,
+    type: "window",
+    appName: w.app_name,
+  }
 }
 
 // ── Generic dropdown select ────────────────────────────────────────────────────
@@ -452,7 +466,7 @@ export function RecordPage({
   ]
   const { cameras, microphones, monitors, hasLabels, requestPermission, refresh } = useMediaDevices()
   const { settings: appSettings, updateRecording } = useSettings()
-  const { success: toastSuccess, error: toastError } = useToast()
+  const { success: toastSuccess, error: toastError, warning: toastWarning } = useToast()
 
   const [settings, setSettings] = useState<RecordingSettings>({
     source: "screen",
@@ -470,6 +484,7 @@ export function RecordPage({
   })
 
   const [regionMode, setRegionMode] = useState(false)
+  const [captureWindows, setCaptureWindows] = useState<CaptureWindow[]>([])
   const cropRectRef = useRef<CropRect | null>(null)
 
   const pipLayoutRef = useRef<PipRect>(defaultPipRect(appSettings.recording.pipSize, appSettings.recording.pipPosition))
@@ -523,6 +538,8 @@ export function RecordPage({
   const mimeTypeRef    = useRef("")
   const sessionIdRef   = useRef<number | null>(null)
   const filenameRef    = useRef("")
+  const clickTrackerRef = useRef(false)
+  const diskStopRef    = useRef(false)
   const stopRecordingRef = useRef<() => Promise<void>>(async () => {})
   const pauseRecordingRef = useRef<() => void>(() => {})
   const resumeRecordingRef = useRef<() => void>(() => {})
@@ -592,10 +609,18 @@ export function RecordPage({
     if (monitors.length === 0) return
     setSettings((p) => {
       if (p.screenTarget.id !== "default" && monitors.some((m) => m.id === p.screenTarget.id)) return p
+      if (p.screenTarget.type === "window") return p
       const primaryIdx = Math.max(0, monitors.findIndex((m) => m.is_primary))
       return { ...p, screenTarget: monitorToTarget(monitors[primaryIdx], primaryIdx) }
     })
   }, [monitors])
+
+  useEffect(() => {
+    if (!active || !needsScreen) return
+    void listCaptureWindows()
+      .then((wins) => setCaptureWindows(wins.filter((w) => w.width >= 80 && w.height >= 80).slice(0, 24)))
+      .catch(() => setCaptureWindows([]))
+  }, [active, needsScreen])
 
   // Default device selections once real labels are known.
   useEffect(() => {
@@ -682,6 +707,20 @@ export function RecordPage({
     return () => { unsubs.forEach((fn) => fn()) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appSettings.recording.activePresetId])
+
+  // ── Tray state (icon / tooltip) ──────────────────────────────────────────────
+  useEffect(() => {
+    const recording = status === "recording"
+    const paused = status === "paused"
+    void setRecordingState(recording || paused, paused, recording || paused ? elapsedRef.current : 0).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status])
+
+  useEffect(() => {
+    if (status !== "recording") return
+    void setRecordingState(true, false, elapsed).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [elapsed])
 
   const syncHud = useCallback((payload: {
     phase: "countdown" | "recording" | "paused"
@@ -811,7 +850,18 @@ export function RecordPage({
         try {
           const bytes = await blobToU8(e.data)
           await writeChunk(sessionIdRef.current, Array.from(bytes))
-        } catch { /* single dropped chunk is tolerable */ }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err ?? "")
+          if (/disk|space|miesta|místa|<\s*\d+\s*MB|ENOSPC/i.test(msg) && !diskStopRef.current) {
+            diskStopRef.current = true
+            toastError({
+              title: sk.toast.diskLowStopped,
+              description: sk.toast.diskLowStoppedBody,
+            })
+            void stopRecordingRef.current()
+          }
+          /* otherwise a single dropped chunk is tolerable */
+        }
       }
 
       recorder.start(500)
@@ -893,7 +943,14 @@ export function RecordPage({
     } catch { /* non-critical */ }
   }
 
+  function endClickTracker() {
+    if (!clickTrackerRef.current) return
+    clickTrackerRef.current = false
+    void stopClickTracker().catch(() => {})
+  }
+
   function abortCapture() {
+    endClickTracker()
     captureRef.current?.stop()
     captureRef.current = null
     mediaRef.current   = null
@@ -907,6 +964,19 @@ export function RecordPage({
   async function startCountdown() {
     setStatus("preparing")
     setError(null)
+
+    if (needsScreen) {
+      try {
+        const perms = await checkCapturePermissions()
+        if (!perms.screen) {
+          // Not-determined looks the same as denied here, so warn but let the OS prompt decide.
+          toastWarning({
+            title: sk.toast.screenPermission,
+            description: sk.toast.screenPermissionBody,
+          })
+        }
+      } catch { /* non-Tauri / unsupported */ }
+    }
 
     const prepared = await prepareCaptureFlow()
     if (!prepared) {
@@ -959,7 +1029,15 @@ export function RecordPage({
     setElapsed(0)
     syncHud({ phase: "recording", elapsed: 0 })
     onRecordingChange?.(true)
-    if (settings.cursorHighlight) openCursorOverlay().catch(() => {})
+    diskStopRef.current = false
+    if (settings.cursorHighlight) {
+      openCursorOverlay().catch(() => {})
+      if (filenameRef.current) {
+        startClickTracker(filenameRef.current)
+          .then(() => { clickTrackerRef.current = true })
+          .catch(() => {})
+      }
+    }
     startElapsedTimer()
   }
 
@@ -984,6 +1062,7 @@ export function RecordPage({
 
   async function stopRecording() {
     stopElapsedTimer()
+    endClickTracker()
     setDrawingMode(false)
     closeCursorOverlay().catch(() => {})
     metersRef.current.forEach((m) => m.stop())
@@ -1203,6 +1282,37 @@ export function RecordPage({
                 <p className="mt-1.5 px-1 text-[11px] text-muted-foreground">
                   {sk.record.displayHint}
                 </p>
+                {captureWindows.length > 0 && (
+                  <div className="mt-3">
+                    <p className="mb-1.5 px-1 text-[11px] font-semibold text-muted-foreground">
+                      {sk.record.windows}
+                    </p>
+                    <div className="flex max-h-40 flex-col gap-1 overflow-y-auto rounded-xl border border-border/50 bg-[var(--surface)]/60 p-1.5">
+                      {captureWindows.map((w) => {
+                        const selected = settings.screenTarget.id === w.id
+                        return (
+                          <button
+                            key={w.id}
+                            type="button"
+                            onClick={() => setSettings((p) => ({ ...p, screenTarget: windowToTarget(w) }))}
+                            className={cn(
+                              "flex min-h-[40px] items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left transition-colors",
+                              selected ? "bg-primary/15 text-primary" : "hover:bg-secondary text-foreground",
+                            )}
+                          >
+                            <span className="truncate text-[12px] font-medium">
+                              {w.title?.trim() || w.app_name || w.id}
+                            </span>
+                            <span className="shrink-0 text-[10px] text-muted-foreground">
+                              {w.app_name}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <p className="mt-1 px-1 text-[10px] text-muted-foreground">{sk.record.windowsHint}</p>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => setRegionMode((v) => !v)}

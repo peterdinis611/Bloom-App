@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 use uuid::Uuid;
 
+use crate::types::RecordingEntry;
 use crate::{meta_path_for, now_iso, RecordingMeta};
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -1781,7 +1782,7 @@ fn find_fourcc(hay: &[u8], needle: &[u8; 4]) -> Option<usize> {
 // Thumbnail
 // ────────────────────────────────────────────────────────────────────────────
 
-fn thumbnail_path_for(video: &Path) -> PathBuf {
+pub(crate) fn thumbnail_path_for(video: &Path) -> PathBuf {
     video.with_extension("thumb.jpg")
 }
 
@@ -1822,7 +1823,7 @@ fn make_thumbnail_scaled(
     Ok(out.to_path_buf())
 }
 
-fn filmstrip_path_for(video: &Path, index: u32) -> PathBuf {
+pub(crate) fn filmstrip_path_for(video: &Path, index: u32) -> PathBuf {
     let stem = video
         .file_stem()
         .and_then(|s| s.to_str())
@@ -1942,17 +1943,28 @@ fn replace_original_file(
 // Sidecar for optimised output (so it shows up in the library)
 // ────────────────────────────────────────────────────────────────────────────
 
-fn write_output_sidecar(input: &Path, output: &Path, opts: &OptimizeOptions, duration_secs: f64, size_bytes: u64) {
+fn write_output_sidecar(
+    root: Option<&Path>,
+    input: &Path,
+    output: &Path,
+    opts: &OptimizeOptions,
+    duration_secs: f64,
+    size_bytes: u64,
+) {
     // Inherit from the original recording's sidecar when available.
     let base: Option<RecordingMeta> = std::fs::read_to_string(meta_path_for(input))
         .ok()
         .and_then(|raw| serde_json::from_str(&raw).ok());
 
-    let filename = output
-        .file_name()
-        .and_then(|f| f.to_str())
-        .unwrap_or("optimized")
-        .to_string();
+    // Relative to the library root so files in sub-folders resolve correctly.
+    let filename = match root {
+        Some(r) if output.starts_with(r) => crate::util::relative_filename(r, output),
+        _ => output
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or("optimized")
+            .to_string(),
+    };
     let title_stem = output.file_stem().and_then(|s| s.to_str()).unwrap_or("optimized").to_string();
 
     let meta = RecordingMeta {
@@ -1973,7 +1985,7 @@ fn write_output_sidecar(input: &Path, output: &Path, opts: &OptimizeOptions, dur
         ),
         starred: false,
         tags: vec![],
-        folder: String::new(),
+        folder: base.as_ref().map(|m| m.folder.clone()).unwrap_or_default(),
         notes: base.as_ref().map(|m| m.notes.clone()).unwrap_or_default(),
     };
 
@@ -2152,7 +2164,8 @@ fn run_optimize(
         }
     } else {
         if add_to_library && opts.format != "gif" {
-            write_output_sidecar(&input, &output, &opts, out_duration, size);
+            let root = crate::bloom_dir(&app).ok();
+            write_output_sidecar(root.as_deref(), &input, &output, &opts, out_duration, size);
             let _ = make_thumbnail(&ffmpeg_thumb, &output, (out_duration * 0.1).max(0.0));
         }
         output
@@ -2433,6 +2446,401 @@ pub fn cancel_optimize(state: tauri::State<VideoJobs>, job_id: String) -> Result
         flag.store(true, Ordering::Relaxed);
     }
     Ok(())
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Concat + click spotlight
+// ────────────────────────────────────────────────────────────────────────────
+
+/// Side files that travel with a video (thumbnail, filmstrip, click track).
+pub(crate) fn companion_paths(video: &Path) -> Vec<PathBuf> {
+    let mut v = vec![thumbnail_path_for(video), video.with_extension("clicks.jsonl")];
+    for i in 0..24 {
+        v.push(filmstrip_path_for(video, i));
+    }
+    v
+}
+
+/// Probe `output`, write its sidecar + thumbnail and return a library entry.
+fn register_new_output(
+    root: &Path,
+    ffmpeg: &Path,
+    ffprobe: Option<&Path>,
+    output: &Path,
+    base: &RecordingMeta,
+    title: String,
+    target_label: String,
+) -> Result<RecordingEntry, String> {
+    let size = std::fs::metadata(output).map(|m| m.len()).unwrap_or(0);
+    if size == 0 {
+        return Err("ffmpeg produced an empty file".into());
+    }
+    let duration = ffprobe
+        .and_then(|p| probe(p, &output.to_string_lossy()).ok())
+        .map(|i| i.duration_secs)
+        .unwrap_or(0.0);
+
+    let meta = RecordingMeta {
+        id: Uuid::new_v4().to_string(),
+        title,
+        filename: crate::util::relative_filename(root, output),
+        created_at: now_iso(),
+        duration_secs: duration,
+        file_size_bytes: size,
+        source: base.source.clone(),
+        quality: base.quality.clone(),
+        has_microphone: base.has_microphone,
+        has_system_audio: base.has_system_audio,
+        target_label,
+        starred: false,
+        tags: base.tags.clone(),
+        folder: base.folder.clone(),
+        notes: String::new(),
+    };
+    let meta_path = meta_path_for(output);
+    let json = serde_json::to_string_pretty(&meta).map_err(|e| format!("Serialise error: {e}"))?;
+    std::fs::write(&meta_path, json).map_err(|e| format!("Cannot write sidecar: {e}"))?;
+    let _ = make_thumbnail(ffmpeg, output, (duration * 0.1).max(0.0));
+
+    Ok(RecordingEntry {
+        meta,
+        path: output.to_string_lossy().into_owned(),
+        meta_path: meta_path.to_string_lossy().into_owned(),
+    })
+}
+
+fn run_ffmpeg_blocking(ffmpeg: &Path, args: &[String]) -> Result<(), String> {
+    let out = Command::new(ffmpeg)
+        .args(args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("Could not start ffmpeg: {e}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        let text = String::from_utf8_lossy(&out.stderr);
+        Err(tail_lines(&text, 4))
+    }
+}
+
+/// One `file '…'` line for the concat demuxer list.
+pub(crate) fn concat_list_line(path: &str) -> String {
+    format!("file '{}'\n", path.replace('\'', "'\\''"))
+}
+
+fn concat_blocking(
+    app: tauri::AppHandle,
+    ids: Vec<String>,
+    output_name: Option<String>,
+) -> Result<RecordingEntry, String> {
+    if ids.len() < 2 {
+        return Err("Select at least two recordings to join".into());
+    }
+    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg nie je nainštalovaný. Nainštaluj ho a skús znova.".to_string())?;
+    let ffprobe = find_ffprobe(Some(&ffmpeg));
+    let root = crate::bloom_dir(&app)?;
+
+    let mut entries = Vec::with_capacity(ids.len());
+    for id in &ids {
+        let e = crate::find_recording(&root, id).ok_or_else(|| format!("Recording {id} not found"))?;
+        if !Path::new(&e.path).exists() {
+            return Err(format!("Video file missing for {}", e.meta.title));
+        }
+        entries.push(e);
+    }
+
+    let first_path = PathBuf::from(&entries[0].path);
+    let out_dir = first_path.parent().unwrap_or(&root).to_path_buf();
+    let base_name = match output_name.as_ref().filter(|n| !n.trim().is_empty()) {
+        Some(n) => {
+            let stem = Path::new(n).file_stem().and_then(|s| s.to_str()).unwrap_or(n);
+            crate::library::sanitize_stem(stem).replace(' ', "-")
+        }
+        None => format!(
+            "{}-joined",
+            crate::library::sanitize_stem(&entries[0].meta.title).replace(' ', "-")
+        ),
+    };
+    let output = crate::util::unique_path(&out_dir, &format!("{base_name}.mp4"));
+
+    let list_path = out_dir.join(format!(".bloom-concat-{}.txt", Uuid::new_v4()));
+    let mut list = String::new();
+    for e in &entries {
+        list.push_str(&concat_list_line(&e.path));
+    }
+    std::fs::write(&list_path, list).map_err(|e| format!("Cannot write concat list: {e}"))?;
+
+    let head: Vec<String> = [
+        "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "concat", "-safe", "0",
+        "-i",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    let out_str = output.to_string_lossy().into_owned();
+
+    let mut copy_args = head.clone();
+    copy_args.push(list_path.to_string_lossy().into_owned());
+    copy_args.extend(
+        ["-c", "copy", "-movflags", "+faststart", &out_str]
+            .iter()
+            .map(|s| s.to_string()),
+    );
+
+    let mut result = run_ffmpeg_blocking(&ffmpeg, &copy_args);
+    if result.is_err() {
+        // Mixed codecs / containers: fall back to a re-encode.
+        let _ = std::fs::remove_file(&output);
+        let mut enc_args = head;
+        enc_args.push(list_path.to_string_lossy().into_owned());
+        enc_args.extend(
+            [
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", &out_str,
+            ]
+            .iter()
+            .map(|s| s.to_string()),
+        );
+        result = run_ffmpeg_blocking(&ffmpeg, &enc_args);
+    }
+    let _ = std::fs::remove_file(&list_path);
+    if let Err(e) = result {
+        let _ = std::fs::remove_file(&output);
+        return Err(if e.is_empty() { "ffmpeg concat failed".into() } else { e });
+    }
+
+    let title = output
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("joined")
+        .to_string();
+    let entry = register_new_output(
+        &root,
+        &ffmpeg,
+        ffprobe.as_deref(),
+        &output,
+        &entries[0].meta,
+        title,
+        format!("Joined · {} clips", entries.len()),
+    )?;
+    let locale = app.state::<crate::i18n::LocaleState>();
+    let _ = crate::i18n::refresh_tray_menu(&app, crate::i18n::current_locale(&locale));
+    Ok(entry)
+}
+
+/// Join recordings (in the given order) with the ffmpeg concat demuxer.
+/// Stream-copies when possible and falls back to a re-encode.
+#[tauri::command]
+pub async fn concat_recordings(
+    app: tauri::AppHandle,
+    ids: Vec<String>,
+    output_name: Option<String>,
+) -> Result<RecordingEntry, String> {
+    tauri::async_runtime::spawn_blocking(move || concat_blocking(app, ids, output_name))
+        .await
+        .map_err(|e| format!("Concat task failed: {e}"))?
+}
+
+/// Logical rectangle of the captured display (same coordinate space as the click track).
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct CaptureBounds {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub(crate) struct ClickEvent {
+    pub t: f64,
+    pub x: f64,
+    pub y: f64,
+}
+
+/// Parse a `.clicks.jsonl` file (`{"t":secs,"x":..,"y":..}` per line); bad lines are skipped.
+pub(crate) fn parse_clicks_jsonl(raw: &str) -> Vec<ClickEvent> {
+    raw.lines()
+        .filter_map(|l| serde_json::from_str::<ClickEvent>(l.trim()).ok())
+        .filter(|c| c.t.is_finite() && c.t >= 0.0 && c.x.is_finite() && c.y.is_finite())
+        .collect()
+}
+
+const SPOTLIGHT_MAX_CLICKS: usize = 300;
+const SPOTLIGHT_FLASH_SECS: f64 = 0.3;
+
+/// Build an ffmpeg `-vf` chain that flashes a highlight ring + dot at every click
+/// for 0.3 s. Uses `drawbox` + timeline `enable` (cheap, no per-pixel expressions).
+pub(crate) fn build_spotlight_filter(
+    clicks: &[ClickEvent],
+    video_w: u32,
+    video_h: u32,
+    bounds: CaptureBounds,
+) -> Option<String> {
+    if video_w == 0 || video_h == 0 || bounds.width <= 0.0 || bounds.height <= 0.0 {
+        return None;
+    }
+    let scale = (video_h as f64 / 1080.0).max(0.5);
+    let ring = (34.0 * scale).round() as i64;
+    let dot = (7.0 * scale).round().max(2.0) as i64;
+    let thick = (4.0 * scale).round().max(2.0) as i64;
+
+    let mut parts: Vec<String> = Vec::new();
+    for c in clicks.iter().take(SPOTLIGHT_MAX_CLICKS) {
+        let nx = (c.x - bounds.x) / bounds.width;
+        let ny = (c.y - bounds.y) / bounds.height;
+        if !(0.0..=1.0).contains(&nx) || !(0.0..=1.0).contains(&ny) {
+            continue;
+        }
+        let cx = (nx * video_w as f64).round() as i64;
+        let cy = (ny * video_h as f64).round() as i64;
+        let t0 = c.t;
+        let t1 = c.t + SPOTLIGHT_FLASH_SECS;
+        let enable = format!("enable='between(t,{t0:.3},{t1:.3})'");
+        parts.push(format!(
+            "drawbox=x={}:y={}:w={}:h={}:color=yellow@0.85:t={thick}:{enable}",
+            (cx - ring).max(0),
+            (cy - ring).max(0),
+            ring * 2,
+            ring * 2,
+        ));
+        parts.push(format!(
+            "drawbox=x={}:y={}:w={}:h={}:color=yellow@0.9:t=fill:{enable}",
+            (cx - dot).max(0),
+            (cy - dot).max(0),
+            dot * 2,
+            dot * 2,
+        ));
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(","))
+    }
+}
+
+fn default_capture_bounds(app: &tauri::AppHandle) -> Option<CaptureBounds> {
+    let win = app.get_webview_window("main")?;
+    let m = win.primary_monitor().ok().flatten()?;
+    let scale = m.scale_factor().max(0.1);
+    Some(CaptureBounds {
+        x: m.position().x as f64 / scale,
+        y: m.position().y as f64 / scale,
+        width: m.size().width as f64 / scale,
+        height: m.size().height as f64 / scale,
+    })
+}
+
+fn spotlight_blocking(
+    app: tauri::AppHandle,
+    id: String,
+    clicks_path: Option<String>,
+    output_name: Option<String>,
+    capture_bounds: Option<CaptureBounds>,
+) -> Result<RecordingEntry, String> {
+    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg nie je nainštalovaný. Nainštaluj ho a skús znova.".to_string())?;
+    let ffprobe = find_ffprobe(Some(&ffmpeg)).ok_or_else(|| "ffprobe nie je nainštalovaný. Nainštaluj ffmpeg a skús znova.".to_string())?;
+    let root = crate::bloom_dir(&app)?;
+    let entry = crate::find_recording(&root, &id).ok_or_else(|| format!("Recording {id} not found"))?;
+    let input = PathBuf::from(&entry.path);
+    if !input.exists() {
+        return Err("Vstupné video neexistuje".into());
+    }
+
+    let clicks_file = clicks_path
+        .filter(|p| !p.trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| input.with_extension("clicks.jsonl"));
+    let raw = std::fs::read_to_string(&clicks_file)
+        .map_err(|e| format!("Cannot read click track {}: {e}", clicks_file.display()))?;
+    let clicks = parse_clicks_jsonl(&raw);
+    if clicks.is_empty() {
+        return Err("Click track is empty".into());
+    }
+
+    let info = probe(&ffprobe, &input.to_string_lossy())?;
+    let bounds = capture_bounds
+        .or_else(|| default_capture_bounds(&app))
+        .unwrap_or(CaptureBounds {
+            x: 0.0,
+            y: 0.0,
+            width: info.width as f64,
+            height: info.height as f64,
+        });
+    let vf = build_spotlight_filter(&clicks, info.width, info.height, bounds)
+        .ok_or_else(|| "No clicks fall inside the captured area".to_string())?;
+
+    let out_dir = input.parent().unwrap_or(&root).to_path_buf();
+    let base_name = match output_name.as_ref().filter(|n| !n.trim().is_empty()) {
+        Some(n) => {
+            let stem = Path::new(n).file_stem().and_then(|s| s.to_str()).unwrap_or(n);
+            crate::library::sanitize_stem(stem).replace(' ', "-")
+        }
+        None => format!(
+            "{}-spotlight",
+            input.file_stem().and_then(|s| s.to_str()).unwrap_or("video")
+        ),
+    };
+    let output = crate::util::unique_path(&out_dir, &format!("{base_name}.mp4"));
+
+    let copy_audio = matches!(
+        input.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).as_deref(),
+        Some("mp4") | Some("m4v") | Some("mov")
+    );
+    let mut args: Vec<String> = vec![
+        "-hide_banner".into(), "-loglevel".into(), "error".into(), "-y".into(),
+        "-i".into(), input.to_string_lossy().into_owned(),
+        "-vf".into(), vf,
+        "-c:v".into(), "libx264".into(), "-preset".into(), "veryfast".into(),
+        "-crf".into(), "20".into(), "-pix_fmt".into(), "yuv420p".into(),
+    ];
+    if copy_audio {
+        args.extend(["-c:a".into(), "copy".into()]);
+    } else {
+        args.extend(["-c:a".into(), "aac".into(), "-b:a".into(), "160k".into()]);
+    }
+    args.extend(["-movflags".into(), "+faststart".into(), output.to_string_lossy().into_owned()]);
+
+    if let Err(e) = run_ffmpeg_blocking(&ffmpeg, &args) {
+        let _ = std::fs::remove_file(&output);
+        return Err(if e.is_empty() { "ffmpeg spotlight failed".into() } else { e });
+    }
+
+    let title = output
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("spotlight")
+        .to_string();
+    let entry = register_new_output(
+        &root,
+        &ffmpeg,
+        Some(&ffprobe),
+        &output,
+        &entry.meta,
+        title,
+        "Click spotlight".to_string(),
+    )?;
+    let locale = app.state::<crate::i18n::LocaleState>();
+    let _ = crate::i18n::refresh_tray_menu(&app, crate::i18n::current_locale(&locale));
+    Ok(entry)
+}
+
+/// Burn a highlight flash at every recorded click (reads `<video>.clicks.jsonl`
+/// unless `clicks_path` is given) into a new library recording.
+#[tauri::command]
+pub async fn apply_click_spotlight(
+    app: tauri::AppHandle,
+    id: String,
+    clicks_path: Option<String>,
+    output_name: Option<String>,
+    capture_bounds: Option<CaptureBounds>,
+) -> Result<RecordingEntry, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        spotlight_blocking(app, id, clicks_path, output_name, capture_bounds)
+    })
+    .await
+    .map_err(|e| format!("Spotlight task failed: {e}"))?
 }
 
 // ────────────────────────────────────────────────────────────────────────────
