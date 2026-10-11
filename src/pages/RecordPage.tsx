@@ -60,6 +60,7 @@ import {
   isLowDiskSpace,
   getRecording,
   copyText,
+  suggestRecordingFilename,
 } from "@/hooks/useBloomBackend"
 import { useMediaDevices } from "@/hooks/useMediaDevices"
 import { useSettings } from "@/hooks/useSettings"
@@ -767,8 +768,16 @@ export function RecordPage({
 
     mimeTypeRef.current = getSupportedMimeType()
     const ext           = mimeToExt(mimeTypeRef.current)
-    const ts            = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
-    filenameRef.current = `recording-${ts}.${ext}`
+    try {
+      filenameRef.current = await suggestRecordingFilename(
+        settings.source,
+        settings.quality,
+        ext,
+      )
+    } catch {
+      const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
+      filenameRef.current = `recording-${ts}.${ext}`
+    }
 
     try {
       const id = await openSession(filenameRef.current, {

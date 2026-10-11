@@ -18,6 +18,7 @@ import {
   Mic,
   Volume2,
   Video,
+  CopyPlus,
   ScanSearch,
   Check,
   CircleAlert,
@@ -60,6 +61,7 @@ import {
   formatDurationSecs,
   copyText,
   copyFile,
+  duplicateRecording,
 } from "@/hooks/useBloomBackend"
 import { useExportQueue } from "@/hooks/useExportQueue"
 import { VideoPlayerModal } from "@/components/video/VideoPlayerModal"
@@ -239,7 +241,7 @@ function ConfirmDelete({ title, open, onCancel, onConfirm }: {
 }
 
 // ── Recording card ─────────────────────────────────────────────────────────
-function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, onEdit, onToggleStar, onShare, onCopyPath, onCopyFile, onGif, validation, busy, ffmpegReady, batchMode, selected, onSelect, tagValue, onTagChange, onTagCommit, onFolderChange, onNotesChange, showMetaInputs }: {
+function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, onEdit, onToggleStar, onShare, onCopyPath, onCopyFile, onDuplicate, onGif, validation, busy, ffmpegReady, batchMode, selected, onSelect, tagValue, onTagChange, onTagCommit, onFolderChange, onNotesChange, showMetaInputs }: {
   entry: RecordingEntry
   onPlay: () => void
   onDelete: () => void
@@ -251,6 +253,7 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
   onShare: () => void
   onCopyPath: () => void
   onCopyFile: () => void
+  onDuplicate: () => void
   onGif: () => void
   validation?: ValidationResult
   busy: boolean
@@ -434,6 +437,7 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
           <ActionBtn icon={Share2} label={sk.library.actions.share} onClick={onShare} />
           <ActionBtn icon={Copy} label={sk.library.actions.copyPath} onClick={onCopyPath} />
           <ActionBtn icon={ClipboardCopy} label={sk.library.actions.copyFile} onClick={onCopyFile} />
+          <ActionBtn icon={CopyPlus} label={sk.library.actions.duplicate} onClick={onDuplicate} disabled={busy} />
           <ActionBtn
             icon={StickyNote}
             label={sk.library.notes}
@@ -784,6 +788,23 @@ export function LibraryPage({
       const msg = localizeError(e)
       setError(msg)
       toastError({ title: sk.toast.actionFailed, description: msg })
+    }
+  }
+
+  const handleDuplicate = async (id: string) => {
+    setBusyId(id)
+    try {
+      const copy = await duplicateRecording(id)
+      setEntries((prev) => [copy, ...prev])
+      const st = await getLibraryStats().catch(() => null)
+      if (st) setStats(st)
+      toastSuccess({ title: sk.toast.duplicated(copy.meta.title) })
+    } catch (e) {
+      const msg = localizeError(e)
+      setError(msg)
+      toastError({ title: sk.toast.actionFailed, description: msg })
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -1161,6 +1182,7 @@ export function LibraryPage({
                     .then(() => toastSuccess({ title: sk.toast.fileCopied }))
                     .catch((e) => toastError({ title: sk.toast.actionFailed, description: localizeError(e) }))
                 }}
+                onDuplicate={() => { void handleDuplicate(entry.meta.id) }}
                 onGif={() => {
                   enqueue({
                     label: `GIF · ${entry.meta.title}`,

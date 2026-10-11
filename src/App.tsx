@@ -76,8 +76,17 @@ function AppShell() {
         setOpenRecordingId(id)
       })
     }).then((fn) => unsubs.push(fn))
+    listen<string>("open-recording", (ev) => {
+      const id = ev.payload
+      if (!id) return
+      setView("library")
+      setOpenRecordingId(id)
+    }).then((fn) => unsubs.push(fn))
+    listen("open-library", () => {
+      setView("library")
+    }).then((fn) => unsubs.push(fn))
     return () => unsubs.forEach((fn) => fn())
-  }, [toastInfo])
+  }, [toastInfo, sk.toast.noLastRecording])
 
   const handleViewChange = (next: AppView) => {
     setView(next)
@@ -101,6 +110,9 @@ function AppShell() {
     if (settings.general.openLibraryAfterRecord) {
       setView("library")
     }
+    void import("@/hooks/useBloomBackend").then(({ refreshTray }) => {
+      refreshTray().catch(() => {})
+    })
   }
 
   return (

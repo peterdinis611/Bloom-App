@@ -198,40 +198,63 @@ pub fn build_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .icon(icon.unwrap())
         .menu(&menu)
         .tooltip(s.tray_tooltip)
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "show" => {
-                if let Some(win) = app.get_webview_window("main") {
-                    let _ = win.unminimize();
-                    let _ = win.show();
-                    let _ = win.set_focus();
+        .on_menu_event(|app, event| {
+            let id = event.id().as_ref();
+            match id {
+                "show" => {
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.unminimize();
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    }
                 }
-            }
-            "start" => {
-                let _ = app.emit("rec-arm", ());
-                if let Some(win) = app.get_webview_window("main") {
-                    let _ = win.unminimize();
-                    let _ = win.show();
-                    let _ = win.set_focus();
+                "start" => {
+                    let _ = app.emit("rec-arm", ());
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.unminimize();
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    }
                 }
-            }
-            "last" => {
-                let _ = app.emit("open-last-recording", ());
-                if let Some(win) = app.get_webview_window("main") {
-                    let _ = win.unminimize();
-                    let _ = win.show();
-                    let _ = win.set_focus();
+                "last" => {
+                    let _ = app.emit("open-last-recording", ());
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.unminimize();
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    }
                 }
+                "library" => {
+                    let _ = app.emit("open-library", ());
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.unminimize();
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    }
+                }
+                "pause" => {
+                    let _ = app.emit("rec-toggle-pause", ());
+                }
+                "stop" => {
+                    let _ = app.emit("rec-stop", ());
+                }
+                "quit" => {
+                    app.exit(0);
+                }
+                "recent-header" => {}
+                id if id.starts_with("recent:") => {
+                    let rec_id = &id["recent:".len()..];
+                    if !rec_id.is_empty() {
+                        let _ = app.emit("open-recording", rec_id);
+                        if let Some(win) = app.get_webview_window("main") {
+                            let _ = win.unminimize();
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        }
+                    }
+                }
+                _ => {}
             }
-            "pause" => {
-                let _ = app.emit("rec-toggle-pause", ());
-            }
-            "stop" => {
-                let _ = app.emit("rec-stop", ());
-            }
-            "quit" => {
-                app.exit(0);
-            }
-            _ => {}
         })
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {

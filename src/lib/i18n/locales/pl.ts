@@ -47,11 +47,11 @@ export const pl: Messages = {
           ? `Usunięto ${count} nagrania`
           : `Usunięto ${count} nagrań`,
     batchDeleted: (count: number) =>
-      count === 1
-        ? "Usunięto 1 nagranie"
-        : count >= 2 && count <= 4
-          ? `Usunięto ${count} nagrania`
-          : `Usunięto ${count} nagrań`,
+      count === 1 ? "Usunięto 1 nagranie" : `Usunięto ${count} nagrań`,
+    duplicated: (title: string) => `Duplikat: ${title}`,
+    purged: (sidecars: number, empty: number) =>
+      `Wyczyszczono: ${sidecars} osieroconych, ${empty} pustych`,
+    filenameTemplateSaved: "Szablon nazwy zapisany",
     renamed: (title: string) => `Zmieniono nazwę na „${title}"`,
     tagAdded: (tag: string) => `Etykieta „${tag}" dodana`,
     folderSet: (folder: string) => (folder ? `Folder: ${folder}` : "Folder usunięty"),
@@ -279,6 +279,17 @@ export const pl: Messages = {
     libraryFolderDefault: "Domyślny",
     libraryFolderChoose: "Wybierz…",
     libraryFolderReset: "Przywróć domyślny",
+    filenameTemplate: "Szablon nazwy nagrania",
+    filenameTemplateHint: "Tokeny: {date} {time} {datetime} {source} {quality} {uuid} {n}",
+    filenameTemplateSave: "Zapisz szablon",
+    filenameTemplateExample: "Przykład",
+    trayRecentCount: "Ostatnie w menu tray",
+    trayRecentCountHint: "Liczba nagrań w menu systemowym (0–8)",
+    purgeOrphans: "Wyczyść bibliotekę",
+    purgeOrphansHint: "Usuń osierocone .bloom.json i puste wideo",
+    purgeOrphansBtn: "Wyczyść",
+    appInfo: "O aplikacji",
+    appInfoHint: "Wersja, platforma i status ffmpeg",
     integrations: "Integracje",
     integrationsHint: "Opcjonalne webhooki i zachowanie po eksporcie",
     slackWebhook: "Adres URL webhooka Slack",
@@ -650,6 +661,7 @@ export const pl: Messages = {
       copyPath: "Kopiuj ścieżkę",
       copyFile: "Kopiuj plik",
       gif: "GIF",
+      duplicate: "Duplikuj",
     },
     validation: {
       ok: "Plik w porządku",

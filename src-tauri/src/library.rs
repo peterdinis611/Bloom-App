@@ -73,6 +73,8 @@ pub(crate) fn delete_recording(app: tauri::AppHandle, id: String) -> Result<(), 
 
     fs::remove_file(&entry.path).map_err(|e| format!("Cannot delete video: {e}"))?;
     let _ = fs::remove_file(&entry.meta_path); // best-effort
+    let locale = app.state::<crate::i18n::LocaleState>();
+    let _ = crate::i18n::refresh_tray_menu(&app, crate::i18n::current_locale(&locale));
     Ok(())
 }
 
@@ -143,6 +145,8 @@ pub(crate) fn batch_delete_recordings(app: tauri::AppHandle, ids: Vec<String>) -
             }
         }
     }
+    let locale = app.state::<crate::i18n::LocaleState>();
+    let _ = crate::i18n::refresh_tray_menu(&app, crate::i18n::current_locale(&locale));
     Ok(deleted)
 }
 
@@ -158,6 +162,8 @@ pub(crate) fn delete_all_recordings(app: tauri::AppHandle) -> Result<u32, String
             deleted += 1;
         }
     }
+    let locale = app.state::<crate::i18n::LocaleState>();
+    let _ = crate::i18n::refresh_tray_menu(&app, crate::i18n::current_locale(&locale));
     Ok(deleted)
 }
 
@@ -360,4 +366,133 @@ pub(crate) fn import_recording(
         path: dest.to_string_lossy().into_owned(),
         meta_path: meta_path.to_string_lossy().into_owned(),
     })
+}
+
+/// Newest N recordings (for tray / quick open).
+#[tauri::command]
+pub(crate) fn list_recent_recordings(
+    app: tauri::AppHandle,
+    limit: Option<u32>,
+) -> Result<Vec<RecordingEntry>, String> {
+    let dir = bloom_dir(&app)?;
+    let n = limit.unwrap_or(5).clamp(1, 20) as usize;
+    let mut all = load_all_recordings(&dir);
+    all.truncate(n);
+    Ok(all)
+}
+
+/// Open the Bloom library folder in the system file manager.
+#[tauri::command]
+pub(crate) fn open_library_folder(app: tauri::AppHandle) -> Result<(), String> {
+    let dir = bloom_dir(&app)?;
+    let path = dir.to_string_lossy().into_owned();
+
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "windows")]
+    std::process::Command::new("explorer")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    std::process::Command::new("xdg-open")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Duplicate a recording (video + sidecar) with a new id.
+#[tauri::command]
+pub(crate) fn duplicate_recording(
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<RecordingEntry, String> {
+    let dir = bloom_dir(&app)?;
+    let locale = app.state::<crate::i18n::LocaleState>();
+    let s = crate::i18n::current_strings(&*locale);
+    let entry = find_recording(&dir, &id).ok_or_else(|| s.err_recording_not_found.to_string())?;
+
+    let src = PathBuf::from(&entry.path);
+    if !src.exists() {
+        return Err(s.err_video_missing.to_string());
+    }
+
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("mp4")
+        .to_ascii_lowercase();
+    let new_id = uuid::Uuid::new_v4().to_string();
+    let stem = sanitize_stem(&format!("{}-copy", entry.meta.title));
+    let filename = format!("{}-{}.{}", stem.replace(' ', "-"), &new_id[..8], ext);
+    let dest = dir.join(&filename);
+
+    fs::copy(&src, &dest).map_err(|e| format!("{}: {e}", s.err_copy_failed))?;
+
+    let mut meta = entry.meta.clone();
+    meta.id = new_id;
+    meta.title = format!("{} (copy)", entry.meta.title);
+    meta.filename = filename;
+    meta.created_at = now_iso();
+    meta.file_size_bytes = fs::metadata(&dest).map(|m| m.len()).unwrap_or(meta.file_size_bytes);
+    meta.starred = false;
+
+    let meta_path = meta_path_for(&dest);
+    let json = serde_json::to_string_pretty(&meta).map_err(|e| format!("Serialise error: {e}"))?;
+    fs::write(&meta_path, json).map_err(|e| format!("Cannot write sidecar: {e}"))?;
+
+    let _ = crate::i18n::refresh_tray_menu(&app, crate::i18n::current_locale(&locale));
+
+    Ok(RecordingEntry {
+        meta,
+        path: dest.to_string_lossy().into_owned(),
+        meta_path: meta_path.to_string_lossy().into_owned(),
+    })
+}
+
+/// Remove orphaned sidecars (no video) and empty video files. Returns counts.
+#[tauri::command]
+pub(crate) fn purge_library_orphans(app: tauri::AppHandle) -> Result<PurgeResult, String> {
+    let dir = bloom_dir(&app)?;
+    let mut removed_sidecars = 0u32;
+    let mut removed_empty = 0u32;
+
+    for entry in load_all_recordings(&dir) {
+        let video = Path::new(&entry.path);
+        let meta_path = Path::new(&entry.meta_path);
+        if !video.exists() {
+            if fs::remove_file(meta_path).is_ok() {
+                removed_sidecars += 1;
+            }
+            continue;
+        }
+        let size = fs::metadata(video).map(|m| m.len()).unwrap_or(0);
+        if size == 0 {
+            let _ = fs::remove_file(video);
+            let _ = fs::remove_file(meta_path);
+            removed_empty += 1;
+        }
+    }
+
+    let locale = app.state::<crate::i18n::LocaleState>();
+    let _ = crate::i18n::refresh_tray_menu(&app, crate::i18n::current_locale(&locale));
+
+    Ok(PurgeResult {
+        removed_sidecars,
+        removed_empty_videos: removed_empty,
+    })
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PurgeResult {
+    pub removed_sidecars: u32,
+    pub removed_empty_videos: u32,
 }

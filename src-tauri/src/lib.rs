@@ -8,6 +8,7 @@ mod cursor;
 mod finalize;
 mod i18n;
 mod library;
+mod naming;
 mod session;
 mod share;
 mod system;
@@ -47,14 +48,23 @@ pub fn run() {
             system::set_library_directory,
             system::get_disk_space,
             system::list_monitors,
+            system::get_app_info,
             i18n::list_locales,
             i18n::get_locale,
+            i18n::get_system_locale,
             i18n::set_locale,
+            i18n::refresh_tray,
+            i18n::get_tray_recent_count,
+            i18n::set_tray_recent_count,
+            naming::get_filename_template,
+            naming::set_filename_template,
+            naming::suggest_recording_filename,
             session::open_session,
             session::write_chunk,
             session::close_session,
             session::cancel_session,
             library::list_recordings,
+            library::list_recent_recordings,
             library::get_library_stats,
             library::save_snapshot,
             library::get_recording,
@@ -67,6 +77,9 @@ pub fn run() {
             library::validate_recording,
             library::import_recording,
             library::reveal_in_finder,
+            library::open_library_folder,
+            library::duplicate_recording,
+            library::purge_library_orphans,
             clipboard::copy_text,
             clipboard::copy_file,
             clipboard::copy_file_to,

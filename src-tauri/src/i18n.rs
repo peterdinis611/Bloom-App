@@ -4,13 +4,15 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem},
-    AppHandle, Emitter, State,
+    menu::MenuBuilder,
+    AppHandle, Emitter, Manager, State,
 };
 
 use crate::config::{load_config, save_config};
+use crate::util::{bloom_dir, load_all_recordings};
 
 pub const TRAY_ID: &str = "main";
+const DEFAULT_TRAY_RECENT: u32 = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Locale {
@@ -93,6 +95,8 @@ pub struct Strings {
     pub tray_last: &'static str,
     pub tray_pause: &'static str,
     pub tray_stop: &'static str,
+    pub tray_library: &'static str,
+    pub tray_recent: &'static str,
     pub tray_quit: &'static str,
     pub tray_tooltip: &'static str,
 
@@ -107,6 +111,7 @@ pub struct Strings {
     pub err_video_missing: &'static str,
     pub err_video_empty: &'static str,
     pub err_sidecar_missing: &'static str,
+    pub err_invalid_template: &'static str,
 }
 
 pub fn strings(locale: Locale) -> Strings {
@@ -117,6 +122,8 @@ pub fn strings(locale: Locale) -> Strings {
             tray_last: "Posledná nahrávka",
             tray_pause: "Pauza / pokračovať",
             tray_stop: "Ukončiť a uložiť",
+            tray_library: "Otvoriť knižnicu",
+            tray_recent: "Nedávne",
             tray_quit: "Ukončiť Bloom",
             tray_tooltip: "Bloom",
             err_invalid_key: "Neplatný kláves",
@@ -130,6 +137,7 @@ pub fn strings(locale: Locale) -> Strings {
             err_video_missing: "Video súbor chýba na disku",
             err_video_empty: "Video súbor je prázdny (0 bajtov)",
             err_sidecar_missing: "Metadata (.bloom.json) chýbajú",
+            err_invalid_template: "Neplatná šablóna názvu súboru",
         },
         Locale::En => Strings {
             tray_show: "Show Bloom",
@@ -137,6 +145,8 @@ pub fn strings(locale: Locale) -> Strings {
             tray_last: "Last recording",
             tray_pause: "Pause / resume",
             tray_stop: "Stop and save",
+            tray_library: "Open library",
+            tray_recent: "Recent",
             tray_quit: "Quit Bloom",
             tray_tooltip: "Bloom",
             err_invalid_key: "Invalid key",
@@ -150,6 +160,7 @@ pub fn strings(locale: Locale) -> Strings {
             err_video_missing: "Video file is missing from disk",
             err_video_empty: "Video file is empty (0 bytes)",
             err_sidecar_missing: "Metadata sidecar (.bloom.json) is missing",
+            err_invalid_template: "Invalid filename template",
         },
         Locale::Cs => Strings {
             tray_show: "Zobrazit Bloom",
@@ -157,6 +168,8 @@ pub fn strings(locale: Locale) -> Strings {
             tray_last: "Poslední nahrávka",
             tray_pause: "Pauza / pokračovat",
             tray_stop: "Ukončit a uložit",
+            tray_library: "Otevřít knihovnu",
+            tray_recent: "Nedávné",
             tray_quit: "Ukončit Bloom",
             tray_tooltip: "Bloom",
             err_invalid_key: "Neplatná klávesa",
@@ -170,6 +183,7 @@ pub fn strings(locale: Locale) -> Strings {
             err_video_missing: "Video soubor na disku chybí",
             err_video_empty: "Video soubor je prázdný (0 bajtů)",
             err_sidecar_missing: "Metadata (.bloom.json) chybí",
+            err_invalid_template: "Neplatná šablona názvu souboru",
         },
         Locale::De => Strings {
             tray_show: "Bloom anzeigen",
@@ -177,6 +191,8 @@ pub fn strings(locale: Locale) -> Strings {
             tray_last: "Letzte Aufnahme",
             tray_pause: "Pause / fortsetzen",
             tray_stop: "Beenden und speichern",
+            tray_library: "Bibliothek öffnen",
+            tray_recent: "Zuletzt",
             tray_quit: "Bloom beenden",
             tray_tooltip: "Bloom",
             err_invalid_key: "Ungültige Taste",
@@ -190,6 +206,7 @@ pub fn strings(locale: Locale) -> Strings {
             err_video_missing: "Videodatei fehlt auf dem Datenträger",
             err_video_empty: "Videodatei ist leer (0 Bytes)",
             err_sidecar_missing: "Metadaten (.bloom.json) fehlen",
+            err_invalid_template: "Ungültige Dateinamensvorlage",
         },
         Locale::Pl => Strings {
             tray_show: "Pokaż Bloom",
@@ -197,6 +214,8 @@ pub fn strings(locale: Locale) -> Strings {
             tray_last: "Ostatnie nagranie",
             tray_pause: "Pauza / wznów",
             tray_stop: "Zakończ i zapisz",
+            tray_library: "Otwórz bibliotekę",
+            tray_recent: "Ostatnie",
             tray_quit: "Zakończ Bloom",
             tray_tooltip: "Bloom",
             err_invalid_key: "Nieprawidłowy klawisz",
@@ -210,6 +229,7 @@ pub fn strings(locale: Locale) -> Strings {
             err_video_missing: "Brak pliku wideo na dysku",
             err_video_empty: "Plik wideo jest pusty (0 bajtów)",
             err_sidecar_missing: "Brak metadanych (.bloom.json)",
+            err_invalid_template: "Nieprawidłowy szablon nazwy pliku",
         },
         Locale::Hu => Strings {
             tray_show: "Bloom megjelenítése",
@@ -217,6 +237,8 @@ pub fn strings(locale: Locale) -> Strings {
             tray_last: "Utolsó felvétel",
             tray_pause: "Szünet / folytatás",
             tray_stop: "Leállítás és mentés",
+            tray_library: "Könyvtár megnyitása",
+            tray_recent: "Legutóbbi",
             tray_quit: "Bloom bezárása",
             tray_tooltip: "Bloom",
             err_invalid_key: "Érvénytelen billentyű",
@@ -230,6 +252,7 @@ pub fn strings(locale: Locale) -> Strings {
             err_video_missing: "A videófájl hiányzik a lemezről",
             err_video_empty: "A videófájl üres (0 bájt)",
             err_sidecar_missing: "Hiányoznak a metaadatok (.bloom.json)",
+            err_invalid_template: "Érvénytelen fájlnévsablon",
         },
     }
 }
@@ -262,26 +285,54 @@ pub fn resolve_startup_locale(app: &AppHandle) -> Locale {
     Locale::from_system()
 }
 
-pub fn build_tray_menu(app: &AppHandle, s: &Strings) -> Result<Menu<tauri::Wry>, String> {
-    let show_i = MenuItem::with_id(app, "show", s.tray_show, true, None::<&str>)
-        .map_err(|e| e.to_string())?;
-    let start_i = MenuItem::with_id(app, "start", s.tray_start, true, None::<&str>)
-        .map_err(|e| e.to_string())?;
-    let last_i = MenuItem::with_id(app, "last", s.tray_last, true, None::<&str>)
-        .map_err(|e| e.to_string())?;
-    let pause_i = MenuItem::with_id(app, "pause", s.tray_pause, true, None::<&str>)
-        .map_err(|e| e.to_string())?;
-    let stop_i = MenuItem::with_id(app, "stop", s.tray_stop, true, None::<&str>)
-        .map_err(|e| e.to_string())?;
-    let sep = PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
-    let quit_i = MenuItem::with_id(app, "quit", s.tray_quit, true, None::<&str>)
-        .map_err(|e| e.to_string())?;
+fn tray_recent_limit(app: &AppHandle) -> usize {
+    load_config(app)
+        .ok()
+        .and_then(|c| c.tray_recent_count)
+        .unwrap_or(DEFAULT_TRAY_RECENT)
+        .clamp(0, 8) as usize
+}
 
-    Menu::with_items(
-        app,
-        &[&show_i, &start_i, &last_i, &pause_i, &stop_i, &sep, &quit_i],
-    )
-    .map_err(|e| e.to_string())
+fn truncate_label(title: &str, max: usize) -> String {
+    let t = title.trim();
+    if t.chars().count() <= max {
+        return t.to_string();
+    }
+    let cut: String = t.chars().take(max.saturating_sub(1)).collect();
+    format!("{cut}…")
+}
+
+pub fn build_tray_menu(app: &AppHandle, s: &Strings) -> Result<tauri::menu::Menu<tauri::Wry>, String> {
+    let mut builder = MenuBuilder::new(app)
+        .text("show", s.tray_show)
+        .text("start", s.tray_start)
+        .text("last", s.tray_last)
+        .text("pause", s.tray_pause)
+        .text("stop", s.tray_stop)
+        .separator()
+        .text("library", s.tray_library);
+
+    let limit = tray_recent_limit(app);
+    if limit > 0 {
+        if let Ok(dir) = bloom_dir(app) {
+            let recent = load_all_recordings(&dir);
+            if !recent.is_empty() {
+                builder = builder.separator().text("recent-header", s.tray_recent);
+                // Disabled-looking header: still clickable no-op via empty handler
+                for entry in recent.into_iter().take(limit) {
+                    let id = format!("recent:{}", entry.meta.id);
+                    let label = truncate_label(&entry.meta.title, 36);
+                    builder = builder.text(id, label);
+                }
+            }
+        }
+    }
+
+    builder
+        .separator()
+        .text("quit", s.tray_quit)
+        .build()
+        .map_err(|e| e.to_string())
 }
 
 pub fn refresh_tray_menu(app: &AppHandle, locale: Locale) -> Result<(), String> {
@@ -292,6 +343,12 @@ pub fn refresh_tray_menu(app: &AppHandle, locale: Locale) -> Result<(), String> 
         let _ = tray.set_tooltip(Some(s.tray_tooltip));
     }
     Ok(())
+}
+
+/// Rebuild tray after library changes (new recording, delete, …).
+#[tauri::command]
+pub fn refresh_tray(app: AppHandle, state: State<'_, LocaleState>) -> Result<(), String> {
+    refresh_tray_menu(&app, current_locale(&state))
 }
 
 #[tauri::command]
@@ -319,6 +376,11 @@ pub fn get_locale(state: State<'_, LocaleState>) -> String {
 }
 
 #[tauri::command]
+pub fn get_system_locale() -> String {
+    Locale::from_system().as_str().to_string()
+}
+
+#[tauri::command]
 pub fn set_locale(
     app: AppHandle,
     state: State<'_, LocaleState>,
@@ -338,6 +400,21 @@ pub fn set_locale(
     refresh_tray_menu(&app, loc)?;
     let _ = app.emit("locale-changed", loc.as_str());
     Ok(loc.as_str().to_string())
+}
+
+#[tauri::command]
+pub fn set_tray_recent_count(app: AppHandle, state: State<'_, LocaleState>, count: u32) -> Result<u32, String> {
+    let clamped = count.clamp(0, 8);
+    let mut cfg = load_config(&app).unwrap_or_default();
+    cfg.tray_recent_count = Some(clamped);
+    save_config(&app, &cfg)?;
+    refresh_tray_menu(&app, current_locale(&state))?;
+    Ok(clamped)
+}
+
+#[tauri::command]
+pub fn get_tray_recent_count(app: AppHandle) -> u32 {
+    tray_recent_limit(&app) as u32
 }
 
 #[cfg(test)]
@@ -360,7 +437,8 @@ mod tests {
         for loc in [Locale::Sk, Locale::En, Locale::Cs, Locale::De, Locale::Pl, Locale::Hu] {
             let s = strings(loc);
             assert!(!s.tray_show.is_empty());
-            assert!(!s.err_unsupported_format.is_empty());
+            assert!(!s.tray_library.is_empty());
+            assert!(!s.err_invalid_template.is_empty());
         }
     }
 

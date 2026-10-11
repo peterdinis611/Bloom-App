@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { RotateCcw, Trash2, Check, FolderOpen, RefreshCw, Shield, Mic, Video } from "lucide-react"
+import { RotateCcw, Trash2, Check, FolderOpen, RefreshCw, Shield, Mic, Video, Sparkles } from "lucide-react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,7 +8,21 @@ import { useMessages } from "@/lib/i18n/I18nProvider"
 import { RECORDING_QUALITIES } from "@/lib/videoOptions"
 import { THEMES } from "@/lib/themes"
 import { ANNOTATION_COLORS, useSettings, type AnnotationTool } from "@/hooks/useSettings"
-import { deleteAllRecordings, formatBytes, getLibraryDirectory, getLibraryStats, setLibraryDirectory } from "@/hooks/useBloomBackend"
+import {
+  deleteAllRecordings,
+  formatBytes,
+  getAppInfo,
+  getFilenameTemplate,
+  getLibraryDirectory,
+  getLibraryStats,
+  getTrayRecentCount,
+  purgeLibraryOrphans,
+  setFilenameTemplate,
+  setLibraryDirectory,
+  setTrayRecentCount,
+  type AppInfo,
+  type FilenamePreview,
+} from "@/hooks/useBloomBackend"
 import type { LibraryDirectoryInfo } from "@/types"
 import { useToast } from "@/hooks/useToast"
 import { ConfirmDeleteAll } from "@/components/library/ConfirmDeleteAll"
@@ -44,6 +58,13 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
   const [libraryDirBusy, setLibraryDirBusy] = useState(false)
   const [updateBusy, setUpdateBusy] = useState(false)
   const [showPrivacy, setShowPrivacy] = useState(false)
+  const [filenameDraft, setFilenameDraft] = useState("")
+  const [filenameExample, setFilenameExample] = useState("")
+  const [filenameBusy, setFilenameBusy] = useState(false)
+  const [trayRecent, setTrayRecent] = useState(5)
+  const [trayBusy, setTrayBusy] = useState(false)
+  const [purgeBusy, setPurgeBusy] = useState(false)
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const integ = settings.integrations
   const general = settings.general
   const exportDefaults = settings.exportDefaults
@@ -97,6 +118,18 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
   useEffect(() => {
     void refreshLibraryStats()
     void refreshLibraryDir()
+    void getFilenameTemplate()
+      .then((p: FilenamePreview) => {
+        setFilenameDraft(p.template)
+        setFilenameExample(p.example)
+      })
+      .catch(() => {})
+    void getTrayRecentCount()
+      .then(setTrayRecent)
+      .catch(() => {})
+    void getAppInfo()
+      .then(setAppInfo)
+      .catch(() => {})
   }, [refreshLibraryStats, refreshLibraryDir])
 
   const handleDeleteAll = async () => {
@@ -160,6 +193,47 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
       toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
     } finally {
       setLibraryDirBusy(false)
+    }
+  }
+
+  const handleSaveFilenameTemplate = async () => {
+    setFilenameBusy(true)
+    try {
+      const preview = await setFilenameTemplate(filenameDraft.trim() || "recording-{date}-{time}")
+      setFilenameDraft(preview.template)
+      setFilenameExample(preview.example)
+      toastSuccess({ title: sk.toast.filenameTemplateSaved })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setFilenameBusy(false)
+    }
+  }
+
+  const handleTrayRecentChange = async (count: number) => {
+    setTrayBusy(true)
+    try {
+      const next = await setTrayRecentCount(count)
+      setTrayRecent(next)
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setTrayBusy(false)
+    }
+  }
+
+  const handlePurgeOrphans = async () => {
+    setPurgeBusy(true)
+    try {
+      const result = await purgeLibraryOrphans()
+      await refreshLibraryStats()
+      toastSuccess({
+        title: sk.toast.purged(result.removedSidecars, result.removedEmptyVideos),
+      })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setPurgeBusy(false)
     }
   }
 
@@ -626,6 +700,63 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
             </div>
           </MacRow>
           <MacRow
+            label={sk.settings.filenameTemplate}
+            hint={sk.settings.filenameTemplateHint}
+          >
+            <div className="flex max-w-[min(100%,18rem)] flex-col items-end gap-1.5">
+              <Input
+                value={filenameDraft}
+                onChange={(e) => setFilenameDraft(e.target.value)}
+                className="w-full font-mono text-[11px]"
+                spellCheck={false}
+              />
+              {filenameExample && (
+                <p className="w-full truncate text-right font-mono text-[10px] text-muted-foreground">
+                  {sk.settings.filenameTemplateExample}: {filenameExample}
+                </p>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={filenameBusy}
+                onClick={() => { void handleSaveFilenameTemplate() }}
+                className="text-[11px]"
+              >
+                {sk.settings.filenameTemplateSave}
+              </Button>
+            </div>
+          </MacRow>
+          <MacRow
+            label={sk.settings.trayRecentCount}
+            hint={sk.settings.trayRecentCountHint}
+          >
+            <select
+              value={trayRecent}
+              disabled={trayBusy}
+              onChange={(e) => { void handleTrayRecentChange(Number(e.target.value)) }}
+              className="h-8 rounded-md border border-border bg-background px-2 text-[11px]"
+            >
+              {Array.from({ length: 9 }, (_, i) => (
+                <option key={i} value={i}>{i}</option>
+              ))}
+            </select>
+          </MacRow>
+          <MacRow
+            label={sk.settings.purgeOrphans}
+            hint={sk.settings.purgeOrphansHint}
+          >
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={purgeBusy}
+              onClick={() => { void handlePurgeOrphans() }}
+              className="text-[11px]"
+            >
+              <Sparkles className={cn("size-3", purgeBusy && "animate-spin")} />
+              {sk.settings.purgeOrphansBtn}
+            </Button>
+          </MacRow>
+          <MacRow
             label={sk.settings.deleteAll}
             hint={sk.settings.deleteAllHint(libraryCount, formatBytes(librarySize))}
           >
@@ -639,6 +770,15 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
               <Trash2 className="size-3.5" /> {sk.settings.deleteAllBtn}
             </Button>
           </MacRow>
+          {appInfo && (
+            <MacRow label={sk.settings.appInfo} hint={sk.settings.appInfoHint}>
+              <p className="max-w-[min(100%,18rem)] text-right font-mono text-[10px] text-muted-foreground">
+                {appInfo.name} {appInfo.version} · {appInfo.platform}
+                <br />
+                ffmpeg {appInfo.ffmpegAvailable ? (appInfo.ffmpegVersion ?? "ok") : "—"}
+              </p>
+            </MacRow>
+          )}
         </MacGroup>
       </PageScrollArea>
 

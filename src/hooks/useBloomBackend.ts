@@ -74,6 +74,80 @@ export async function setLocale(locale: string): Promise<string> {
   return invoke<string>("set_locale", { locale })
 }
 
+export async function getSystemLocale(): Promise<string> {
+  return invoke<string>("get_system_locale")
+}
+
+export async function refreshTray(): Promise<void> {
+  return invoke("refresh_tray")
+}
+
+export async function getTrayRecentCount(): Promise<number> {
+  return invoke<number>("get_tray_recent_count")
+}
+
+export async function setTrayRecentCount(count: number): Promise<number> {
+  return invoke<number>("set_tray_recent_count", { count })
+}
+
+export interface FilenamePreview {
+  template: string
+  example: string
+  tokens: string[]
+}
+
+export async function getFilenameTemplate(): Promise<FilenamePreview> {
+  return invoke<FilenamePreview>("get_filename_template")
+}
+
+export async function setFilenameTemplate(template: string): Promise<FilenamePreview> {
+  return invoke<FilenamePreview>("set_filename_template", { template })
+}
+
+export async function suggestRecordingFilename(
+  source: string,
+  quality: string,
+  extension: string,
+): Promise<string> {
+  return invoke<string>("suggest_recording_filename", { source, quality, extension })
+}
+
+export interface AppInfo {
+  version: string
+  name: string
+  platform: string
+  locale: string
+  systemLocale: string
+  libraryPath: string
+  ffmpegAvailable: boolean
+  ffmpegVersion: string | null
+}
+
+export async function getAppInfo(): Promise<AppInfo> {
+  return invoke<AppInfo>("get_app_info")
+}
+
+export async function listRecentRecordings(limit?: number): Promise<RecordingEntry[]> {
+  return invoke<RecordingEntry[]>("list_recent_recordings", { limit: limit ?? null })
+}
+
+export async function openLibraryFolder(): Promise<void> {
+  return invoke("open_library_folder")
+}
+
+export async function duplicateRecording(id: string): Promise<RecordingEntry> {
+  return invoke<RecordingEntry>("duplicate_recording", { id })
+}
+
+export interface PurgeResult {
+  removedSidecars: number
+  removedEmptyVideos: number
+}
+
+export async function purgeLibraryOrphans(): Promise<PurgeResult> {
+  return invoke<PurgeResult>("purge_library_orphans")
+}
+
 /**
  * Convert an absolute file path into a URL the webview can load
  * (e.g. as a <video src>) via the Tauri asset protocol.

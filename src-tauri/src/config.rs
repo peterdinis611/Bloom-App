@@ -13,6 +13,12 @@ pub(crate) struct AppConfig {
     /// UI + tray locale: sk | en | cs | de | pl | hu
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
+    /// Filename template, e.g. `recording-{date}-{time}`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filename_template: Option<String>,
+    /// How many recent recordings to show in the tray (0–8).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tray_recent_count: Option<u32>,
 }
 
 fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {

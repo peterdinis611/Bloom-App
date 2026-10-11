@@ -140,3 +140,36 @@ pub(crate) fn list_monitors(app: tauri::AppHandle) -> Result<Vec<MonitorInfo>, S
 
     Ok(list)
 }
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInfo {
+    pub version: String,
+    pub name: String,
+    pub platform: String,
+    pub locale: String,
+    pub system_locale: String,
+    pub library_path: String,
+    pub ffmpeg_available: bool,
+    pub ffmpeg_version: Option<String>,
+}
+
+/// Snapshot of backend state for About / diagnostics.
+#[tauri::command]
+pub(crate) fn get_app_info(
+    app: tauri::AppHandle,
+    locale: tauri::State<'_, crate::i18n::LocaleState>,
+) -> Result<AppInfo, String> {
+    let library_path = bloom_dir(&app)?.to_string_lossy().into_owned();
+    let ff = crate::video::check_ffmpeg();
+    Ok(AppInfo {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        name: "Bloom".into(),
+        platform: std::env::consts::OS.to_string(),
+        locale: crate::i18n::current_locale(&locale).as_str().to_string(),
+        system_locale: crate::i18n::Locale::from_system().as_str().to_string(),
+        library_path,
+        ffmpeg_available: ff.available,
+        ffmpeg_version: ff.version,
+    })
+}
