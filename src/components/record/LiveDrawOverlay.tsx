@@ -13,17 +13,7 @@ import {
 } from "@/lib/annotation"
 import { ANNOTATION_COLORS } from "@/hooks/useSettings"
 import type { AnnotationTool } from "@/hooks/useSettings"
-import { sk } from "@/lib/i18n/sk"
-
-const TOOLS: { id: AnnotationTool; icon: React.FC<{ className?: string }>; label: string }[] = [
-  { id: "pen", icon: Pen, label: sk.settings.tools.pen },
-  { id: "highlighter", icon: Highlighter, label: sk.settings.tools.highlighter },
-  { id: "line", icon: Minus, label: sk.settings.tools.line },
-  { id: "arrow", icon: ArrowUpRight, label: sk.settings.tools.arrow },
-  { id: "rect", icon: Square, label: sk.settings.tools.rect },
-  { id: "circle", icon: Circle, label: sk.settings.tools.circle },
-  { id: "eraser", icon: Eraser, label: sk.settings.tools.eraser },
-]
+import { useMessages } from "@/lib/i18n/I18nProvider"
 
 interface LiveDrawOverlayProps {
   layer: AnnotationLayer
@@ -40,6 +30,16 @@ export function LiveDrawOverlay({
   onColorChange,
   onClose,
 }: LiveDrawOverlayProps) {
+  const sk = useMessages()
+  const tools: { id: AnnotationTool; icon: React.FC<{ className?: string }>; label: string }[] = [
+    { id: "pen", icon: Pen, label: sk.settings.tools.pen },
+    { id: "highlighter", icon: Highlighter, label: sk.settings.tools.highlighter },
+    { id: "line", icon: Minus, label: sk.settings.tools.line },
+    { id: "arrow", icon: ArrowUpRight, label: sk.settings.tools.arrow },
+    { id: "rect", icon: Square, label: sk.settings.tools.rect },
+    { id: "circle", icon: Circle, label: sk.settings.tools.circle },
+    { id: "eraser", icon: Eraser, label: sk.settings.tools.eraser },
+  ]
   const rootRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const sizeRef = useRef({ w: 0, h: 0 })
@@ -137,7 +137,7 @@ export function LiveDrawOverlay({
       />
 
       <div className="pointer-events-auto absolute bottom-2 left-1/2 z-30 flex max-w-[95%] -translate-x-1/2 items-center gap-1 overflow-x-auto rounded-xl border border-border/60 bg-black/75 px-2 py-1.5 shadow-lg backdrop-blur-sm">
-        {TOOLS.map((t) => (
+        {tools.map((t) => (
           <button
             key={t.id}
             type="button"

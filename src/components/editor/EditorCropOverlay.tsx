@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react"
 import { Check, RotateCcw, X } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages } from "@/lib/i18n/I18nProvider"
 import { clampCrop, type EditorCrop } from "@/lib/editorSegments"
 
 interface EditorCropOverlayProps {
@@ -12,6 +12,7 @@ interface EditorCropOverlayProps {
 
 /** Drag a rectangle over the editor preview for spatial crop. */
 export function EditorCropOverlay({ value, onChange, className }: EditorCropOverlayProps) {
+  const sk = useMessages()
   const rootRef = useRef<HTMLDivElement>(null)
   const dragStart = useRef<{ x: number; y: number } | null>(null)
   const [draft, setDraft] = useState<EditorCrop | null>(null)

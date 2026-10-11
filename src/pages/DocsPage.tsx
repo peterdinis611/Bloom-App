@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { BookOpen, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages } from "@/lib/i18n/I18nProvider"
 import { DOC_SECTIONS, type DocBlock } from "@/lib/docsContent"
 import { PageScrollArea } from "@/components/layout/PageScrollArea"
 import { MacGroup, MacPageHeader } from "@/components/mac/MacUIKit"
@@ -68,6 +68,7 @@ function DocBlockView({ block }: { block: DocBlock }) {
 }
 
 export function DocsPage({ active = true }: { active?: boolean }) {
+  const sk = useMessages()
   const [sectionId, setSectionId] = useState(DOC_SECTIONS[0]?.id ?? "start")
   const section = DOC_SECTIONS.find((s) => s.id === sectionId) ?? DOC_SECTIONS[0]
 

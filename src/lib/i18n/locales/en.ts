@@ -242,6 +242,7 @@ export const en: Messages = {
     confirmDeleteHint: "Dialog before deleting a single recording",
     exportPreset: "Default preset",
     exportResolution: "Default resolution",
+    exportFormat: "Default format",
     preferStreamCopy: "Prefer fast trim (stream copy)",
     preferStreamCopyHint: "At original resolution and H.264 without re-encode",
     preferHardwareEncode: "Prefer hardware compression",

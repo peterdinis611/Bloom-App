@@ -14,6 +14,15 @@ import { BUILTIN_PRESETS, type RecordingPreset } from "@/lib/presets"
 import type { RecordingQuality } from "@/lib/videoOptions"
 import { isLocaleId } from "@/lib/i18n/catalog"
 import type { LocaleId } from "@/lib/i18n/types"
+import type { OptimizeFormat } from "@/types"
+
+const EXPORT_FORMATS: OptimizeFormat[] = [
+  "mp4", "mov", "m4v", "mkv", "avi", "mpeg", "ts", "flv", "3gp", "ogv", "webm", "gif",
+]
+
+function isOptimizeFormat(v: unknown): v is OptimizeFormat {
+  return typeof v === "string" && (EXPORT_FORMATS as string[]).includes(v)
+}
 
 export type AnnotationTool = "pen" | "highlighter" | "rect" | "circle" | "line" | "arrow" | "eraser"
 
@@ -40,6 +49,8 @@ export interface GeneralSettings {
 export interface ExportDefaults {
   preset: "small" | "medium" | "high"
   resolution: "480p" | "720p" | "1080p" | "original"
+  /** Default container for editor / batch export. */
+  format: OptimizeFormat
   /** Prefer original resolution so trim-only can stream-copy. */
   preferStreamCopy: boolean
   /** Default hardware-friendly encode (VideoToolbox / NVENC when available). */
@@ -131,20 +142,25 @@ export const DEFAULTS: AppSettings = {
   exportDefaults: {
     preset: "medium",
     resolution: "original",
+    format: "mp4",
     preferStreamCopy: true,
     preferHardwareEncode: true,
   },
 }
 
-async function loadSettings(): Promise<AppSettings> {
+async function loadSettings(): Promise<{ settings: AppSettings; isFresh: boolean }> {
   let raw = await idbGet(STORAGE_KEY)
+  let fromLegacy = false
   if (!raw) {
     for (const key of LEGACY_KEYS) {
       raw = await idbGet(key)
-      if (raw) break
+      if (raw) {
+        fromLegacy = true
+        break
+      }
     }
   }
-  return parseSettings(raw)
+  return { settings: parseSettings(raw), isFresh: !raw && !fromLegacy }
 }
 
 function normalizeKey(raw: unknown, fallback: string): string {
@@ -179,7 +195,13 @@ function parseSettings(raw: string | null): AppSettings {
         ...parsed.general,
         locale: isLocaleId(parsed.general?.locale) ? parsed.general.locale : DEFAULTS.general.locale,
       },
-      exportDefaults: { ...DEFAULTS.exportDefaults, ...parsed.exportDefaults },
+      exportDefaults: {
+        ...DEFAULTS.exportDefaults,
+        ...parsed.exportDefaults,
+        format: isOptimizeFormat(parsed.exportDefaults?.format)
+          ? parsed.exportDefaults.format
+          : DEFAULTS.exportDefaults.format,
+      },
     }
   } catch {
     return DEFAULTS
@@ -196,7 +218,8 @@ export function applyTheme(theme: ThemeId) {
 
 /** Load persisted settings (usable outside React – e.g. annotation overlay window). */
 export async function readStoredSettings(): Promise<AppSettings> {
-  return loadSettings()
+  const { settings } = await loadSettings()
+  return settings
 }
 
 interface SettingsCtx {
@@ -221,12 +244,24 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false
-    loadSettings().then((loaded) => {
+    loadSettings().then(async ({ settings: loaded, isFresh }) => {
       if (cancelled) return
-      setSettings(loaded)
-      applyTheme(loaded.theme)
+      let next = loaded
+      if (isFresh) {
+        try {
+          const { getLocale } = await import("@/hooks/useBloomBackend")
+          const backend = await getLocale()
+          if (isLocaleId(backend)) {
+            next = { ...loaded, general: { ...loaded.general, locale: backend } }
+          }
+        } catch {
+          /* Vite-only / non-Tauri */
+        }
+      }
+      setSettings(next)
+      applyTheme(next.theme)
       setReady(true)
-      const { arm, pause, stop } = loaded.shortcuts
+      const { arm, pause, stop } = next.shortcuts
       if (arm !== "R" || pause !== "P" || stop !== "S") {
         void import("@/hooks/useBloomBackend").then(({ setGlobalShortcuts }) => {
           setGlobalShortcuts(arm, pause, stop).catch(() => {})

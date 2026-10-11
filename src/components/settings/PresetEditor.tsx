@@ -7,7 +7,7 @@ import {
   newPresetId,
   type RecordingPreset,
 } from "@/lib/presets"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages } from "@/lib/i18n/I18nProvider"
 import { RECORDING_QUALITIES } from "@/lib/videoOptions"
 import { ChoiceGroup } from "@/components/mac/MacUIKit"
 import type { RecordingSource } from "@/types"
@@ -17,18 +17,18 @@ interface PresetEditorProps {
   onChange: (presets: RecordingPreset[]) => void
 }
 
-const SOURCES: { value: RecordingSource; label: string }[] = [
-  { value: "screen", label: sk.record.sources.screen },
-  { value: "camera", label: sk.record.sources.camera },
-  { value: "both", label: sk.record.sources.both },
-]
-
 function PresetForm({ preset, onUpdate, onDelete, canDelete }: {
   preset: RecordingPreset
   onUpdate: (p: RecordingPreset) => void
   onDelete: () => void
   canDelete: boolean
 }) {
+  const sk = useMessages()
+  const sources: { value: RecordingSource; label: string }[] = [
+    { value: "screen", label: sk.record.sources.screen },
+    { value: "camera", label: sk.record.sources.camera },
+    { value: "both", label: sk.record.sources.both },
+  ]
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card p-3">
       <div className="flex items-start gap-2">
@@ -52,7 +52,7 @@ function PresetForm({ preset, onUpdate, onDelete, canDelete }: {
       />
       <ChoiceGroup
         label={sk.record.source}
-        options={SOURCES}
+        options={sources}
         value={preset.source}
         onChange={(v) => onUpdate({ ...preset, source: v })}
       />

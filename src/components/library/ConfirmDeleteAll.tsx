@@ -1,6 +1,6 @@
 import { Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages } from "@/lib/i18n/I18nProvider"
 import {
   Dialog,
   DialogContent,
@@ -21,6 +21,7 @@ interface ConfirmDeleteAllProps {
 
 /** Strong confirmation before wiping the entire recordings library. */
 export function ConfirmDeleteAll({ count, sizeLabel, busy, open, onCancel, onConfirm }: ConfirmDeleteAllProps) {
+  const sk = useMessages()
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
       <DialogContent className="[&>button]:hidden">

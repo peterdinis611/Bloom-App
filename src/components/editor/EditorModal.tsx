@@ -15,7 +15,8 @@ import {
 } from "lucide-react"
 import { useCloseOnEscape } from "@/hooks/useCloseOnEscape"
 import { cn } from "@/lib/utils"
-import { sk, type OptimizeSpeed } from "@/lib/i18n/sk"
+import { useMessages } from "@/lib/i18n/I18nProvider"
+import type { OptimizeSpeed } from "@/lib/i18n/sk"
 import { ChoiceGroup } from "@/components/mac/MacUIKit"
 import { OPTIMIZE_SPEEDS, speedToNumber } from "@/lib/videoOptions"
 import { clampTrimRange, formatEditorTime, parseEditorTime } from "@/lib/editorTime"
@@ -65,21 +66,6 @@ type SaveMode = "copy" | "replace"
 type PartsMode = "separate" | "join"
 
 const STEPS: Step[] = ["preview", "trim", "export"]
-const PARTS_MODES = [
-  { value: "separate" as const, label: sk.editor.separateParts, hint: sk.editor.separatePartsHint },
-  { value: "join" as const, label: sk.editor.joinParts, hint: sk.editor.joinPartsHint },
-]
-const PRESETS = [
-  { value: "small" as const, label: sk.optimize.presets.small.label, hint: sk.optimize.presets.small.hint },
-  { value: "medium" as const, label: sk.optimize.presets.medium.label, hint: sk.optimize.presets.medium.hint },
-  { value: "high" as const, label: sk.optimize.presets.high.label, hint: sk.optimize.presets.high.hint },
-]
-const RESOLUTIONS = [
-  { value: "480p" as const, label: sk.optimize.resolutions["480p"] },
-  { value: "720p" as const, label: sk.optimize.resolutions["720p"] },
-  { value: "1080p" as const, label: sk.optimize.resolutions["1080p"] },
-  { value: "original" as const, label: sk.optimize.resolutions.original },
-]
 const FORMATS = [
   { value: "mp4" as const, label: "MP4", hint: "Univerzálny" },
   { value: "mov" as const, label: "MOV", hint: "QuickTime" },
@@ -94,14 +80,6 @@ const FORMATS = [
   { value: "webm" as const, label: "WebM", hint: "VP9" },
   { value: "gif" as const, label: "GIF", hint: "Animácia" },
 ]
-const SPEEDS: { value: OptimizeSpeed; label: string }[] = OPTIMIZE_SPEEDS.map((v) => ({
-  value: v,
-  label: sk.optimize.speeds[v],
-}))
-const SAVE_MODES = [
-  { value: "copy" as const, label: sk.editor.saveCopy, hint: sk.editor.saveCopyHint },
-  { value: "replace" as const, label: sk.editor.replaceOriginal, hint: sk.editor.replaceOriginalHint },
-]
 
 interface EditorModalProps {
   entry: RecordingEntry
@@ -110,6 +88,7 @@ interface EditorModalProps {
 }
 
 function StepIndicator({ step }: { step: Step }) {
+  const sk = useMessages()
   const visualStep = step === "queued" ? "export" : step
   const idx = STEPS.indexOf(visualStep)
   const allDone = step === "queued"
@@ -149,6 +128,30 @@ function fileStem(path: string): string {
 }
 
 export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
+  const sk = useMessages()
+  const partsModes = [
+    { value: "separate" as const, label: sk.editor.separateParts, hint: sk.editor.separatePartsHint },
+    { value: "join" as const, label: sk.editor.joinParts, hint: sk.editor.joinPartsHint },
+  ]
+  const presets = [
+    { value: "small" as const, label: sk.optimize.presets.small.label, hint: sk.optimize.presets.small.hint },
+    { value: "medium" as const, label: sk.optimize.presets.medium.label, hint: sk.optimize.presets.medium.hint },
+    { value: "high" as const, label: sk.optimize.presets.high.label, hint: sk.optimize.presets.high.hint },
+  ]
+  const resolutions = [
+    { value: "480p" as const, label: sk.optimize.resolutions["480p"] },
+    { value: "720p" as const, label: sk.optimize.resolutions["720p"] },
+    { value: "1080p" as const, label: sk.optimize.resolutions["1080p"] },
+    { value: "original" as const, label: sk.optimize.resolutions.original },
+  ]
+  const speeds: { value: OptimizeSpeed; label: string }[] = OPTIMIZE_SPEEDS.map((v) => ({
+    value: v,
+    label: sk.optimize.speeds[v],
+  }))
+  const saveModes = [
+    { value: "copy" as const, label: sk.editor.saveCopy, hint: sk.editor.saveCopyHint },
+    { value: "replace" as const, label: sk.editor.replaceOriginal, hint: sk.editor.replaceOriginalHint },
+  ]
   const playerRef = useRef<BloomVideoPlayerHandle>(null)
   const { enqueue } = useExportQueue()
   const { settings } = useSettings()
@@ -174,7 +177,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
   const [resolution, setResolution] = useState<OptimizeResolution>(
     exportDefaults.preferStreamCopy ? "original" : exportDefaults.resolution,
   )
-  const [format, setFormat] = useState<OptimizeFormat>("mp4")
+  const [format, setFormat] = useState<OptimizeFormat>(exportDefaults.format)
   const [speed, setSpeed] = useState<OptimizeSpeed>("1")
   const [saveMode, setSaveMode] = useState<SaveMode>("copy")
   const [estimate, setEstimate] = useState<ExportEstimate | null>(null)
@@ -671,15 +674,15 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
           {step === "export" && (
             <>
               <p className="text-xs text-muted-foreground">{sk.editor.exportHint}</p>
-              <ChoiceGroup label={sk.optimize.qualityPreset} options={PRESETS} value={preset} onChange={setPreset} />
-              <ChoiceGroup label={sk.optimize.resolution} layout="wrap" options={RESOLUTIONS} value={resolution} onChange={setResolution} />
-              <ChoiceGroup label={sk.optimize.speed} layout="wrap" options={SPEEDS} value={speed} onChange={setSpeed} />
+              <ChoiceGroup label={sk.optimize.qualityPreset} options={presets} value={preset} onChange={setPreset} />
+              <ChoiceGroup label={sk.optimize.resolution} layout="wrap" options={resolutions} value={resolution} onChange={setResolution} />
+              <ChoiceGroup label={sk.optimize.speed} layout="wrap" options={speeds} value={speed} onChange={setSpeed} />
               <ChoiceGroup label={sk.optimize.format} layout="wrap" options={FORMATS} value={format} onChange={setFormat} />
               {multiClip && (
-                <ChoiceGroup label={sk.editor.partsTitle} options={PARTS_MODES} value={partsMode} onChange={setPartsMode} />
+                <ChoiceGroup label={sk.editor.partsTitle} options={partsModes} value={partsMode} onChange={setPartsMode} />
               )}
               {!multiClip && (
-                <ChoiceGroup label={sk.editor.saveMode} options={SAVE_MODES} value={saveMode} onChange={setSaveMode} />
+                <ChoiceGroup label={sk.editor.saveMode} options={saveModes} value={saveMode} onChange={setSaveMode} />
               )}
               {analysis && (
                 <div className="rounded-xl border border-border/50 bg-[var(--surface)] p-3">

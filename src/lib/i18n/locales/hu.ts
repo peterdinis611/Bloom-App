@@ -240,6 +240,7 @@ export const hu: Messages = {
     confirmDeleteHint: "Párbeszédablak egy felvétel törlése előtt",
     exportPreset: "Alapértelmezett preset",
     exportResolution: "Alapértelmezett felbontás",
+    exportFormat: "Alapértelmezett formátum",
     preferStreamCopy: "Gyors vágás előnyben (stream copy)",
     preferStreamCopyHint: "Eredeti felbontásnál és H.264-nél újrakódolás nélkül",
     preferHardwareEncode: "Hardveres tömörítés előnyben",

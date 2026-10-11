@@ -75,13 +75,14 @@ import {
   collectPreviewTechDetails,
   expectsPreviewStream,
 } from "@/lib/previewDiagnostics"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages, getMessagesSync } from "@/lib/i18n/I18nProvider"
 import { setLastRecordingId } from "@/lib/lastRecording"
 import { RECORDING_QUALITIES } from "@/lib/videoOptions"
 import { localizeError } from "@/lib/i18n/localizeError"
 import { openPrivacySettings } from "@/lib/privacySettings"
 
 function captureErrorMessage(err: unknown): string {
+  const sk = getMessagesSync()
   const name = (err as { name?: string })?.name ?? ""
   const msg = (err as { message?: string })?.message ?? String(err)
   if (name === "NotAllowedError" || name === "AbortError") {
@@ -126,6 +127,7 @@ async function blobToU8(blob: Blob): Promise<Uint8Array> {
 
 /** Build a ScreenTarget from a real display returned by the backend. */
 function monitorToTarget(m: MonitorInfo, index: number): ScreenTarget {
+  const sk = getMessagesSync()
   return {
     id: m.id,
     label: `${m.name}${m.is_primary ? sk.record.primarySuffix : ""}`,
@@ -135,7 +137,10 @@ function monitorToTarget(m: MonitorInfo, index: number): ScreenTarget {
   }
 }
 
-const DEFAULT_TARGET: ScreenTarget = { id: "default", label: sk.record.primaryDisplay, type: "screen", index: 1 }
+function defaultTarget(): ScreenTarget {
+  const sk = getMessagesSync()
+  return { id: "default", label: sk.record.primaryDisplay, type: "screen", index: 1 }
+}
 
 // ── Generic dropdown select ────────────────────────────────────────────────────
 interface SelectOption {
@@ -153,6 +158,7 @@ function Dropdown({ value, options, onChange, icon: HeaderIcon, emptyLabel, onRe
   emptyLabel: string
   onRefresh?: () => void
 }) {
+  const sk = useMessages()
   const selected = options.find((o) => o.id === value) ?? options[0]
 
   return (
@@ -249,6 +255,7 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
   drawing?: boolean
   drawOverlay?: React.ReactNode
 }) {
+  const sk = useMessages()
   const isRecording = status === "recording"
   const isPaused    = status === "paused"
   const isActive    = isRecording || isPaused
@@ -403,14 +410,9 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return <p className="mac-group-header !px-0">{children}</p>
 }
 
-const SOURCES: { id: RecordingSource; label: string }[] = [
-  { id: "screen", label: sk.record.sources.screen },
-  { id: "camera", label: sk.record.sources.camera },
-  { id: "both", label: sk.record.sources.both },
-]
-
 // ── Save location banner ───────────────────────────────────────────────────────
 function SaveBanner({ path, onDismiss }: { path: string; onDismiss: () => void }) {
+  const sk = useMessages()
   return (
     <div className="fade-up banner-success flex items-center gap-3 rounded-xl px-3.5 py-3">
       <FolderOpen className="size-4 shrink-0 opacity-80" />
@@ -441,13 +443,19 @@ export function RecordPage({
   onEditRecording,
   onRecordingSaved,
 }: RecordPageProps) {
+  const sk = useMessages()
+  const sources: { id: RecordingSource; label: string }[] = [
+    { id: "screen", label: sk.record.sources.screen },
+    { id: "camera", label: sk.record.sources.camera },
+    { id: "both", label: sk.record.sources.both },
+  ]
   const { cameras, microphones, monitors, hasLabels, requestPermission, refresh } = useMediaDevices()
   const { settings: appSettings, updateRecording } = useSettings()
   const { success: toastSuccess, error: toastError } = useToast()
 
   const [settings, setSettings] = useState<RecordingSettings>({
     source: "screen",
-    screenTarget: DEFAULT_TARGET,
+    screenTarget: defaultTarget(),
     microphone: true,
     systemAudio: false,
     quality: appSettings.recording.defaultQuality,
@@ -582,7 +590,7 @@ export function RecordPage({
   useEffect(() => {
     if (monitors.length === 0) return
     setSettings((p) => {
-      if (p.screenTarget.id !== DEFAULT_TARGET.id && monitors.some((m) => m.id === p.screenTarget.id)) return p
+      if (p.screenTarget.id !== "default" && monitors.some((m) => m.id === p.screenTarget.id)) return p
       const primaryIdx = Math.max(0, monitors.findIndex((m) => m.is_primary))
       return { ...p, screenTarget: monitorToTarget(monitors[primaryIdx], primaryIdx) }
     })
@@ -1158,7 +1166,7 @@ export function RecordPage({
             <MacGroup>
               <div className="p-3">
                 <MacSegmented
-                  options={SOURCES.map((s) => ({ value: s.id, label: s.label }))}
+                  options={sources.map((s) => ({ value: s.id, label: s.label }))}
                   value={settings.source}
                   onChange={(v) => setSettings((p) => ({ ...p, source: v }))}
                 />

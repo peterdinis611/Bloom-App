@@ -238,6 +238,7 @@ export const sk = {
     confirmDeleteHint: "Dialóg pred vymazaním jednej nahrávky",
     exportPreset: "Predvolený preset",
     exportResolution: "Predvolené rozlíšenie",
+    exportFormat: "Predvolený formát",
     preferStreamCopy: "Preferovať rýchly orez (stream copy)",
     preferStreamCopyHint: "Pri original rozlíšení a H.264 bez re-encode",
     preferHardwareEncode: "Preferovať hardvérovú kompresiu",

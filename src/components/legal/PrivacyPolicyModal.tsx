@@ -1,6 +1,6 @@
 import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages } from "@/lib/i18n/I18nProvider"
 import { PRIVACY_SECTIONS } from "@/lib/privacyContent"
 import { PageScrollArea } from "@/components/layout/PageScrollArea"
 
@@ -10,6 +10,7 @@ interface PrivacyPolicyModalProps {
 }
 
 export function PrivacyPolicyModal({ open, onClose }: PrivacyPolicyModalProps) {
+  const sk = useMessages()
   if (!open) return null
 
   return (

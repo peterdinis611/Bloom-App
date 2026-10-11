@@ -15,7 +15,7 @@ import {
   formatDurationSecs,
 } from "@/hooks/useBloomBackend"
 import { useToast } from "@/hooks/useToast"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages } from "@/lib/i18n/I18nProvider"
 import { localizeError } from "@/lib/i18n/localizeError"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
@@ -38,6 +38,7 @@ function extFromPath(path: string): string {
 }
 
 export function ShareVideoSheet({ entry, open, onClose }: ShareVideoSheetProps) {
+  const sk = useMessages()
   const { success: toastSuccess, error: toastError } = useToast()
   const [busy, setBusy] = useState<string | null>(null)
 

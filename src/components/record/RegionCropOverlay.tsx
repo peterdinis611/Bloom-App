@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react"
 import { Check, X } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages } from "@/lib/i18n/I18nProvider"
 import type { CropRect } from "@/lib/capture"
 
 interface RegionCropOverlayProps {
@@ -11,6 +11,7 @@ interface RegionCropOverlayProps {
 
 /** Drag a rectangle over the live preview to crop the recorded area. */
 export function RegionCropOverlay({ onConfirm, onCancel }: RegionCropOverlayProps) {
+  const sk = useMessages()
   const rootRef = useRef<HTMLDivElement>(null)
   const dragStart = useRef<{ x: number; y: number } | null>(null)
   const [draft, setDraft] = useState<CropRect | null>(null)

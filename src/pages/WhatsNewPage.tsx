@@ -1,13 +1,14 @@
 import { useState } from "react"
 import { Newspaper, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages } from "@/lib/i18n/I18nProvider"
 import { WHATS_NEW } from "@/lib/whatsNewContent"
 import { PageScrollArea } from "@/components/layout/PageScrollArea"
 import { MacPageHeader } from "@/components/mac/MacUIKit"
 import { markNewsSeen } from "@/lib/whatsNew"
 
 export function WhatsNewPage({ active = true }: { active?: boolean }) {
+  const sk = useMessages()
   const [selected, setSelected] = useState(WHATS_NEW[0]?.version ?? "")
   const item = WHATS_NEW.find((n) => n.version === selected) ?? WHATS_NEW[0]
 

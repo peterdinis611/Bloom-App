@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useRef, useState, type CSSProperties } from "react"
 import { Check, CircleAlert, Info, X } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { sk } from "@/lib/i18n/sk"
+import { getMessagesSync } from "@/lib/i18n/I18nProvider"
 
 export type ToastVariant = "success" | "error" | "info"
 
@@ -54,6 +54,7 @@ function ToastCard({
   exiting: boolean
   onDismiss: (id: number) => void
 }) {
+  const sk = getMessagesSync()
   const Icon = VARIANT_ICONS[item.variant]
   const duration = item.actions?.length ? TOAST_WITH_ACTIONS_MS : TOAST_DURATION_MS
 

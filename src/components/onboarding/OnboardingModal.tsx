@@ -4,7 +4,7 @@ import {
   Scale, Film,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages } from "@/lib/i18n/I18nProvider"
 import { markOnboardingDone, markPrivacyAccepted } from "@/lib/onboarding"
 import { openPrivacySettings } from "@/lib/privacySettings"
 import { checkFfmpeg, installFfmpeg } from "@/hooks/useBloomBackend"
@@ -22,6 +22,7 @@ type StepId = "welcome" | "privacy" | "permissions" | "ffmpeg" | "shortcuts" | "
 const STEP_ORDER: StepId[] = ["welcome", "privacy", "permissions", "ffmpeg", "shortcuts", "export"]
 
 export function OnboardingModal({ bloomDir, onDone }: OnboardingModalProps) {
+  const sk = useMessages()
   const [stepIdx, setStepIdx] = useState(0)
   const [privacyOk, setPrivacyOk] = useState(false)
   const [showPrivacy, setShowPrivacy] = useState(false)

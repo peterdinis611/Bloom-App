@@ -255,6 +255,7 @@ export const pl: Messages = {
     confirmDeleteHint: "Okno dialogowe przed usunięciem pojedynczego nagrania",
     exportPreset: "Domyślny preset",
     exportResolution: "Domyślna rozdzielczość",
+    exportFormat: "Domyślny format",
     preferStreamCopy: "Preferuj szybkie przycinanie (stream copy)",
     preferStreamCopyHint: "Przy oryginalnej rozdzielczości i H.264 bez re-enkodowania",
     preferHardwareEncode: "Preferuj kompresję sprzętową",

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages } from "@/lib/i18n/I18nProvider"
 import { fileSrc, formatBytes, formatDurationSecs } from "@/hooks/useBloomBackend"
 import type { ExportEstimate, VideoInfo } from "@/types"
 
@@ -12,6 +12,7 @@ interface CompareSliderProps {
 }
 
 export function CompareSlider({ path, info, estimate, className }: CompareSliderProps) {
+  const sk = useMessages()
   const [pos, setPos] = useState(50)
   const [dragging, setDragging] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)

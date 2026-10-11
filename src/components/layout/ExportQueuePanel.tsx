@@ -1,9 +1,10 @@
 import { Check, CircleAlert, LoaderCircle, Trash2, X } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages } from "@/lib/i18n/I18nProvider"
 import { useExportQueue } from "@/hooks/useExportQueue"
 
 export function ExportQueuePanel() {
+  const sk = useMessages()
   const { items, activeCount, cancelItem, clearFinished } = useExportQueue()
   const visible = items.length > 0
 

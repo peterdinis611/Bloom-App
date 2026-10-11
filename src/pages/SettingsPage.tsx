@@ -350,6 +350,22 @@ export function SettingsPage({ active = true }: { active?: boolean }) {
               value={exportDefaults.resolution}
               onChange={(v) => updateExportDefaults({ resolution: v })}
             />
+            <ChoiceGroup
+              label={sk.settings.exportFormat}
+              layout="wrap"
+              options={[
+                { value: "mp4", label: "MP4" },
+                { value: "mov", label: "MOV" },
+                { value: "m4v", label: "M4V" },
+                { value: "mkv", label: "MKV" },
+                { value: "avi", label: "AVI" },
+                { value: "mpeg", label: "MPEG" },
+                { value: "webm", label: "WebM" },
+                { value: "gif", label: "GIF" },
+              ]}
+              value={exportDefaults.format}
+              onChange={(v) => updateExportDefaults({ format: v })}
+            />
           </div>
           <MacRow
             label={sk.settings.preferStreamCopy}

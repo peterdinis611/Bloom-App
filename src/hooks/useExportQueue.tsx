@@ -10,7 +10,7 @@ import {
 import type { OptimizeOptions } from "@/types"
 import { cancelOptimize, onOptimizeProgress, optimizeVideo } from "@/hooks/useBloomBackend"
 import { useToast } from "@/hooks/useToast"
-import { sk } from "@/lib/i18n/sk"
+import { getMessagesSync } from "@/lib/i18n/I18nProvider"
 import { localizeError } from "@/lib/i18n/localizeError"
 
 export type QueueItemStatus = "pending" | "running" | "done" | "error" | "cancelled"
@@ -71,6 +71,7 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
         try {
           jobId = await optimizeVideo(next.options)
         } catch (e) {
+          const sk = getMessagesSync()
           error({ title: sk.toast.exportFailed, description: localizeError(e) })
           setItems((prev) =>
             prev.map((i) =>
@@ -101,6 +102,7 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
           const resolver = jobResolversRef.current.get(p.job_id)
           resolver?.(true)
           jobResolversRef.current.delete(p.job_id)
+          const sk = getMessagesSync()
           if (p.cancelled) {
             info({ title: sk.toast.exportCancelled, description: item.label })
             return { ...item, status: "cancelled", percent: 0 }
@@ -158,6 +160,7 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
 
   const enqueue = useCallback((jobs: EnqueueJob | EnqueueJob[]) => {
     const list = Array.isArray(jobs) ? jobs : [jobs]
+    const sk = getMessagesSync()
     info({
       title: sk.toast.exportQueued(list.length),
       description: sk.toast.exportQueuedBody,

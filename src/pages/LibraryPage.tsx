@@ -70,7 +70,7 @@ import { ShareVideoSheet } from "@/components/library/ShareVideoSheet"
 import { PageScrollArea } from "@/components/layout/PageScrollArea"
 import { MacPageHeader } from "@/components/mac/MacUIKit"
 import { MacSelect } from "@/components/mac/MacSelect"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages, getMessagesSync } from "@/lib/i18n/I18nProvider"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -88,6 +88,7 @@ import { localizeError } from "@/lib/i18n/localizeError"
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function relativeDate(iso: string): string {
+  const sk = getMessagesSync()
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return sk.library.dates.unknown
   const now = Date.now()
@@ -101,13 +102,6 @@ function relativeDate(iso: string): string {
   return d.toLocaleDateString("sk-SK", { month: "short", day: "numeric", year: "numeric" })
 }
 
-const SOURCE_META: Record<string, { icon: React.FC<{ className?: string }>; label: string; tint: string }> = {
-  screen: { icon: Monitor, label: sk.library.sources.screen, tint: "text-accent bg-primary/12" },
-  camera: { icon: Camera, label: sk.library.sources.camera, tint: "tone-fg-success bg-[var(--status-success-bg)]" },
-  both: { icon: Layers, label: sk.library.sources.both, tint: "tone-fg-info bg-[var(--status-info-bg)]" },
-  import: { icon: FileUp, label: sk.library.sources.import, tint: "tone-fg-info bg-[var(--status-info-bg)]" },
-}
-
 // ── Empty library hero ───────────────────────────────────────────────────────
 function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, onInstallFfmpeg, checkingFfmpeg, installingFfmpeg }: {
   onStartRecording?: () => void
@@ -117,6 +111,7 @@ function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, onInstallFfmp
   checkingFfmpeg: boolean
   installingFfmpeg: boolean
 }) {
+  const sk = useMessages()
   const hints = [
     { icon: Monitor, label: sk.library.screenCapture, tint: "text-accent bg-primary/12 border-primary/20" },
     { icon: Camera, label: sk.library.webcam, tint: "tone-fg-success tone-soft-success border" },
@@ -221,6 +216,7 @@ function StatPill({ icon: Icon, label, value }: {
 function ConfirmDelete({ title, open, onCancel, onConfirm }: {
   title: string; open: boolean; onCancel: () => void; onConfirm: () => void
 }) {
+  const sk = useMessages()
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
       <DialogContent className="[&>button]:hidden">
@@ -269,12 +265,19 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
   onNotesChange?: (notes: string) => void
   showMetaInputs?: boolean
 }) {
+  const sk = useMessages()
+  const sourceMeta: Record<string, { icon: React.FC<{ className?: string }>; label: string; tint: string }> = {
+    screen: { icon: Monitor, label: sk.library.sources.screen, tint: "text-accent bg-primary/12" },
+    camera: { icon: Camera, label: sk.library.sources.camera, tint: "tone-fg-success bg-[var(--status-success-bg)]" },
+    both: { icon: Layers, label: sk.library.sources.both, tint: "tone-fg-info bg-[var(--status-info-bg)]" },
+    import: { icon: FileUp, label: sk.library.sources.import, tint: "tone-fg-info bg-[var(--status-info-bg)]" },
+  }
   const meta = entry.meta
   const starred = meta.starred ?? false
   const tags = meta.tags ?? []
   const folder = meta.folder ?? ""
   const notes = meta.notes ?? ""
-  const src = SOURCE_META[meta.source] ?? SOURCE_META.screen
+  const src = sourceMeta[meta.source] ?? sourceMeta.screen
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(meta.title)
   const [thumb, setThumb] = useState<string | null>(null)
@@ -525,6 +528,7 @@ export function LibraryPage({
   editRecordingId = null,
   onEditRecordingHandled,
 }: LibraryPageProps) {
+  const sk = useMessages()
   const { settings } = useSettings()
   const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
   const [entries, setEntries] = useState<RecordingEntry[]>([])

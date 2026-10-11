@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages } from "@/lib/i18n/I18nProvider"
 import { useSettings } from "@/hooks/useSettings"
 import { setGlobalShortcuts } from "@/hooks/useBloomBackend"
 import { MacGroup, MacGroupHeader, MacButton } from "@/components/mac/MacUIKit"
@@ -9,21 +9,22 @@ import { localizeError } from "@/lib/i18n/localizeError"
 
 type ShortcutId = "arm" | "pause" | "stop"
 
-const EDITABLE: { id: ShortcutId; label: string }[] = [
-  { id: "arm", label: sk.shortcuts.editable.arm },
-  { id: "pause", label: sk.shortcuts.editable.pause },
-  { id: "stop", label: sk.shortcuts.editable.stop },
-]
-
 function formatChord(key: string): string {
   return `⌘⇧${key.toUpperCase()}`
 }
 
 export function ShortcutsPanel() {
+  const sk = useMessages()
   const { settings, updateShortcuts } = useSettings()
   const { success: toastSuccess, error: toastError } = useToast()
   const [listening, setListening] = useState<ShortcutId | null>(null)
   const [saving, setSaving] = useState(false)
+
+  const editable: { id: ShortcutId; label: string }[] = [
+    { id: "arm", label: sk.shortcuts.editable.arm },
+    { id: "pause", label: sk.shortcuts.editable.pause },
+    { id: "stop", label: sk.shortcuts.editable.stop },
+  ]
 
   const shortcuts = settings.shortcuts
 
@@ -73,7 +74,7 @@ export function ShortcutsPanel() {
           <p className="text-[11px] text-muted-foreground">{sk.shortcuts.editableHint}</p>
         </div>
         <ul className="divide-y divide-border/40">
-          {EDITABLE.map((item) => (
+          {editable.map((item) => (
             <li key={item.id} className="flex items-center justify-between gap-4 px-4 py-2.5">
               <span className="text-[13px] text-foreground">{item.label}</span>
               <MacButton

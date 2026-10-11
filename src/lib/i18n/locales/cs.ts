@@ -239,6 +239,7 @@ export const cs: Messages = {
     confirmDeleteHint: "Dialog před smazáním jedné nahrávky",
     exportPreset: "Výchozí preset",
     exportResolution: "Výchozí rozlišení",
+    exportFormat: "Výchozí formát",
     preferStreamCopy: "Preferovat rychlý ořez (stream copy)",
     preferStreamCopyHint: "Při původním rozlišení a H.264 bez re-encode",
     preferHardwareEncode: "Preferovat hardwarovou kompresi",

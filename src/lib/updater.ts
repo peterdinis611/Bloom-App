@@ -1,5 +1,5 @@
 import { check } from "@tauri-apps/plugin-updater"
-import { sk } from "@/lib/i18n/sk"
+import { getMessagesSync } from "@/lib/i18n/I18nProvider"
 
 export type UpdateCheckResult = "up-to-date" | "available" | "skipped" | "error"
 
@@ -10,6 +10,7 @@ export type UpdateCheckResult = "up-to-date" | "available" | "skipped" | "error"
 export async function checkForAppUpdate(opts?: {
   onAvailable?: (version: string) => void
 }): Promise<UpdateCheckResult> {
+  const sk = getMessagesSync()
   try {
     const update = await check()
     if (!update) return "up-to-date"

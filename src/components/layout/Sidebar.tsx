@@ -1,7 +1,7 @@
 import { Circle, Library, Settings, Video, BookOpen, Newspaper } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages } from "@/lib/i18n/I18nProvider"
 import { ExportQueuePanel } from "@/components/layout/ExportQueuePanel"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
@@ -15,15 +15,15 @@ interface SidebarProps {
   newsBadge?: boolean
 }
 
-const ITEMS: { id: AppView; label: string; icon: React.FC<{ className?: string }> }[] = [
-  { id: "record", label: sk.nav.record, icon: Video },
-  { id: "library", label: sk.nav.library, icon: Library },
-  { id: "news", label: sk.nav.news, icon: Newspaper },
-  { id: "docs", label: sk.nav.docs, icon: BookOpen },
-  { id: "settings", label: sk.nav.settings, icon: Settings },
-]
-
 export function Sidebar({ view, onChange, locked = false, recording = false, newsBadge = false }: SidebarProps) {
+  const sk = useMessages()
+  const items: { id: AppView; label: string; icon: React.FC<{ className?: string }> }[] = [
+    { id: "record", label: sk.nav.record, icon: Video },
+    { id: "library", label: sk.nav.library, icon: Library },
+    { id: "news", label: sk.nav.news, icon: Newspaper },
+    { id: "docs", label: sk.nav.docs, icon: BookOpen },
+    { id: "settings", label: sk.nav.settings, icon: Settings },
+  ]
   return (
     <aside className="mac-sidebar relative flex w-[204px] shrink-0 flex-col">
       <div className="flex items-center gap-2.5 px-4 pb-3 pt-4">
@@ -51,7 +51,7 @@ export function Sidebar({ view, onChange, locked = false, recording = false, new
       )}
 
       <nav className="flex flex-col gap-0.5 px-2.5">
-        {ITEMS.map((item) => {
+        {items.map((item) => {
           const active = view === item.id
           const disabled = locked && item.id !== view
           const btn = (

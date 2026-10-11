@@ -37,6 +37,6 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
 export function useMessages(): Messages {
   const ctx = useContext(I18nContext)
-  if (!ctx) throw new Error("useMessages must be used within I18nProvider")
-  return ctx
+  // Fall back to sync handle (defaults to SK) for tests / rare callers outside provider.
+  return ctx ?? syncMessages
 }

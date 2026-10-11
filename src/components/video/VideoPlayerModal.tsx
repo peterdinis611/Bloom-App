@@ -7,7 +7,7 @@ import {
   openWithSystemApp,
   revealInFinder,
 } from "@/hooks/useBloomBackend"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages } from "@/lib/i18n/I18nProvider"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { BloomVideoPlayer } from "@/components/video/BloomVideoPlayer"
 import { ShareVideoSheet } from "@/components/library/ShareVideoSheet"
@@ -20,6 +20,7 @@ interface VideoPlayerModalProps {
 
 /** Modal s overlay ovládaním — viac miesta pre video, akcie v hlavičke. */
 export function VideoPlayerModal({ entry, open, onClose }: VideoPlayerModalProps) {
+  const sk = useMessages()
   const meta = entry.meta
   const [shareOpen, setShareOpen] = useState(false)
 

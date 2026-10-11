@@ -20,9 +20,10 @@ import { isOnboardingDone } from "@/lib/onboarding"
 import { hasUnreadNews, markNewsSeen } from "@/lib/whatsNew"
 import { useToast } from "@/hooks/useToast"
 import { getSafeWebviewWindow } from "@/lib/windowControl"
-import { sk } from "@/lib/i18n/sk"
+import { useMessages } from "@/lib/i18n/I18nProvider"
 
 function AppShell() {
+  const sk = useMessages()
   const { info: toastInfo } = useToast()
   const { settings, ready } = useSettings()
   const [recording, setRecording] = useState(false)
