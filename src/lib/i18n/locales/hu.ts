@@ -429,6 +429,10 @@ export const hu: Messages = {
         title: "Globális billentyűparancsok",
         body: "Vezéreld a felvételt, amikor a Bloom a tálcán van. Háttérben is működnek felvétel közben.",
       },
+      spotlight: {
+        title: "Kurzor és kattintások",
+        body: "Kapcsold be a kurzor spotlightot felvétel közben — a kattintások a videó mellé mentődnek. A könyvtárban egy kattintással beégetheted a kiemeléseket. Összeomlás után a Bloom induláskor felajánlja a helyreállítást.",
+      },
       export: {
         title: "Export várólista",
         body: "Az export a háttérben fut — a folyamatot a bal oldali panelen követheted. Befejezéskor a könyvtár frissül.",
@@ -755,6 +759,66 @@ export const hu: Messages = {
       decode: "A fájl dekódolása sikertelen — lehet, hogy sérült.",
       unsupported: "A videó formátuma nem támogatott a lejátszóban.",
       unknown: "Ismeretlen lejátszási hiba.",
+    },
+  },
+  ux: {
+    incomplete: {
+      title: "Befejezetlen felvételek",
+      body: (n: number) =>
+        n === 1
+          ? "A Bloom legutóbbi bezárása után 1 befejezetlen felvétel maradt. Helyreállítod?"
+          : `A Bloom legutóbbi bezárása után ${n} befejezetlen felvétel maradt. Helyreállítod őket?`,
+      recover: "Helyreállítás",
+      discard: "Elvetés",
+      dismiss: "Később",
+      working: "Dolgozom…",
+    },
+    clicks: {
+      badge: "Kattintások",
+      badgeTitle: (n: number) => `${n} rögzített kattintás`,
+      lane: (n: number) => `Kattintások · ${n}`,
+      laneHint: "Kattints egy jelölőre, hogy odaugorj",
+      none: "Nincs rögzített kattintás",
+    },
+    filters: {
+      folders: "Mappák",
+      allFolders: "Összes",
+      hasClicks: "Van kattintás",
+      savedViews: "Mentett nézetek",
+      saveView: "Nézet mentése",
+      viewName: "Nézet neve",
+      viewSaved: (name: string) => `„${name}" nézet mentve`,
+      removeView: "Nézet törlése",
+      noFilters: "Először kapcsolj be legalább egy szűrőt",
+    },
+    postRecord: {
+      edit: "Szerkesztés",
+      share: "Megosztás",
+      spotlight: "Spotlight",
+      gif: "GIF",
+      open: "Megnyitás",
+      clicks: (n: number) => `${n} kattintás`,
+      spotlightBusy: "Spotlight…",
+    },
+    snapshot: {
+      button: "Pillanatkép",
+      hint: "Az aktuális kép mentése PNG-ként (⌘S)",
+      saved: "Pillanatkép mentve",
+      failed: "A pillanatkép mentése sikertelen",
+      noVideo: "Az előnézet nem érhető el",
+    },
+    editor: {
+      spotlightTitle: "Kattintás spotlight",
+      spotlightHint: (n: number) =>
+        `${n} rögzített kattintást kiemel, és új videót ment a könyvtárba.`,
+      previewSpotlight: "Spotlight előnézet",
+      previewOn: "Előnézet be",
+      applySpotlight: "Spotlight alkalmazása",
+      applying: "Alkalmazás…",
+    },
+    autoShare: {
+      label: "Megosztás exportálás után",
+      hint: "Az export végén megnyitja a megosztás ablakot",
     },
   },
 }

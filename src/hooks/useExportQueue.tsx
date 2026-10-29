@@ -13,6 +13,9 @@ import { useToast } from "@/hooks/useToast"
 import { getMessagesSync } from "@/lib/i18n/I18nProvider"
 import { localizeError } from "@/lib/i18n/localizeError"
 
+/** Window event fired when an export finishes and `autoShareAfterExport` is on. */
+export const SHARE_EXPORT_EVENT = "bloom:share-export"
+
 export type QueueItemStatus = "pending" | "running" | "done" | "error" | "cancelled"
 
 export interface ExportQueueItem {
@@ -125,6 +128,11 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
                 if (integ.copyPathAfterExport) {
                   void import("@/hooks/useBloomBackend").then(({ copyText }) =>
                     copyText(outPath).catch(() => {}),
+                  )
+                }
+                if (integ.autoShareAfterExport) {
+                  window.dispatchEvent(
+                    new CustomEvent(SHARE_EXPORT_EVENT, { detail: { path: outPath } }),
                   )
                 }
                 if (integ.notifyOnExport) {

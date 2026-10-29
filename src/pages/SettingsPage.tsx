@@ -812,6 +812,16 @@ export function SettingsPage({
             />
           </MacRow>
           <MacRow
+            label={sk.ux.autoShare.label}
+            hint={sk.ux.autoShare.hint}
+            onClick={() => updateIntegrations({ autoShareAfterExport: !integ.autoShareAfterExport })}
+          >
+            <MacToggle
+              on={integ.autoShareAfterExport}
+              onChange={() => updateIntegrations({ autoShareAfterExport: !integ.autoShareAfterExport })}
+            />
+          </MacRow>
+          <MacRow
             label={sk.settings.preferNativeShare}
             hint={sk.share.nativeHint}
             onClick={() => updateIntegrations({ preferNativeShare: !integ.preferNativeShare })}

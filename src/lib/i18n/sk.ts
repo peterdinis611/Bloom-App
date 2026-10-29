@@ -427,6 +427,10 @@ export const sk = {
         title: "Globálne skratky",
         body: "Ovládaj nahrávanie aj keď je Bloom v tray. Fungujú na pozadí počas nahrávania.",
       },
+      spotlight: {
+        title: "Kurzor a kliky",
+        body: "Zapni spotlight kurzora pri nahrávaní — kliky sa ukladajú vedľa videa. V knižnici potom jedným klikom pridáš zvýraznenie kliknutí. Nedokončené nahrávky po páde Bloom ponúkne obnoviť pri štarte.",
+      },
       export: {
         title: "Fronta exportov",
         body: "Export beží na pozadí — priebeh sleduj v ľavom paneli. Po dokončení sa knižnica obnoví.",
@@ -550,6 +554,28 @@ export const sk = {
     cropActive: "Orez aktívny",
     cropReset: "Zrušiť orez",
     partsTitle: "Časti klipu",
+    studio: "Štúdio",
+    inspector: {
+      tools: "Nástroje",
+      chapters: "Kapitoly",
+      spotlight: "Spotlight",
+    },
+    chapters: {
+      title: "Kapitoly",
+      hint: "Označ body na časovej osi — pri exporte sa vypália ako krátke titulky.",
+      add: "Pridať",
+      atPlayhead: "Pri playheade",
+      placeholder: "Názov kapitoly…",
+      empty: "Zatiaľ žiadne kapitoly. Pridaj jednu pri aktuálnom čase.",
+      defaultTitle: (n: number) => `Kapitola ${n}`,
+      seek: "Prejsť na kapitolu",
+      rename: "Premenovať",
+      remove: "Odstrániť",
+      lane: (n: number) => (n === 1 ? "1 kapitola" : `${n} kapitoly`),
+      exportNote: (n: number) =>
+        `${n} ${n === 1 ? "kapitola sa vypáli" : "kapitoly sa vypália"} do videa ako titulky.`,
+      burnIn: "Vypáliť kapitoly do exportu",
+    },
     queuedTitle: "Pridané do fronty",
     queuedBody: (n: number) => `${n} ${n === 1 ? "úloha" : n < 5 ? "úlohy" : "úloh"} beží na pozadí — sledujte sidebar.`,
     subtitles: "Titulky",
@@ -751,6 +777,66 @@ export const sk = {
       decode: "Súbor sa nepodarilo dekódovať — môže byť poškodený.",
       unsupported: "Formát videa nie je podporovaný v prehrávači.",
       unknown: "Neznáma chyba prehrávania.",
+    },
+  },
+  ux: {
+    incomplete: {
+      title: "Nedokončené nahrávky",
+      body: (n: number) =>
+        n === 1
+          ? "Po poslednom ukončení Bloom zostala 1 nedokončená nahrávka. Chceš ju obnoviť?"
+          : `Po poslednom ukončení Bloom zostalo ${n} nedokončených nahrávok. Chceš ich obnoviť?`,
+      recover: "Obnoviť",
+      discard: "Zahodiť",
+      dismiss: "Neskôr",
+      working: "Pracujem…",
+    },
+    clicks: {
+      badge: "Kliky",
+      badgeTitle: (n: number) => `${n} zaznamenaných kliknutí`,
+      lane: (n: number) => `Kliky · ${n}`,
+      laneHint: "Klikni na značku a presuň sa na daný klik",
+      none: "Bez zaznamenaných klikov",
+    },
+    filters: {
+      folders: "Priečinky",
+      allFolders: "Všetko",
+      hasClicks: "Má kliky",
+      savedViews: "Uložené pohľady",
+      saveView: "Uložiť pohľad",
+      viewName: "Názov pohľadu",
+      viewSaved: (name: string) => `Pohľad „${name}" uložený`,
+      removeView: "Odstrániť pohľad",
+      noFilters: "Najprv zapni aspoň jeden filter",
+    },
+    postRecord: {
+      edit: "Upraviť",
+      share: "Zdieľať",
+      spotlight: "Spotlight",
+      gif: "GIF",
+      open: "Otvoriť",
+      clicks: (n: number) => `${n} kliknutí`,
+      spotlightBusy: "Spotlight…",
+    },
+    snapshot: {
+      button: "Snímka",
+      hint: "Ulož aktuálny záber ako PNG (⌘S)",
+      saved: "Snímka uložená",
+      failed: "Snímku sa nepodarilo uložiť",
+      noVideo: "Náhľad nie je k dispozícii",
+    },
+    editor: {
+      spotlightTitle: "Spotlight kliknutí",
+      spotlightHint: (n: number) =>
+        `Zvýrazní ${n} zaznamenaných kliknutí a uloží nové video do knižnice.`,
+      previewSpotlight: "Náhľad spotlightu",
+      previewOn: "Náhľad zapnutý",
+      applySpotlight: "Použiť spotlight",
+      applying: "Aplikujem…",
+    },
+    autoShare: {
+      label: "Zdieľať po exporte",
+      hint: "Po dokončení exportu otvorí panel zdieľania",
     },
   },
 } as const

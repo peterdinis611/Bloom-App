@@ -18,6 +18,7 @@ import type {
   CapturePermissions,
   CaptureWindow,
   ClickSpotlightOptions,
+  ClickTrackInfo,
   ClickTrackSummary,
   IncompleteSession,
   LibraryDirectoryInfo,
@@ -403,6 +404,20 @@ export async function startClickTracker(sessionPath: string): Promise<string> {
 
 export async function stopClickTracker(): Promise<ClickTrackSummary | null> {
   return invoke<ClickTrackSummary | null>("stop_click_tracker")
+}
+
+/** Load the recorded click track for a recording (null when none). */
+export async function getClickTrack(id: string): Promise<ClickTrackInfo | null> {
+  return invoke<ClickTrackInfo | null>("get_click_track", { id })
+}
+
+export async function hasClickTrack(id: string): Promise<boolean> {
+  return invoke<boolean>("has_click_track", { id })
+}
+
+/** Relative library folder paths (filesystem + sidecar `folder`). */
+export async function listLibraryFolders(): Promise<string[]> {
+  return invoke<string[]>("list_library_folders")
 }
 
 // ── Backend events ─────────────────────────────────────────────────────────

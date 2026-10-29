@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { listen } from "@tauri-apps/api/event"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ToastProvider } from "@/hooks/useToast"
@@ -14,7 +14,18 @@ import { SettingsPage } from "@/pages/SettingsPage"
 import { DocsPage } from "@/pages/DocsPage"
 import { WhatsNewPage } from "@/pages/WhatsNewPage"
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal"
-import { getBloomDir } from "@/hooks/useBloomBackend"
+import {
+  discardIncompleteSession,
+  getBloomDir,
+  listIncompleteSessions,
+  listRecordings,
+  recoverIncompleteSession,
+} from "@/hooks/useBloomBackend"
+import { SHARE_EXPORT_EVENT } from "@/hooks/useExportQueue"
+import { IncompleteSessionsDialog } from "@/components/library/IncompleteSessionsDialog"
+import { ShareVideoSheet } from "@/components/library/ShareVideoSheet"
+import { localizeError } from "@/lib/i18n/localizeError"
+import type { IncompleteSession, RecordingEntry } from "@/types"
 import { getLastRecordingId } from "@/lib/lastRecording"
 import { isOnboardingDone } from "@/lib/onboarding"
 import { hasUnreadNews, markNewsSeen } from "@/lib/whatsNew"
@@ -24,7 +35,7 @@ import { useMessages } from "@/lib/i18n/I18nProvider"
 
 function AppShell() {
   const sk = useMessages()
-  const { info: toastInfo } = useToast()
+  const { info: toastInfo, success: toastSuccess, error: toastError } = useToast()
   const { settings, ready } = useSettings()
   const [recording, setRecording] = useState(false)
   const [view, setView] = useState<AppView>("record")
@@ -34,6 +45,10 @@ function AppShell() {
   const [openRecordingId, setOpenRecordingId] = useState<string | null>(null)
   const [editRecordingId, setEditRecordingId] = useState<string | null>(null)
   const [newsBadge, setNewsBadge] = useState(false)
+  const [incomplete, setIncomplete] = useState<IncompleteSession[]>([])
+  const [incompleteBusy, setIncompleteBusy] = useState<string | null>(null)
+  const [shareEntry, setShareEntry] = useState<RecordingEntry | null>(null)
+  const incompleteChecked = useRef(false)
 
   useEffect(() => {
     isOnboardingDone()
@@ -87,6 +102,81 @@ function AppShell() {
     }).then((fn) => unsubs.push(fn))
     return () => unsubs.forEach((fn) => fn())
   }, [toastInfo, sk.toast.noLastRecording])
+
+  // Launch check: offer to recover recordings left behind by a crash.
+  useEffect(() => {
+    if (!ready || incompleteChecked.current) return
+    incompleteChecked.current = true
+    void listIncompleteSessions()
+      .then((list) => { if (list.length > 0) setIncomplete(list) })
+      .catch(() => {})
+  }, [ready])
+
+  // Auto-share: an export finished and `autoShareAfterExport` is enabled.
+  useEffect(() => {
+    const onShare = (ev: Event) => {
+      const path = (ev as CustomEvent<{ path?: string }>).detail?.path
+      if (!path) return
+      void listRecordings()
+        .then((list) => list.find((e) => e.path === path))
+        .catch(() => undefined)
+        .then((found) => {
+          if (found) {
+            setShareEntry(found)
+            return
+          }
+          // Exports not added to the library (e.g. GIF) — build a minimal entry.
+          const name = path.replace(/\\/g, "/").split("/").pop() ?? path
+          setShareEntry({
+            path,
+            meta_path: "",
+            meta: {
+              id: "",
+              title: name.replace(/\.[^.]+$/, ""),
+              filename: name,
+              created_at: new Date().toISOString(),
+              duration_secs: 0,
+              file_size_bytes: 0,
+              source: "import",
+              quality: "",
+              has_microphone: false,
+              has_system_audio: false,
+              target_label: "",
+            },
+          })
+        })
+    }
+    window.addEventListener(SHARE_EXPORT_EVENT, onShare)
+    return () => window.removeEventListener(SHARE_EXPORT_EVENT, onShare)
+  }, [])
+
+  const handleRecoverSession = useCallback(async (session: IncompleteSession) => {
+    setIncompleteBusy(session.filename)
+    try {
+      const meta = await recoverIncompleteSession(session.filename)
+      toastSuccess({ title: sk.toast.sessionRecovered(meta.title) })
+      setIncomplete([])
+      setView("library")
+      setOpenRecordingId(meta.id)
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setIncompleteBusy(null)
+    }
+  }, [toastSuccess, toastError, sk.toast])
+
+  const handleDiscardSession = useCallback(async (session: IncompleteSession) => {
+    setIncompleteBusy(session.filename)
+    try {
+      await discardIncompleteSession(session.filename)
+      toastInfo({ title: sk.toast.sessionDiscarded })
+      setIncomplete((prev) => prev.filter((s) => s.filename !== session.filename))
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setIncompleteBusy(null)
+    }
+  }, [toastInfo, toastError, sk.toast])
 
   const handleViewChange = (next: AppView) => {
     setView(next)
@@ -153,6 +243,20 @@ function AppShell() {
           </main>
         </div>
       </div>
+
+      <IncompleteSessionsDialog
+        open={incomplete.length > 0 && onboardingReady && !showOnboarding}
+        sessions={incomplete}
+        busyFilename={incompleteBusy}
+        onRecover={(sess) => { void handleRecoverSession(sess) }}
+        onDiscard={(sess) => { void handleDiscardSession(sess) }}
+        onDismiss={() => setIncomplete([])}
+      />
+      <ShareVideoSheet
+        entry={shareEntry}
+        open={Boolean(shareEntry)}
+        onClose={() => setShareEntry(null)}
+      />
 
       {onboardingReady && showOnboarding && (
         <OnboardingModal

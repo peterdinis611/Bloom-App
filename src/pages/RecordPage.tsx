@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react"
+import { useHotkey } from "@tanstack/react-hotkeys"
 import {
   Camera,
   Mic,
@@ -22,6 +23,11 @@ import {
   MousePointer2,
   Sparkles,
   Crop,
+  Scissors,
+  Share2,
+  MousePointerClick,
+  Image as ImageIcon,
+  Loader2,
 } from "lucide-react"
 import { openRecordingHud, closeRecordingHud } from "@/lib/recordingHud"
 import { openCursorOverlay, closeCursorOverlay } from "@/lib/cursorOverlay"
@@ -64,12 +70,15 @@ import {
   setRecordingState,
   startClickTracker,
   stopClickTracker,
+  applyClickSpotlight,
+  saveSnapshot,
   checkCapturePermissions,
   listCaptureWindows,
 } from "@/hooks/useBloomBackend"
 import { useMediaDevices } from "@/hooks/useMediaDevices"
 import { useSettings } from "@/hooks/useSettings"
 import { useToast } from "@/hooks/useToast"
+import { useExportQueue } from "@/hooks/useExportQueue"
 import { ShareVideoSheet } from "@/components/library/ShareVideoSheet"
 import { startCapture, openCameraStream, type CaptureHandle, type CropRect } from "@/lib/capture"
 import { highlightMonitor, dismissMonitorHighlight } from "@/lib/monitorHighlight"
@@ -264,17 +273,23 @@ function AudioToggle({ active, onIcon: OnIcon, offIcon: OffIcon, label, onChange
 }
 
 // ── Preview canvas ─────────────────────────────────────────────────────────────
-function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, drawing, drawOverlay }: {
+function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, drawing, drawOverlay, previewVideoRef }: {
   source: RecordingSource; status: RecordingStatus; elapsed: number; countdown: number
   stream: MediaStream | null; summary?: string
   drawing?: boolean
   drawOverlay?: React.ReactNode
+  /** Exposes the live preview <video> so callers can grab frames (snapshots). */
+  previewVideoRef?: React.MutableRefObject<HTMLVideoElement | null>
 }) {
   const sk = useMessages()
   const isRecording = status === "recording"
   const isPaused    = status === "paused"
   const isActive    = isRecording || isPaused
-  const videoRef    = useRef<HTMLVideoElement>(null)
+  const videoRef    = useRef<HTMLVideoElement | null>(null)
+  const setVideoEl = useCallback((el: HTMLVideoElement | null) => {
+    videoRef.current = el
+    if (previewVideoRef) previewVideoRef.current = el
+  }, [previewVideoRef])
   const [playError, setPlayError] = useState("")
   const [poll, setPoll] = useState(0)
   const [streamReady, setStreamReady] = useState(false)
@@ -339,7 +354,7 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
     )}>
       <div className="absolute inset-0 z-0 bg-black" />
       <video
-        ref={videoRef}
+        ref={setVideoEl}
         autoPlay
         muted
         playsInline
@@ -526,6 +541,11 @@ export function RecordPage({
   const [diskWarn,   setDiskWarn]   = useState<string | null>(null)
   const [savedMeta,  setSavedMeta]  = useState<{ title: string; size: string; id: string } | null>(null)
   const [shareEntry, setShareEntry] = useState<RecordingEntry | null>(null)
+  const [savedEntry, setSavedEntry] = useState<RecordingEntry | null>(null)
+  const [lastClickCount, setLastClickCount] = useState(0)
+  const [spotlightBusy, setSpotlightBusy] = useState(false)
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null)
+  const { enqueue } = useExportQueue()
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null)
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null)
 
@@ -551,6 +571,11 @@ export function RecordPage({
   const showConfig  = !isActive && !isBusy
   const needsScreen = settings.source === "screen" || settings.source === "both"
   const needsCamera = settings.source === "camera" || settings.source === "both"
+
+  useHotkey("Mod+S", () => { void takeSnapshot() }, {
+    enabled: active && status === "paused",
+    meta: { name: "Snapshot", description: "Save a still frame while paused" },
+  })
 
   useEffect(() => {
     if (isActive) return
@@ -902,6 +927,7 @@ export function RecordPage({
     try {
       const meta = await closeSession(sid)
       void setLastRecordingId(meta.id)
+      setSavedEntry(null)
       setSavedMeta({ title: meta.title, size: formatBytes(meta.file_size_bytes), id: meta.id })
 
       let path = ""
@@ -910,6 +936,7 @@ export function RecordPage({
         const entry = await getRecording(meta.id)
         path = entry.path
         shareTarget = entry
+        setSavedEntry(entry)
       } catch { /* optional */ }
 
       toastSuccess({
@@ -946,7 +973,9 @@ export function RecordPage({
   function endClickTracker() {
     if (!clickTrackerRef.current) return
     clickTrackerRef.current = false
-    void stopClickTracker().catch(() => {})
+    void stopClickTracker()
+      .then((summary) => setLastClickCount(summary?.count ?? 0))
+      .catch(() => {})
   }
 
   function abortCapture() {
@@ -1027,6 +1056,8 @@ export function RecordPage({
     }
     setStatus("recording")
     setElapsed(0)
+    setLastClickCount(0)
+    setSavedEntry(null)
     syncHud({ phase: "recording", elapsed: 0 })
     onRecordingChange?.(true)
     diskStopRef.current = false
@@ -1039,6 +1070,61 @@ export function RecordPage({
       }
     }
     startElapsedTimer()
+  }
+
+  /** Grab the current preview frame (paused state) as a PNG into the library. */
+  async function takeSnapshot() {
+    const video = previewVideoRef.current
+    if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
+      toastError({ title: sk.ux.snapshot.failed, description: sk.ux.snapshot.noVideo })
+      return
+    }
+    try {
+      const canvas = document.createElement("canvas")
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      const ctx = canvas.getContext("2d")
+      if (!ctx) throw new Error(sk.ux.snapshot.noVideo)
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"))
+      if (!blob) throw new Error(sk.ux.snapshot.failed)
+      const bytes = new Uint8Array(await blob.arrayBuffer())
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+      const saved = await saveSnapshot(`snapshot-${stamp}.png`, Array.from(bytes))
+      toastSuccess({ title: sk.ux.snapshot.saved, description: saved })
+    } catch (e) {
+      toastError({ title: sk.ux.snapshot.failed, description: localizeError(e) })
+    }
+  }
+
+  async function runSpotlight() {
+    if (!savedMeta) return
+    setSpotlightBusy(true)
+    try {
+      const entry = await applyClickSpotlight(savedMeta.id)
+      toastSuccess({ title: sk.toast.spotlightDone(entry.meta.title) })
+      onRecordingSaved?.()
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setSpotlightBusy(false)
+    }
+  }
+
+  function enqueueGif() {
+    if (!savedEntry) return
+    enqueue({
+      label: `GIF · ${savedEntry.meta.title}`,
+      options: {
+        input_path: savedEntry.path,
+        preset: "medium",
+        resolution: "480p",
+        format: "gif",
+        add_to_library: false,
+        output_name: `${savedEntry.meta.title.replace(/\s+/g, "-").slice(0, 40)}.gif`,
+      },
+    })
+    toastSuccess({ title: sk.toast.gifQueued, description: sk.toast.gifQueuedBody })
   }
 
   function pauseRecording() {
@@ -1173,6 +1259,7 @@ export function RecordPage({
           stream={previewStream}
           summary={previewSummary}
           drawing={drawingMode && isActive}
+          previewVideoRef={previewVideoRef}
           drawOverlay={
             status === "region" ? (
               <RegionCropOverlay
@@ -1517,6 +1604,17 @@ export function RecordPage({
             <Pencil className="size-3.5" />
             {drawingMode ? sk.record.done : sk.record.draw}
           </button>
+          {status === "paused" && (
+            <button
+              type="button"
+              onClick={() => { void takeSnapshot() }}
+              title={sk.ux.snapshot.hint}
+              className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-secondary px-3 py-1.5 text-xs font-bold text-foreground transition-colors hover:bg-secondary/60"
+            >
+              <Camera className="size-3.5" />
+              {sk.ux.snapshot.button}
+            </button>
+          )}
         </div>
       )}
 
@@ -1555,19 +1653,50 @@ export function RecordPage({
         )}
 
         {status === "done" && (
-          <div className="banner-success flex flex-1 items-center gap-2 rounded-lg px-3 py-2">
+          <div className="banner-success flex flex-1 flex-wrap items-center gap-1.5 rounded-lg px-3 py-2">
             <CheckCircle2 className="size-4 opacity-80" />
             <span className="text-[13px] font-medium">{sk.record.saved}{savedMeta ? ` · ${savedMeta.size}` : ""}</span>
-            {savedMeta && onOpenRecording && (
-              <MacButton variant="ghost" className="ml-auto !py-1" onClick={() => onOpenRecording(savedMeta.id)}>
-                <Play className="size-3.5" /> {sk.record.openLast}
-              </MacButton>
-            )}
-            {bloomDir && (
-              <MacButton variant="ghost" className={savedMeta && onOpenRecording ? "!py-1" : "ml-auto !py-1"} onClick={() => revealInFinder(bloomDir)}>
-                <FolderOpen className="size-3.5" /> {sk.record.show}
-              </MacButton>
-            )}
+            <div className="ml-auto flex flex-wrap items-center gap-1">
+              {savedMeta && onEditRecording && (
+                <MacButton variant="ghost" className="!py-1" onClick={() => onEditRecording(savedMeta.id)}>
+                  <Scissors className="size-3.5" /> {sk.ux.postRecord.edit}
+                </MacButton>
+              )}
+              {savedEntry && (
+                <MacButton variant="ghost" className="!py-1" onClick={() => setShareEntry(savedEntry)}>
+                  <Share2 className="size-3.5" /> {sk.ux.postRecord.share}
+                </MacButton>
+              )}
+              {savedMeta && lastClickCount > 0 && (
+                <MacButton
+                  variant="ghost"
+                  className="!py-1"
+                  disabled={spotlightBusy}
+                  title={sk.ux.postRecord.clicks(lastClickCount)}
+                  onClick={() => { void runSpotlight() }}
+                >
+                  {spotlightBusy
+                    ? <Loader2 className="size-3.5 animate-spin" />
+                    : <MousePointerClick className="size-3.5" />}
+                  {spotlightBusy ? sk.ux.postRecord.spotlightBusy : sk.ux.postRecord.spotlight}
+                </MacButton>
+              )}
+              {savedEntry && (
+                <MacButton variant="ghost" className="!py-1" onClick={enqueueGif}>
+                  <ImageIcon className="size-3.5" /> {sk.ux.postRecord.gif}
+                </MacButton>
+              )}
+              {savedMeta && onOpenRecording && (
+                <MacButton variant="ghost" className="!py-1" onClick={() => onOpenRecording(savedMeta.id)}>
+                  <Play className="size-3.5" /> {sk.ux.postRecord.open}
+                </MacButton>
+              )}
+              {bloomDir && (
+                <MacButton variant="ghost" className="!py-1" onClick={() => revealInFinder(bloomDir)}>
+                  <FolderOpen className="size-3.5" /> {sk.record.show}
+                </MacButton>
+              )}
+            </div>
           </div>
         )}
         </div>

@@ -12,6 +12,10 @@ import {
   Trash2,
   Crop,
   ArrowLeftRight,
+  MousePointerClick,
+  Loader2,
+  Bookmark,
+  Wrench,
 } from "lucide-react"
 import { useCloseOnEscape } from "@/hooks/useCloseOnEscape"
 import { cn } from "@/lib/utils"
@@ -38,6 +42,8 @@ import {
 import { FilmstripTimeline } from "@/components/editor/FilmstripTimeline"
 import { EditorCropOverlay } from "@/components/editor/EditorCropOverlay"
 import { CompareSlider } from "@/components/editor/CompareSlider"
+import { EditorChaptersPanel } from "@/components/editor/EditorChaptersPanel"
+import { chaptersToSubtitleCards, type EditorChapter } from "@/lib/editorChapters"
 import { BloomVideoPlayer, type BloomVideoPlayerHandle } from "@/components/video/BloomVideoPlayer"
 import { useExportQueue } from "@/hooks/useExportQueue"
 import type {
@@ -58,12 +64,17 @@ import {
   formatDurationSecs,
   getFilmstrip,
   getVideoInfo,
+  getClickTrack,
+  applyClickSpotlight,
 } from "@/hooks/useBloomBackend"
 import { useSettings } from "@/hooks/useSettings"
+import { useToast } from "@/hooks/useToast"
+import { localizeError } from "@/lib/i18n/localizeError"
 
 type Step = "preview" | "trim" | "export" | "queued"
 type SaveMode = "copy" | "replace"
 type PartsMode = "separate" | "join"
+type InspectorTab = "tools" | "chapters" | "spotlight"
 
 const STEPS: Step[] = ["preview", "trim", "export"]
 const FORMATS = [
@@ -154,6 +165,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
   ]
   const playerRef = useRef<BloomVideoPlayerHandle>(null)
   const { enqueue } = useExportQueue()
+  const { success: toastSuccess, error: toastError } = useToast()
   const { settings } = useSettings()
   const exportDefaults = settings.exportDefaults
 
@@ -193,6 +205,12 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
   const [removeAudio, setRemoveAudio] = useState(false)
   const [useHevc, setUseHevc] = useState(false)
   const [analysis, setAnalysis] = useState<VideoAnalyze | null>(null)
+  const [clickTimes, setClickTimes] = useState<number[]>([])
+  const [spotlightPreview, setSpotlightPreview] = useState(false)
+  const [spotlightBusy, setSpotlightBusy] = useState(false)
+  const [chapters, setChapters] = useState<EditorChapter[]>([])
+  const [burnChapters, setBurnChapters] = useState(true)
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("tools")
 
   const active = segments[activeSegment] ?? segments[0]!
   const multiClip = segments.length > 1
@@ -210,9 +228,13 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
       add_to_library: !replaceOriginal,
       replace_original: replaceOriginal,
       srt_path: subtitlesOn && srtPath.trim() ? srtPath.trim() : null,
-      subtitle_cards: subtitlesOn
-        ? cards.filter((c) => c.text.trim() && c.end_secs > c.start_secs)
-        : [],
+      subtitle_cards: (() => {
+        const fromUi = subtitlesOn
+          ? cards.filter((c) => c.text.trim() && c.end_secs > c.start_secs)
+          : []
+        const fromChapters = burnChapters ? chaptersToSubtitleCards(chapters) : []
+        return [...fromUi, ...fromChapters]
+      })(),
       denoise,
       normalize_audio: normalizeAudio,
       remove_audio: removeAudio,
@@ -222,7 +244,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
       crop_w: hasCrop ? crop!.w : null,
       crop_h: hasCrop ? crop!.h : null,
     }),
-    [entry.path, preset, resolution, format, speed, replaceOriginal, subtitlesOn, srtPath, cards, denoise, normalizeAudio, removeAudio, useHevc, hasCrop, crop],
+    [entry.path, preset, resolution, format, speed, replaceOriginal, subtitlesOn, srtPath, cards, denoise, normalizeAudio, removeAudio, useHevc, hasCrop, crop, burnChapters, chapters],
   )
 
   const syncFieldsFromSegment = useCallback((seg: EditorSegment) => {
@@ -243,6 +265,34 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
       })
       .catch(() => {})
   }, [entry.path, syncFieldsFromSegment])
+
+  // Click track (screen recordings only) — drives the clicks lane + spotlight tools.
+  useEffect(() => {
+    if (step !== "trim") return
+    if (entry.meta.source !== "screen" && entry.meta.source !== "both") return
+    let alive = true
+    getClickTrack(entry.meta.id)
+      .then((track) => { if (alive) setClickTimes(track?.clicks.map((c) => c.t) ?? []) })
+      .catch(() => { if (alive) setClickTimes([]) })
+    return () => { alive = false }
+  }, [entry.meta.id, entry.meta.source, step])
+
+  // Spotlight preview: flash while the playhead is just after a recorded click.
+  const spotlightActive = spotlightPreview
+    && clickTimes.some((t) => playhead >= t && playhead - t < 0.45)
+
+  const handleApplySpotlight = useCallback(async () => {
+    setSpotlightBusy(true)
+    try {
+      const created = await applyClickSpotlight(entry.meta.id)
+      toastSuccess({ title: sk.toast.spotlightDone(created.meta.title) })
+      onComplete()
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setSpotlightBusy(false)
+    }
+  }, [entry.meta.id, onComplete, toastSuccess, toastError, sk.toast])
 
   useEffect(() => {
     if (step !== "trim") return
@@ -485,6 +535,15 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
                 controlsLayout="docked"
                 onTimeUpdate={setPlayhead}
               />
+              {spotlightPreview && (
+                <div
+                  aria-hidden
+                  className={cn(
+                    "pointer-events-none absolute inset-0 rounded-xl ring-4 ring-inset ring-accent/80 transition-opacity duration-150",
+                    spotlightActive ? "opacity-100" : "opacity-0",
+                  )}
+                />
+              )}
               {cropMode && (
                 <EditorCropOverlay
                   value={crop}
@@ -527,7 +586,39 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
                   if (index === activeSegment) syncFieldsFromSegment({ start, end })
                 }}
                 onSeek={(t) => playerRef.current?.seek(t)}
+                clickTimes={clickTimes}
               />
+
+              {clickTimes.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/50 bg-[var(--surface)] px-3 py-2.5">
+                  <MousePointerClick className="size-4 shrink-0 text-accent" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[12px] font-bold text-foreground">{sk.ux.editor.spotlightTitle}</p>
+                    <p className="text-[10px] text-muted-foreground">{sk.ux.editor.spotlightHint(clickTimes.length)}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSpotlightPreview((v) => !v)}
+                    className={cn(
+                      "rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition-colors",
+                      spotlightPreview
+                        ? "border-accent/40 bg-accent/15 text-accent"
+                        : "border-border/60 bg-[var(--surface)] text-foreground hover:bg-secondary",
+                    )}
+                  >
+                    {spotlightPreview ? sk.ux.editor.previewOn : sk.ux.editor.previewSpotlight}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={spotlightBusy}
+                    onClick={() => { void handleApplySpotlight() }}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-bold text-primary-foreground transition-colors hover:bg-accent disabled:opacity-50"
+                  >
+                    {spotlightBusy && <Loader2 className="size-3 animate-spin" />}
+                    {spotlightBusy ? sk.ux.editor.applying : sk.ux.editor.applySpotlight}
+                  </button>
+                </div>
+              )}
 
               <div className="flex flex-col gap-2">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">

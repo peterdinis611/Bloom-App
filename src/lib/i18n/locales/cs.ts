@@ -428,6 +428,10 @@ export const cs: Messages = {
         title: "Globální zkratky",
         body: "Ovládaj nahrávání i když je Bloom v tray. Fungují na pozadí během nahrávání.",
       },
+      spotlight: {
+        title: "Kurzor a kliky",
+        body: "Zapni spotlight kurzoru při nahrávání — kliky se ukládají vedle videa. V knihovně pak jedním klikem přidáš zvýraznění kliknutí. Nedokončená nahrávání po pádu Bloom nabídne obnovit při startu.",
+      },
       export: {
         title: "Fronta exportů",
         body: "Export běží na pozadí — průběh sleduj v levém panelu. Po dokončení se knihovna obnoví.",
@@ -752,6 +756,66 @@ export const cs: Messages = {
       decode: "Soubor se nepodařilo dekódovat — může být poškozený.",
       unsupported: "Formát videa není podporovaný v přehrávači.",
       unknown: "Neznámá chyba přehrávání.",
+    },
+  },
+  ux: {
+    incomplete: {
+      title: "Nedokončená nahrávání",
+      body: (n: number) =>
+        n === 1
+          ? "Po posledním ukončení Bloom zůstala 1 nedokončená nahrávka. Chceš ji obnovit?"
+          : `Po posledním ukončení Bloom zůstalo ${n} nedokončených nahrávek. Chceš je obnovit?`,
+      recover: "Obnovit",
+      discard: "Zahodit",
+      dismiss: "Později",
+      working: "Pracuji…",
+    },
+    clicks: {
+      badge: "Kliky",
+      badgeTitle: (n: number) => `${n} zaznamenaných kliknutí`,
+      lane: (n: number) => `Kliky · ${n}`,
+      laneHint: "Klikni na značku a přesuň se na daný klik",
+      none: "Bez zaznamenaných kliků",
+    },
+    filters: {
+      folders: "Složky",
+      allFolders: "Vše",
+      hasClicks: "Má kliky",
+      savedViews: "Uložené pohledy",
+      saveView: "Uložit pohled",
+      viewName: "Název pohledu",
+      viewSaved: (name: string) => `Pohled „${name}" uložen`,
+      removeView: "Odstranit pohled",
+      noFilters: "Nejprve zapni alespoň jeden filtr",
+    },
+    postRecord: {
+      edit: "Upravit",
+      share: "Sdílet",
+      spotlight: "Spotlight",
+      gif: "GIF",
+      open: "Otevřít",
+      clicks: (n: number) => `${n} kliknutí`,
+      spotlightBusy: "Spotlight…",
+    },
+    snapshot: {
+      button: "Snímek",
+      hint: "Ulož aktuální záběr jako PNG (⌘S)",
+      saved: "Snímek uložen",
+      failed: "Snímek se nepodařilo uložit",
+      noVideo: "Náhled není k dispozici",
+    },
+    editor: {
+      spotlightTitle: "Spotlight kliknutí",
+      spotlightHint: (n: number) =>
+        `Zvýrazní ${n} zaznamenaných kliknutí a uloží nové video do knihovny.`,
+      previewSpotlight: "Náhled spotlightu",
+      previewOn: "Náhled zapnut",
+      applySpotlight: "Použít spotlight",
+      applying: "Aplikuji…",
+    },
+    autoShare: {
+      label: "Sdílet po exportu",
+      hint: "Po dokončení exportu otevře panel sdílení",
     },
   },
 }

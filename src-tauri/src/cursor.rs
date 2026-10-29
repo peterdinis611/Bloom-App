@@ -170,6 +170,71 @@ pub fn stop_click_tracker(state: tauri::State<ClickTracker>) -> Result<Option<Cl
     }))
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ClickPoint {
+    pub t: f64,
+    pub x: i32,
+    pub y: i32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClickTrackInfo {
+    pub path: String,
+    pub count: u32,
+    pub clicks: Vec<ClickPoint>,
+}
+
+fn parse_clicks_file(path: &std::path::Path) -> Vec<ClickPoint> {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    raw.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() {
+                return None;
+            }
+            let v: serde_json::Value = serde_json::from_str(line).ok()?;
+            Some(ClickPoint {
+                t: v.get("t")?.as_f64()?,
+                x: v.get("x")?.as_i64()? as i32,
+                y: v.get("y")?.as_i64()? as i32,
+            })
+        })
+        .collect()
+}
+
+/// Load click track for a recording id (None if no `.clicks.jsonl`).
+#[tauri::command]
+pub fn get_click_track(
+    app: AppHandle,
+    id: String,
+) -> Result<Option<ClickTrackInfo>, String> {
+    let dir = crate::bloom_dir(&app)?;
+    let entry = crate::find_recording(&dir, &id)
+        .ok_or_else(|| format!("Recording {id} not found"))?;
+    let path = clicks_path_for(&dir, &entry.path);
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let clicks = parse_clicks_file(&path);
+    if clicks.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(ClickTrackInfo {
+        path: path.to_string_lossy().into_owned(),
+        count: clicks.len() as u32,
+        clicks,
+    }))
+}
+
+/// True when a non-empty click track exists next to the recording.
+#[tauri::command]
+pub fn has_click_track(app: AppHandle, id: String) -> Result<bool, String> {
+    Ok(get_click_track(app, id)?.is_some())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

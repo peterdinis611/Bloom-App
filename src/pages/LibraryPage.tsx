@@ -40,6 +40,7 @@ import {
   Wrench,
   Combine,
   MousePointerClick,
+  Bookmark,
 } from "lucide-react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { getCurrentWindow } from "@tauri-apps/api/window"
@@ -59,6 +60,8 @@ import {
   checkFfmpeg,
   installFfmpeg,
   getThumbnail,
+  getClickTrack,
+  listLibraryFolders,
   fileSrc,
   formatBytes,
   formatDurationSecs,
@@ -103,6 +106,12 @@ import {
 import { useToast } from "@/hooks/useToast"
 import { useSettings } from "@/hooks/useSettings"
 import { localizeError } from "@/lib/i18n/localizeError"
+import {
+  entryInFolder,
+  loadLibraryFilters,
+  saveLibraryFilters,
+  type SavedLibraryView,
+} from "@/lib/libraryFilters"
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function relativeDate(iso: string): string {
@@ -257,7 +266,7 @@ function ConfirmDelete({ title, open, onCancel, onConfirm }: {
 }
 
 // ── Recording card ─────────────────────────────────────────────────────────
-function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, onEdit, onToggleStar, onShare, onCopyPath, onCopyFile, onDuplicate, onGif, onSpotlight, validation, busy, ffmpegReady, batchMode, selected, onSelect, tagValue, onTagChange, onTagCommit, onFolderChange, onNotesChange, showMetaInputs }: {
+function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate, onEdit, onToggleStar, onShare, onCopyPath, onCopyFile, onDuplicate, onGif, onSpotlight, clickCount, validation, busy, ffmpegReady, batchMode, selected, onSelect, tagValue, onTagChange, onTagCommit, onFolderChange, onNotesChange, showMetaInputs }: {
   entry: RecordingEntry
   onPlay: () => void
   onDelete: () => void
@@ -272,6 +281,8 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
   onDuplicate: () => void
   onGif: () => void
   onSpotlight?: () => void
+  /** Recorded clicks for this recording (0 / undefined = none). */
+  clickCount?: number
   validation?: ValidationResult
   busy: boolean
   ffmpegReady: boolean
@@ -427,6 +438,14 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
             </span>
             <span className="rounded-md bg-secondary px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground">{meta.quality}</span>
             <span className="rounded-md bg-secondary px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground">{formatBytes(meta.file_size_bytes)}</span>
+            {(clickCount ?? 0) > 0 && (
+              <span
+                title={sk.ux.clicks.badgeTitle(clickCount ?? 0)}
+                className="flex items-center gap-1 rounded-md bg-accent/12 px-1.5 py-0.5 text-[10px] font-bold text-accent"
+              >
+                <MousePointerClick className="size-3" /> {sk.ux.clicks.badge}
+              </span>
+            )}
             {meta.has_microphone && <Mic className="size-3 text-muted-foreground/60" />}
             {meta.has_system_audio && <Volume2 className="size-3 text-muted-foreground/60" />}
           </div>
@@ -449,7 +468,7 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
           <ActionBtn icon={Play} label={sk.library.actions.play} onClick={onPlay} primary />
           {ffmpegReady && <ActionBtn icon={Scissors} label={sk.library.actions.edit} onClick={onEdit} accent />}
           {ffmpegReady && <ActionBtn icon={Image} label={sk.library.actions.gif} onClick={onGif} />}
-          {ffmpegReady && onSpotlight && (meta.source === "screen" || meta.source === "both") && (
+          {ffmpegReady && onSpotlight && (clickCount ?? 0) > 0 && (meta.source === "screen" || meta.source === "both") && (
             <ActionBtn icon={MousePointerClick} label={sk.library.actions.spotlight} onClick={onSpotlight} disabled={busy} />
           )}
           <ActionBtn icon={ScanSearch} label={sk.library.actions.verify} onClick={onValidate} disabled={busy} />
@@ -580,6 +599,14 @@ export function LibraryPage({
   const [copied, setCopied] = useState(false)
   const [starredOnly, setStarredOnly] = useState(false)
   const [folderFilter, setFolderFilter] = useState<string>("")
+  const [hasClicksOnly, setHasClicksOnly] = useState(false)
+  const [savedViews, setSavedViews] = useState<SavedLibraryView[]>([])
+  const [filtersLoaded, setFiltersLoaded] = useState(false)
+  const [fsFolders, setFsFolders] = useState<string[]>([])
+  const [clickCounts, setClickCounts] = useState<Record<string, number>>({})
+  const clickCheckedRef = useRef(new Set<string>())
+  const [savingView, setSavingView] = useState(false)
+  const [viewName, setViewName] = useState("")
   const [batchMode, setBatchMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [tagDraft, setTagDraft] = useState<Record<string, string>>({})
@@ -656,6 +683,7 @@ export function LibraryPage({
       const [recs, st] = await Promise.all([listRecordings(), getLibraryStats()])
       setEntries(recs)
       setStats(st)
+      void listLibraryFolders().then(setFsFolders).catch(() => {})
     } catch (e) {
       const msg = localizeError(e)
       setError(msg)
@@ -681,6 +709,7 @@ export function LibraryPage({
       const [recs, st] = await Promise.all([listRecordings(), getLibraryStats()])
       setEntries(recs)
       setStats(st)
+      void listLibraryFolders().then(setFsFolders).catch(() => {})
     } catch { /* keep current list */ }
   }, [])
 
@@ -721,6 +750,52 @@ export function LibraryPage({
       onEditRecordingHandled?.()
     }
   }, [editRecordingId, entries, loading, onEditRecordingHandled])
+
+  // Saved filters (IndexedDB): restore once, then persist on every change.
+  useEffect(() => {
+    let alive = true
+    void loadLibraryFilters().then((f) => {
+      if (!alive) return
+      setStarredOnly(f.starredOnly)
+      setFolderFilter(f.folderFilter)
+      setHasClicksOnly(f.hasClicksOnly)
+      setSavedViews(f.savedViews)
+      setFiltersLoaded(true)
+    })
+    return () => { alive = false }
+  }, [])
+
+  useEffect(() => {
+    if (!filtersLoaded) return
+    void saveLibraryFilters({ starredOnly, folderFilter, hasClicksOnly, savedViews })
+  }, [filtersLoaded, starredOnly, folderFilter, hasClicksOnly, savedViews])
+
+  // Click tracks: batch-check new screen/both recordings (cached per id).
+  useEffect(() => {
+    const pending = entries.filter(
+      (e) =>
+        (e.meta.source === "screen" || e.meta.source === "both")
+        && !clickCheckedRef.current.has(e.meta.id),
+    )
+    if (pending.length === 0) return
+    pending.forEach((e) => clickCheckedRef.current.add(e.meta.id))
+    let alive = true
+    void Promise.all(
+      pending.map((e) =>
+        getClickTrack(e.meta.id)
+          .then((t) => [e.meta.id, t?.count ?? 0] as const)
+          .catch(() => [e.meta.id, 0] as const),
+      ),
+    ).then((pairs) => {
+      if (!alive) return
+      setClickCounts((prev) => {
+        const next = { ...prev }
+        for (const [id, count] of pairs) next[id] = count
+        return next
+      })
+    })
+    return () => { alive = false }
+  }, [entries])
 
   const importPaths = useCallback(async (paths: string[]) => {
     if (paths.length === 0) return
@@ -794,7 +869,8 @@ export function LibraryPage({
   const filtered = useMemo(() => {
     let list = entries
     if (starredOnly) list = list.filter((e) => e.meta.starred)
-    if (folderFilter) list = list.filter((e) => (e.meta.folder ?? "") === folderFilter)
+    if (folderFilter) list = list.filter((e) => entryInFolder(e, folderFilter))
+    if (hasClicksOnly) list = list.filter((e) => (clickCounts[e.meta.id] ?? 0) > 0)
     const q = debouncedQuery.trim().toLowerCase()
     if (!q) return list
     return list.filter((e) =>
@@ -804,7 +880,7 @@ export function LibraryPage({
       || (e.meta.notes ?? "").toLowerCase().includes(q)
       || (e.meta.folder ?? "").toLowerCase().includes(q),
     )
-  }, [entries, debouncedQuery, starredOnly, folderFilter])
+  }, [entries, debouncedQuery, starredOnly, folderFilter, hasClicksOnly, clickCounts])
 
   const folders = useMemo(() => {
     const set = new Set<string>()
@@ -812,8 +888,42 @@ export function LibraryPage({
       const f = e.meta.folder?.trim()
       if (f) set.add(f)
     }
+    for (const f of fsFolders) {
+      if (f.trim()) set.add(f.trim())
+    }
     return [...set].sort()
-  }, [entries])
+  }, [entries, fsFolders])
+
+  const activeFilterCount = Number(starredOnly) + Number(Boolean(folderFilter)) + Number(hasClicksOnly)
+
+  const commitSaveView = () => {
+    const name = viewName.trim()
+    if (!name) return
+    if (activeFilterCount === 0) {
+      toastInfo({ title: sk.ux.filters.noFilters })
+      return
+    }
+    const view: SavedLibraryView = {
+      id: crypto.randomUUID(),
+      name,
+      starredOnly,
+      folder: folderFilter,
+      hasClicks: hasClicksOnly,
+    }
+    setSavedViews((prev) => [...prev.filter((v) => v.name !== name), view])
+    setSavingView(false)
+    setViewName("")
+    toastSuccess({ title: sk.ux.filters.viewSaved(name) })
+  }
+
+  const applyView = (v: SavedLibraryView) => {
+    setStarredOnly(v.starredOnly)
+    setFolderFilter(v.folder)
+    setHasClicksOnly(v.hasClicks)
+  }
+
+  const isViewActive = (v: SavedLibraryView) =>
+    v.starredOnly === starredOnly && v.folder === folderFilter && v.hasClicks === hasClicksOnly
 
   const handleRename = async (id: string, title: string) => {
     try {
@@ -1220,6 +1330,16 @@ export function LibraryPage({
           >
             <Star className={cn("size-3", starredOnly && "fill-current")} /> {sk.library.starred}
           </button>
+          <button
+            type="button"
+            onClick={() => setHasClicksOnly((v) => !v)}
+            className={cn(
+              "flex min-h-[36px] items-center gap-1.5 rounded-lg border px-3 py-2 text-[12px] font-medium transition-colors",
+              hasClicksOnly ? "border border-accent/40 bg-accent/12 text-accent" : "border-border/60 text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <MousePointerClick className="size-3" /> {sk.ux.filters.hasClicks}
+          </button>
           <MacSelect
             value={folderFilter}
             onChange={setFolderFilter}
@@ -1259,6 +1379,97 @@ export function LibraryPage({
             >
               <Trash2 className="size-3" /> {sk.library.batchDelete(selectedIds.size)}
             </button>
+          )}
+        </div>
+      )}
+
+      {/* Folder sidebar chips + saved views */}
+      {entries.length > 0 && (folders.length > 0 || savedViews.length > 0 || activeFilterCount > 0) && (
+        <div className="flex flex-col gap-2">
+          {folders.length > 0 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5" role="tablist" aria-label={sk.ux.filters.folders}>
+              <Folder className="size-3.5 shrink-0 text-muted-foreground/60" />
+              {[{ value: "", label: sk.ux.filters.allFolders }, ...folders.map((f) => ({ value: f, label: f }))].map((f) => (
+                <button
+                  key={f.value || "__all"}
+                  type="button"
+                  role="tab"
+                  aria-selected={folderFilter === f.value}
+                  onClick={() => setFolderFilter(f.value)}
+                  className={cn(
+                    "shrink-0 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors",
+                    folderFilter === f.value
+                      ? "border-primary/40 bg-primary/15 text-primary"
+                      : "border-border/60 text-muted-foreground hover:bg-secondary hover:text-foreground",
+                  )}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {(savedViews.length > 0 || activeFilterCount > 0) && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Bookmark className="size-3.5 shrink-0 text-muted-foreground/60" />
+              {savedViews.map((v) => (
+                <span
+                  key={v.id}
+                  className={cn(
+                    "group/chip inline-flex items-center overflow-hidden rounded-full border text-[11px] font-semibold transition-colors",
+                    isViewActive(v)
+                      ? "border-accent/40 bg-accent/12 text-accent"
+                      : "border-border/60 text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <button type="button" onClick={() => applyView(v)} className="py-1 pl-3 pr-2">
+                    {v.name}
+                  </button>
+                  <button
+                    type="button"
+                    title={sk.ux.filters.removeView}
+                    aria-label={sk.ux.filters.removeView}
+                    onClick={() => setSavedViews((prev) => prev.filter((x) => x.id !== v.id))}
+                    className="py-1 pl-0.5 pr-2 opacity-50 hover:opacity-100"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
+              ))}
+              {savingView ? (
+                <span className="inline-flex items-center gap-1">
+                  <input
+                    autoFocus
+                    value={viewName}
+                    onChange={(e) => setViewName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitSaveView()
+                      if (e.key === "Escape") { setSavingView(false); setViewName("") }
+                    }}
+                    placeholder={sk.ux.filters.viewName}
+                    className="h-7 w-36 rounded-full border border-border/60 bg-[var(--surface)] px-3 text-[11px] outline-none focus:border-primary/40"
+                  />
+                  <button
+                    type="button"
+                    onClick={commitSaveView}
+                    disabled={!viewName.trim()}
+                    className="flex size-7 items-center justify-center rounded-full border border-primary/40 bg-primary/15 text-primary disabled:opacity-40"
+                    aria-label={sk.ux.filters.saveView}
+                  >
+                    <Check className="size-3.5" />
+                  </button>
+                </span>
+              ) : (
+                activeFilterCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSavingView(true)}
+                    className="inline-flex items-center gap-1 rounded-full border border-dashed border-border/70 px-3 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
+                  >
+                    <Bookmark className="size-3" /> {sk.ux.filters.saveView}
+                  </button>
+                )
+              )}
+            </div>
           )}
         </div>
       )}
@@ -1358,6 +1569,7 @@ export function LibraryPage({
                     description: sk.toast.gifQueuedBody,
                   })
                 }}
+                clickCount={clickCounts[entry.meta.id] ?? 0}
                 onSpotlight={() => { void handleSpotlight(entry.meta.id) }}
                 onRename={(title) => handleRename(entry.meta.id, title)}
                 onValidate={() => handleValidate(entry.meta.id)}

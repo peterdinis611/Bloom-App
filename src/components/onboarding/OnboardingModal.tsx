@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import {
   Check, FolderOpen, Keyboard, Layers, Shield, Sparkles, X, Video, Mic,
-  Scale, Film,
+  Scale, Film, MousePointerClick,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useMessages } from "@/lib/i18n/I18nProvider"
@@ -17,9 +17,9 @@ interface OnboardingModalProps {
   onDone: () => void
 }
 
-type StepId = "welcome" | "privacy" | "permissions" | "ffmpeg" | "shortcuts" | "export"
+type StepId = "welcome" | "privacy" | "permissions" | "ffmpeg" | "shortcuts" | "spotlight" | "export"
 
-const STEP_ORDER: StepId[] = ["welcome", "privacy", "permissions", "ffmpeg", "shortcuts", "export"]
+const STEP_ORDER: StepId[] = ["welcome", "privacy", "permissions", "ffmpeg", "shortcuts", "spotlight", "export"]
 
 export function OnboardingModal({ bloomDir, onDone }: OnboardingModalProps) {
   const sk = useMessages()
@@ -98,6 +98,7 @@ export function OnboardingModal({ bloomDir, onDone }: OnboardingModalProps) {
       case "permissions": return <Shield className="size-5" />
       case "ffmpeg": return <Sparkles className="size-5" />
       case "shortcuts": return <Keyboard className="size-5" />
+      case "spotlight": return <MousePointerClick className="size-5" />
       default: return <Layers className="size-5" />
     }
   }

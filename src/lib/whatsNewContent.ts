@@ -11,6 +11,23 @@ export interface NewsItem {
 
 export const WHATS_NEW: NewsItem[] = [
   {
+    version: "1.1.0",
+    date: "2026-10-29",
+    title: "Bloom 1.1 — kliky, obnova a poriadok v knižnici",
+    highlights: [
+      "Spotlight kurzora + záznam kliknutí (.clicks.jsonl) a ich zvýraznenie v editore aj knižnici",
+      "Obnova nedokončených nahrávok po páde priamo pri štarte",
+      "Nedávne nahrávky v tray menu",
+      "Priečinky v knižnici, filtre „Má kliky“ a uložené pohľady",
+      "Spájanie viacerých nahrávok do jednej",
+      "Automatická optimalizácia po nahrávaní a snímka obrazovky počas pauzy (⌘S)",
+      "Voliteľné zdieľanie hneď po exporte",
+    ],
+    body: [
+      "Po nahrávke nájdeš rýchle akcie — upraviť, zdieľať, spotlight kliknutí a GIF. Všetko ostáva lokálne.",
+    ],
+  },
+  {
     version: "1.0.0",
     date: "2026-09-20",
     title: "Bloom 1.0 — produkčný release",
@@ -49,4 +66,4 @@ export const WHATS_NEW: NewsItem[] = [
   },
 ]
 
-export const CURRENT_NEWS_VERSION = WHATS_NEW[0]?.version ?? "1.0.0"
+export const CURRENT_NEWS_VERSION = WHATS_NEW[0]?.version ?? "1.1.0"

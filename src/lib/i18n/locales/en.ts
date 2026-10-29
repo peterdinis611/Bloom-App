@@ -434,6 +434,10 @@ export const en: Messages = {
         title: "Global shortcuts",
         body: "Control recording even when Bloom is in the tray. They work in the background while recording.",
       },
+      spotlight: {
+        title: "Cursor & clicks",
+        body: "Turn on the cursor spotlight while recording — clicks are saved next to the video. In the library you can then burn in click highlights with one tap. If Bloom crashes, unfinished recordings are offered for recovery on launch.",
+      },
       export: {
         title: "Export queue",
         body: "Export runs in the background — track progress in the left panel. The library refreshes when done.",
@@ -761,6 +765,66 @@ export const en: Messages = {
       decode: "Could not decode file — it may be corrupted.",
       unsupported: "Video format is not supported in the player.",
       unknown: "Unknown playback error.",
+    },
+  },
+  ux: {
+    incomplete: {
+      title: "Unfinished recordings",
+      body: (n: number) =>
+        n === 1
+          ? "1 unfinished recording was left after Bloom last closed. Recover it?"
+          : `${n} unfinished recordings were left after Bloom last closed. Recover them?`,
+      recover: "Recover",
+      discard: "Discard",
+      dismiss: "Later",
+      working: "Working…",
+    },
+    clicks: {
+      badge: "Clicks",
+      badgeTitle: (n: number) => `${n} recorded clicks`,
+      lane: (n: number) => `Clicks · ${n}`,
+      laneHint: "Click a marker to jump to that click",
+      none: "No recorded clicks",
+    },
+    filters: {
+      folders: "Folders",
+      allFolders: "All",
+      hasClicks: "Has clicks",
+      savedViews: "Saved views",
+      saveView: "Save view",
+      viewName: "View name",
+      viewSaved: (name: string) => `View "${name}" saved`,
+      removeView: "Remove view",
+      noFilters: "Turn on at least one filter first",
+    },
+    postRecord: {
+      edit: "Edit",
+      share: "Share",
+      spotlight: "Spotlight",
+      gif: "GIF",
+      open: "Open",
+      clicks: (n: number) => `${n} clicks`,
+      spotlightBusy: "Spotlight…",
+    },
+    snapshot: {
+      button: "Snapshot",
+      hint: "Save the current frame as PNG (⌘S)",
+      saved: "Snapshot saved",
+      failed: "Could not save snapshot",
+      noVideo: "Preview is not available",
+    },
+    editor: {
+      spotlightTitle: "Click spotlight",
+      spotlightHint: (n: number) =>
+        `Highlights ${n} recorded clicks and saves a new video to the library.`,
+      previewSpotlight: "Preview spotlight",
+      previewOn: "Preview on",
+      applySpotlight: "Apply spotlight",
+      applying: "Applying…",
+    },
+    autoShare: {
+      label: "Share after export",
+      hint: "Opens the share sheet when an export finishes",
     },
   },
 }

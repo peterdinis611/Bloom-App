@@ -428,6 +428,10 @@ export const de: Messages = {
         title: "Globale Tastenkürzel",
         body: "Steuere die Aufnahme, auch wenn Bloom im Tray ist. Sie funktionieren im Hintergrund während der Aufnahme.",
       },
+      spotlight: {
+        title: "Cursor & Klicks",
+        body: "Aktiviere beim Aufnehmen den Cursor-Spotlight — Klicks werden neben dem Video gespeichert. In der Bibliothek brennst du Klick-Hervorhebungen mit einem Tippen ein. Nach einem Absturz bietet Bloom beim Start die Wiederherstellung an.",
+      },
       export: {
         title: "Export-Warteschlange",
         body: "Export läuft im Hintergrund — Fortschritt in der linken Leiste verfolgen. Nach Abschluss wird die Bibliothek aktualisiert.",
@@ -752,6 +756,66 @@ export const de: Messages = {
       decode: "Datei konnte nicht dekodiert werden — möglicherweise beschädigt.",
       unsupported: "Videoformat wird im Player nicht unterstützt.",
       unknown: "Unbekannter Wiedergabefehler.",
+    },
+  },
+  ux: {
+    incomplete: {
+      title: "Unfertige Aufnahmen",
+      body: (n: number) =>
+        n === 1
+          ? "Nach dem letzten Beenden von Bloom blieb 1 unfertige Aufnahme übrig. Wiederherstellen?"
+          : `Nach dem letzten Beenden von Bloom blieben ${n} unfertige Aufnahmen übrig. Wiederherstellen?`,
+      recover: "Wiederherstellen",
+      discard: "Verwerfen",
+      dismiss: "Später",
+      working: "Arbeite…",
+    },
+    clicks: {
+      badge: "Klicks",
+      badgeTitle: (n: number) => `${n} aufgezeichnete Klicks`,
+      lane: (n: number) => `Klicks · ${n}`,
+      laneHint: "Marker anklicken, um zu diesem Klick zu springen",
+      none: "Keine aufgezeichneten Klicks",
+    },
+    filters: {
+      folders: "Ordner",
+      allFolders: "Alle",
+      hasClicks: "Mit Klicks",
+      savedViews: "Gespeicherte Ansichten",
+      saveView: "Ansicht speichern",
+      viewName: "Name der Ansicht",
+      viewSaved: (name: string) => `Ansicht „${name}" gespeichert`,
+      removeView: "Ansicht entfernen",
+      noFilters: "Aktiviere zuerst mindestens einen Filter",
+    },
+    postRecord: {
+      edit: "Bearbeiten",
+      share: "Teilen",
+      spotlight: "Spotlight",
+      gif: "GIF",
+      open: "Öffnen",
+      clicks: (n: number) => `${n} Klicks`,
+      spotlightBusy: "Spotlight…",
+    },
+    snapshot: {
+      button: "Schnappschuss",
+      hint: "Aktuelles Bild als PNG speichern (⌘S)",
+      saved: "Schnappschuss gespeichert",
+      failed: "Schnappschuss konnte nicht gespeichert werden",
+      noVideo: "Vorschau nicht verfügbar",
+    },
+    editor: {
+      spotlightTitle: "Klick-Spotlight",
+      spotlightHint: (n: number) =>
+        `Hebt ${n} aufgezeichnete Klicks hervor und speichert ein neues Video in der Bibliothek.`,
+      previewSpotlight: "Spotlight-Vorschau",
+      previewOn: "Vorschau an",
+      applySpotlight: "Spotlight anwenden",
+      applying: "Wende an…",
+    },
+    autoShare: {
+      label: "Nach Export teilen",
+      hint: "Öffnet das Teilen-Fenster, sobald ein Export fertig ist",
     },
   },
 }

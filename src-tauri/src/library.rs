@@ -45,6 +45,28 @@ pub(crate) fn list_recordings(app: tauri::AppHandle) -> Result<Vec<RecordingEntr
     Ok(load_all_recordings(&dir))
 }
 
+/// Relative library folder paths that contain recordings (filesystem + meta.folder).
+#[tauri::command]
+pub(crate) fn list_library_folders(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    let dir = bloom_dir(&app)?;
+    let mut set = std::collections::BTreeSet::new();
+    for entry in load_all_recordings(&dir) {
+        let folder = entry.meta.folder.trim();
+        if !folder.is_empty() {
+            set.insert(folder.replace('\\', "/"));
+        }
+        if let Ok(rel) = Path::new(&entry.path).strip_prefix(&dir) {
+            if let Some(parent) = rel.parent() {
+                let s = parent.to_string_lossy().replace('\\', "/");
+                if !s.is_empty() && s != "." {
+                    set.insert(s);
+                }
+            }
+        }
+    }
+    Ok(set.into_iter().collect())
+}
+
 #[tauri::command]
 pub(crate) fn get_library_stats(app: tauri::AppHandle) -> Result<LibraryStats, String> {
     let dir = bloom_dir(&app)?;

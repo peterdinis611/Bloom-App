@@ -63,6 +63,8 @@ export interface IntegrationSettings {
   notifyOnExport: boolean
   openAfterExport: boolean
   copyPathAfterExport: boolean
+  /** Open the share sheet once an export finishes. */
+  autoShareAfterExport: boolean
   preferNativeShare: boolean
 }
 
@@ -130,6 +132,7 @@ export const DEFAULTS: AppSettings = {
     notifyOnExport: false,
     openAfterExport: false,
     copyPathAfterExport: false,
+    autoShareAfterExport: false,
     preferNativeShare: true,
   },
   general: {

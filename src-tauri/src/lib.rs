@@ -81,6 +81,7 @@ pub fn run() {
             finalize::get_auto_optimize_after_record,
             finalize::set_auto_optimize_after_record,
             library::list_recordings,
+            library::list_library_folders,
             library::list_recent_recordings,
             library::get_library_stats,
             library::save_snapshot,
@@ -120,6 +121,8 @@ pub fn run() {
             cursor::stop_cursor_tracker,
             cursor::start_click_tracker,
             cursor::stop_click_tracker,
+            cursor::get_click_track,
+            cursor::has_click_track,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Bloom");

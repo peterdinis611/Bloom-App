@@ -126,6 +126,18 @@ export interface ClickTrackSummary {
   count: number
 }
 
+export interface ClickPoint {
+  t: number
+  x: number
+  y: number
+}
+
+export interface ClickTrackInfo {
+  path: string
+  count: number
+  clicks: ClickPoint[]
+}
+
 export interface ClickSpotlightOptions {
   clicksPath?: string
   outputName?: string
