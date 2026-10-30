@@ -20,6 +20,7 @@ import { ChoiceGroup } from "@/components/mac/MacUIKit"
 import { OPTIMIZE_SPEEDS, speedToNumber } from "@/lib/videoOptions"
 import { clampTrimRange, formatEditorTime, parseEditorTime } from "@/lib/editorTime"
 import {
+  cropForAspect,
   cutOutRange,
   defaultSegments,
   deleteSegment,
@@ -31,13 +32,14 @@ import {
   splitSegmentAt,
   totalSegmentsDuration,
   updateSegment,
+  type CropAspectId,
   type EditorCrop,
   type EditorSegment,
 } from "@/lib/editorSegments"
 import { FilmstripTimeline } from "@/components/editor/FilmstripTimeline"
 import { EditorCropOverlay } from "@/components/editor/EditorCropOverlay"
 import { CompareSlider } from "@/components/editor/CompareSlider"
-import { EditorStudioBay, type EditorChapter } from "@/components/editor/EditorStudioBay"
+import { EditorStudioBay, type EditorChapter, type RotateDeg } from "@/components/editor/EditorStudioBay"
 import { BloomVideoPlayer, type BloomVideoPlayerHandle } from "@/components/video/BloomVideoPlayer"
 import { useExportQueue } from "@/hooks/useExportQueue"
 import type {
@@ -197,6 +199,13 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
   const [normalizeAudio, setNormalizeAudio] = useState(false)
   const [removeAudio, setRemoveAudio] = useState(false)
   const [useHevc, setUseHevc] = useState(false)
+  const [flipH, setFlipH] = useState(false)
+  const [flipV, setFlipV] = useState(false)
+  const [rotate, setRotate] = useState<RotateDeg>(0)
+  const [fadeIn, setFadeIn] = useState(0)
+  const [fadeOut, setFadeOut] = useState(0)
+  const [volume, setVolume] = useState(1)
+  const [cropAspect, setCropAspect] = useState<CropAspectId>("free")
   const [analysis, setAnalysis] = useState<VideoAnalyze | null>(null)
   const [clickTimes, setClickTimes] = useState<number[]>([])
   const [spotlightPreview, setSpotlightPreview] = useState(false)
@@ -226,12 +235,18 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
       normalize_audio: normalizeAudio,
       remove_audio: removeAudio,
       use_hevc: useHevc,
+      flip_h: flipH,
+      flip_v: flipV,
+      rotate,
+      fade_in_secs: fadeIn,
+      fade_out_secs: fadeOut,
+      volume: removeAudio ? 1 : volume,
       crop_x: hasCrop ? crop!.x : null,
       crop_y: hasCrop ? crop!.y : null,
       crop_w: hasCrop ? crop!.w : null,
       crop_h: hasCrop ? crop!.h : null,
     }),
-    [entry.path, preset, resolution, format, speed, replaceOriginal, subtitlesOn, srtPath, cards, denoise, normalizeAudio, removeAudio, useHevc, hasCrop, crop],
+    [entry.path, preset, resolution, format, speed, replaceOriginal, subtitlesOn, srtPath, cards, denoise, normalizeAudio, removeAudio, useHevc, flipH, flipV, rotate, fadeIn, fadeOut, volume, hasCrop, crop],
   )
 
   const syncFieldsFromSegment = useCallback((seg: EditorSegment) => {
@@ -492,10 +507,22 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
       normalizeAudio={normalizeAudio}
       removeAudio={removeAudio}
       useHevc={useHevc}
+      flipH={flipH}
+      flipV={flipV}
+      rotate={rotate}
+      fadeIn={fadeIn}
+      fadeOut={fadeOut}
+      volume={volume}
       onToggleDenoise={() => setDenoise((v) => !v)}
       onToggleNormalize={() => setNormalizeAudio((v) => !v)}
       onToggleRemoveAudio={() => setRemoveAudio((v) => !v)}
       onToggleHevc={() => setUseHevc((v) => !v)}
+      onToggleFlipH={() => setFlipH((v) => !v)}
+      onToggleFlipV={() => setFlipV((v) => !v)}
+      onRotate={setRotate}
+      onFadeIn={setFadeIn}
+      onFadeOut={setFadeOut}
+      onVolume={setVolume}
       analysis={analysis}
       onApplySuggestion={analysis ? () => {
         setPreset(analysis.suggested_preset)
@@ -582,6 +609,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
                           value={crop}
                           onChange={(c) => {
                             setCrop(c)
+                            setCropAspect("free")
                             if (c) setCropMode(false)
                           }}
                         />
@@ -638,12 +666,47 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
                       className={cn(
                         "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-semibold transition-colors",
                         cropMode || hasCrop
-                          ? "border-accent/40 bg-accent/15 text-accent"
+                          ? "border-primary/40 bg-primary/15 text-primary"
                           : "border-border/60 bg-[var(--surface)] text-foreground hover:bg-secondary",
                       )}
                     >
                       <Crop className="size-3.5" /> {sk.editor.cropToggle}
                     </button>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                      {sk.editor.aspectLabel}
+                    </span>
+                    {(["free", "16:9", "9:16", "1:1", "4:3"] as CropAspectId[]).map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => {
+                          setCropAspect(id)
+                          if (id === "free") {
+                            setCrop(null)
+                            return
+                          }
+                          const next = cropForAspect(id, info?.width ?? 1920, info?.height ?? 1080)
+                          if (next) {
+                            setCrop(next)
+                            setCropMode(true)
+                          }
+                        }}
+                        className={cn(
+                          "rounded-md px-2 py-1 text-[10px] font-semibold tabular-nums transition-colors",
+                          cropAspect === id
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-secondary text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {id === "free" ? sk.editor.aspectFree : id}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
                     {segments.map((_, i) => (
                       <button
                         key={i}
@@ -736,6 +799,25 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
               {step === "export" && (
                 <div className="min-h-0 flex-1 space-y-4 overflow-y-auto border-t border-border/50 px-4 py-4 sm:px-5">
                   <p className="text-xs text-muted-foreground">{sk.editor.exportHint}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(
+                      [
+                        { id: "gif", label: sk.editor.quick.gif, run: () => { setFormat("gif"); setResolution("480p"); setPreset("small"); setRemoveAudio(true) } },
+                        { id: "social", label: sk.editor.quick.social, run: () => { setFormat("mp4"); setResolution("720p"); setPreset("medium"); setCropAspect("1:1"); const c = cropForAspect("1:1", info?.width ?? 1920, info?.height ?? 1080); if (c) setCrop(c) } },
+                        { id: "vertical", label: sk.editor.quick.vertical, run: () => { setFormat("mp4"); setResolution("1080p"); setPreset("medium"); setCropAspect("9:16"); const c = cropForAspect("9:16", info?.width ?? 1920, info?.height ?? 1080); if (c) setCrop(c) } },
+                        { id: "hq", label: sk.editor.quick.hq, run: () => { setFormat("mp4"); setResolution("original"); setPreset("high"); setUseHevc(false); setCrop(null); setCropAspect("free") } },
+                      ] as const
+                    ).map((q) => (
+                      <button
+                        key={q.id}
+                        type="button"
+                        onClick={q.run}
+                        className="rounded-lg border border-border/60 bg-[var(--surface)] px-2.5 py-1.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-secondary"
+                      >
+                        {q.label}
+                      </button>
+                    ))}
+                  </div>
                   <ChoiceGroup label={sk.optimize.qualityPreset} options={presets} value={preset} onChange={setPreset} />
                   <ChoiceGroup label={sk.optimize.resolution} layout="wrap" options={resolutions} value={resolution} onChange={setResolution} />
                   <ChoiceGroup label={sk.optimize.speed} layout="wrap" options={speeds} value={speed} onChange={setSpeed} />
@@ -772,7 +854,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
                             className="rounded-lg border border-border/60 bg-background px-2.5 py-2 font-mono text-[11px]"
                           />
                         </label>
-                        {cards.slice(0, 2).map((card, i) => (
+                        {cards.slice(0, 6).map((card, i) => (
                           <div key={i} className="grid gap-2 sm:grid-cols-4">
                             <input
                               value={card.text}
@@ -784,8 +866,8 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
                             <input type="number" min={0} step={0.1} value={card.end_secs} onChange={(e) => setCards((prev) => prev.map((c, j) => (j === i ? { ...c, end_secs: Number(e.target.value) } : c)))} placeholder={sk.editor.cardEnd} className="rounded-lg border border-border/60 bg-background px-2 py-2 font-mono text-[11px]" />
                           </div>
                         ))}
-                        {cards.length < 2 && (
-                          <button type="button" onClick={() => setCards((prev) => [...prev, { text: "", start_secs: 0, end_secs: 3 }])} className="self-start text-[11px] font-semibold text-accent hover:underline">
+                        {cards.length < 6 && (
+                          <button type="button" onClick={() => setCards((prev) => [...prev, { text: "", start_secs: playhead, end_secs: playhead + 3 }])} className="self-start text-[11px] font-semibold text-primary hover:underline">
                             {sk.editor.addCard}
                           </button>
                         )}

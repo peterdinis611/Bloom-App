@@ -46,6 +46,9 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
+    "resources": [
+      "resources/demo-bloom.mp4"
+    ],
     "macOS": {
       "entitlements": "./entitlements.plist",
       "minimumSystemVersion": "12.0",

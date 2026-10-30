@@ -94,6 +94,7 @@ pub fn run() {
             library::share_recording,
             library::validate_recording,
             library::import_recording,
+            library::ensure_demo_recording,
             library::reveal_in_finder,
             library::open_library_folder,
             library::duplicate_recording,

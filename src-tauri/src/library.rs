@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use tauri::Manager;
+use tauri::path::BaseDirectory;
 
 use crate::share;
 use crate::types::{LibraryStats, RecordingEntry, RecordingMeta, ShareResult, ValidationResult};
@@ -448,6 +449,86 @@ pub(crate) fn import_recording(
     let meta_path = meta_path_for(&dest);
     let json = serde_json::to_string_pretty(&meta).map_err(|e| format!("Serialise error: {e}"))?;
     fs::write(&meta_path, json).map_err(|e| format!("Cannot write sidecar: {e}"))?;
+
+    Ok(RecordingEntry {
+        meta,
+        path: dest.to_string_lossy().into_owned(),
+        meta_path: meta_path.to_string_lossy().into_owned(),
+    })
+}
+
+/// Marker written into `notes` so we can reuse the same demo clip.
+const DEMO_NOTES_MARKER: &str = "bloom-demo-v1";
+const DEMO_RESOURCE_NAME: &str = "demo-bloom.mp4";
+
+fn resolve_demo_mp4(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    if let Ok(p) = app.path().resolve(DEMO_RESOURCE_NAME, BaseDirectory::Resource) {
+        if p.is_file() {
+            return Ok(p);
+        }
+    }
+    let fallback = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("resources")
+        .join(DEMO_RESOURCE_NAME);
+    if fallback.is_file() {
+        return Ok(fallback);
+    }
+    Err("Demo video is missing from the app bundle.".to_string())
+}
+
+/// Ensure a short bundled demo clip exists in the library (import once, reuse later).
+#[tauri::command]
+pub(crate) fn ensure_demo_recording(app: tauri::AppHandle) -> Result<RecordingEntry, String> {
+    let dir = bloom_dir(&app)?;
+    for entry in load_all_recordings(&dir) {
+        let is_demo = entry.meta.notes == DEMO_NOTES_MARKER
+            || entry.meta.tags.iter().any(|t| t == "demo");
+        if is_demo && Path::new(&entry.path).is_file() {
+            return Ok(entry);
+        }
+    }
+
+    let source = resolve_demo_mp4(&app)?;
+    let locale = app.state::<crate::i18n::LocaleState>();
+    let s = crate::i18n::current_strings(&*locale);
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let filename = format!("Bloom-Demo-{}.mp4", &id[..8]);
+    let dest = dir.join(&filename);
+    fs::copy(&source, &dest).map_err(|e| format!("{}: {e}", s.err_copy_failed))?;
+
+    let finalized = crate::finalize::finalize_recording(&dest, 0.0);
+    let file_size_bytes = fs::metadata(&dest)
+        .map(|m| m.len())
+        .unwrap_or(finalized.file_size_bytes)
+        .max(finalized.file_size_bytes);
+
+    let meta = RecordingMeta {
+        id: id.clone(),
+        title: "Bloom Demo".to_string(),
+        filename,
+        created_at: now_iso(),
+        duration_secs: finalized.duration_secs,
+        file_size_bytes,
+        source: "import".to_string(),
+        quality: "540p".to_string(),
+        has_microphone: false,
+        has_system_audio: true,
+        target_label: "Demo".to_string(),
+        starred: false,
+        tags: vec!["demo".to_string()],
+        folder: String::new(),
+        notes: DEMO_NOTES_MARKER.to_string(),
+    };
+
+    let meta_path = meta_path_for(&dest);
+    let json = serde_json::to_string_pretty(&meta).map_err(|e| format!("Serialise error: {e}"))?;
+    fs::write(&meta_path, json).map_err(|e| format!("Cannot write sidecar: {e}"))?;
+
+    // Best-effort thumbnail for the editor / library list.
+    if let Some(ff) = find_ffmpeg_path() {
+        let _ = make_thumbnail(&ff, &dest, 1.0);
+    }
 
     Ok(RecordingEntry {
         meta,

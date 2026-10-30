@@ -350,10 +350,11 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
 
   return (
     <div className={cn(
-      "viewfinder relative flex aspect-video w-full shrink-0 items-center justify-center overflow-hidden rounded-lg bg-black/90",
-      isRecording && "viewfinder-recording ring-1 ring-[var(--rec-indicator)]/40",
+      "viewfinder relative flex aspect-video w-full shrink-0 items-center justify-center overflow-hidden",
+      isRecording && "viewfinder-recording",
+      status === "idle" && !showVideo && "viewfinder-idle",
     )}>
-      <div className="absolute inset-0 z-0 bg-black" />
+      <div className="absolute inset-0 z-0 bg-[#0a0a0b]" />
       <video
         ref={setVideoEl}
         autoPlay
@@ -368,13 +369,13 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
         <span className="viewfinder-corner viewfinder-corner-bl" />
         <span className="viewfinder-corner viewfinder-corner-br" />
       </div>
-      <div className="aperture-bloom" aria-hidden />
+      {(isRecording || isPaused) && <div className="aperture-bloom" aria-hidden />}
 
       {showFullFault && fault && <PreviewFaultPanel fault={fault} details={details} />}
 
       {showCompactFault && fault && (
-        <div className="absolute inset-x-3 bottom-14 z-20 flex items-start gap-2 rounded-lg border border-white/10 bg-black/70 px-3 py-2 backdrop-blur-md">
-          <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 tone-fg-success" />
+        <div className="absolute inset-x-3 bottom-14 z-20 flex items-start gap-2 rounded-xl bg-black/55 px-3 py-2 backdrop-blur-md ring-1 ring-white/10">
+          <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-[var(--status-success-fg)]" />
           <p className="text-[11px] leading-snug text-white/80">
             {fault.title}. Nahrávanie pokračuje — skontroluj súbor v Knižnici po ukončení.
           </p>
@@ -382,51 +383,55 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
       )}
 
       {status === "preparing" && !showFault && (
-        <div className="relative z-[2] flex flex-col items-center gap-2">
-          <div className="size-8 animate-spin rounded-full border-2 border-transparent border-t-[var(--accent)]" />
-          <p className="text-[12px] text-muted-foreground">{sk.record.preparing}</p>
+        <div className="relative z-[2] flex flex-col items-center gap-2.5">
+          <div className="size-7 animate-spin rounded-full border-2 border-white/15 border-t-white/80" />
+          <p className="text-[12px] text-white/55">{sk.record.preparing}</p>
         </div>
       )}
 
       {status === "countdown" && (
-        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/40">
-          <div className="flex flex-col items-center gap-2">
-            <span className="text-5xl font-semibold tabular-nums tracking-tight text-white">{countdown}</span>
-            <p className="text-[12px] text-white/75">{sk.record.starting}</p>
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/35 backdrop-blur-[2px]">
+          <div className="flex flex-col items-center gap-1.5">
+            <span className="text-[64px] font-semibold leading-none tabular-nums tracking-[-0.04em] text-white">
+              {countdown}
+            </span>
+            <p className="text-[12px] font-medium text-white/60">{sk.record.starting}</p>
           </div>
         </div>
       )}
 
       {isActive && (
-        <div className="pointer-events-none absolute bottom-3 left-3 z-30 rounded-[8px] bg-black/55 px-2.5 py-1.5 backdrop-blur-md">
-          <div className="font-mono text-[17px] font-medium tabular-nums text-white">{formatDuration(elapsed)}</div>
-          {isPaused && <span className="text-[10px] text-white/70">{sk.record.paused}</span>}
+        <div className="pointer-events-none absolute bottom-3 left-3 z-30 rounded-[9px] bg-black/50 px-2.5 py-1.5 backdrop-blur-md ring-1 ring-white/10">
+          <div className="font-mono text-[17px] font-medium tabular-nums tracking-tight text-white">
+            {formatDuration(elapsed)}
+          </div>
+          {isPaused && <span className="text-[10px] font-medium text-white/65">{sk.record.paused}</span>}
         </div>
       )}
 
       {status === "processing" && (
-        <div className="relative z-[2] flex flex-col items-center gap-2">
-          <div className="size-8 animate-spin rounded-full border-2 border-transparent border-t-[var(--accent)]" />
-          <p className="text-[12px] text-muted-foreground">{sk.record.saving}</p>
+        <div className="relative z-[2] flex flex-col items-center gap-2.5">
+          <div className="size-7 animate-spin rounded-full border-2 border-white/15 border-t-white/80" />
+          <p className="text-[12px] text-white/55">{sk.record.saving}</p>
         </div>
       )}
 
       {status === "done" && (
         <div className="relative z-[2] flex flex-col items-center gap-2">
-          <CheckCircle2 className="size-8 text-[var(--status-success-fg)]" />
-          <p className="text-[13px] font-medium text-[var(--status-success-fg)]">{sk.record.saved}</p>
+          <CheckCircle2 className="size-8 text-[var(--status-success-fg)]" strokeWidth={1.5} />
+          <p className="text-[13px] font-medium text-white/85">{sk.record.saved}</p>
         </div>
       )}
 
       {isRecording && (
-        <div className="absolute left-3 top-3 z-30 flex items-center gap-1.5 rounded-[7px] bg-black/55 px-2 py-1 backdrop-blur-md">
-          <span className="rec-dot size-2 rounded-full" />
-          <span className="text-[11px] font-semibold tracking-wide text-white/90">REC</span>
+        <div className="absolute left-3 top-3 z-30 flex items-center gap-1.5 rounded-full bg-black/50 px-2.5 py-1 backdrop-blur-md ring-1 ring-white/10">
+          <span className="rec-dot size-1.5 rounded-full" />
+          <span className="text-[10px] font-semibold tracking-[0.06em] text-white/90">REC</span>
         </div>
       )}
 
       {status === "idle" && summary && !showFault && (
-        <div className="absolute bottom-2 left-2 z-[2] rounded-[7px] bg-black/50 px-2 py-1 text-[11px] text-white/70">
+        <div className="absolute bottom-3 left-3 z-[2] rounded-full bg-black/45 px-2.5 py-1 text-[11px] font-medium text-white/60 backdrop-blur-sm ring-1 ring-white/8">
           {summary}
         </div>
       )}
@@ -445,13 +450,20 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 function SaveBanner({ path, onDismiss }: { path: string; onDismiss: () => void }) {
   const sk = useMessages()
   return (
-    <div className="fade-up banner-success flex items-center gap-3 rounded-xl px-3.5 py-3">
-      <FolderOpen className="size-4 shrink-0 opacity-80" />
-      <div className="min-w-0 flex-1">
-        <p className="text-xs font-semibold">{sk.record.savedTo}</p>
-        <p className="truncate font-mono text-[11px] text-muted-foreground">{path}</p>
+    <div className="fade-up flex items-center gap-2.5 rounded-[10px] bg-secondary/80 px-3 py-2">
+      <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-background/70">
+        <FolderOpen className="size-3.5 text-primary" strokeWidth={1.75} />
       </div>
-      <button onClick={onDismiss} className="text-muted-foreground hover:text-foreground">
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-medium text-muted-foreground">{sk.record.savedTo}</p>
+        <p className="truncate font-mono text-[11px] tracking-tight text-foreground/80">{path}</p>
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground"
+        aria-label={sk.toast.dismiss}
+      >
         <X className="size-3.5" />
       </button>
     </div>

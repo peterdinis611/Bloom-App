@@ -10,6 +10,8 @@ export type DocBlock =
 export interface DocSection {
   id: string
   title: string
+  /** One-line lead under the section title */
+  blurb?: string
   blocks: DocBlock[]
 }
 
@@ -17,6 +19,7 @@ export const DOC_SECTIONS: DocSection[] = [
   {
     id: "start",
     title: "Začíname",
+    blurb: "Od prvej nahrávky po knižnicu — čo Bloom robí a kde nájdeš súbory.",
     blocks: [
       {
         type: "p",
@@ -46,6 +49,7 @@ export const DOC_SECTIONS: DocSection[] = [
   {
     id: "record",
     title: "Nahrávanie",
+    blurb: "Obrazovka, kamera, PiP, oblasť a skratky počas záznamu.",
     blocks: [
       {
         type: "p",
@@ -83,6 +87,7 @@ export const DOC_SECTIONS: DocSection[] = [
   {
     id: "draw",
     title: "Kreslenie",
+    blurb: "Anotácie priamo do videa — pero, šípky a tvary jedným klávesom.",
     blocks: [
       {
         type: "p",
@@ -105,6 +110,7 @@ export const DOC_SECTIONS: DocSection[] = [
   {
     id: "library",
     title: "Knižnica",
+    blurb: "Prehrať, upraviť, zdieľať a držať poriadok v lokálnych klipoch.",
     blocks: [
       {
         type: "table",
@@ -142,6 +148,7 @@ export const DOC_SECTIONS: DocSection[] = [
   {
     id: "editor",
     title: "Editor a export",
+    blurb: "Trim, crop, transformácie a export do fronty bez čakania.",
     blocks: [
       {
         type: "p",
@@ -180,6 +187,7 @@ export const DOC_SECTIONS: DocSection[] = [
   {
     id: "settings",
     title: "Nastavenia",
+    blurb: "Vzhľad, predvoľby nahrávania, export a integrácie.",
     blocks: [
       {
         type: "table",
@@ -206,6 +214,7 @@ export const DOC_SECTIONS: DocSection[] = [
   {
     id: "troubleshoot",
     title: "Riešenie problémov",
+    blurb: "Najčastejšie situácie a rýchle opravy.",
     blocks: [
       {
         type: "table",

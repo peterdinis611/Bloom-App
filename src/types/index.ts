@@ -248,6 +248,14 @@ export interface OptimizeOptions {
   normalize_audio?: boolean
   remove_audio?: boolean
   use_hevc?: boolean
+  flip_h?: boolean
+  flip_v?: boolean
+  /** Clockwise degrees: 0 | 90 | 180 | 270 */
+  rotate?: 0 | 90 | 180 | 270
+  fade_in_secs?: number
+  fade_out_secs?: number
+  /** Linear gain; 1 = unchanged */
+  volume?: number
 }
 
 /** Mirrors SubtitleCard in Rust. */

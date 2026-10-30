@@ -396,23 +396,23 @@ export function SettingsPage({
                 type="button"
                 onClick={() => handleThemeChange(t.id)}
                 className={cn(
-                  "bloom-card relative rounded-lg p-2.5 text-left min-h-[72px] cursor-pointer",
+                  "theme-card bloom-card relative rounded-lg p-2.5 text-left min-h-[76px] cursor-pointer",
                   active && "bloom-card-active",
                 )}
               >
                 {active && (
-                  <span className="absolute right-2 top-2 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                  <span className="absolute right-2 top-2 z-[1] flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm">
                     <Check className="size-3" strokeWidth={3} />
                   </span>
                 )}
                 <div
-                  className="mb-2 h-7 rounded-md shadow-inner"
+                  className="mb-2 h-8 rounded-md ring-1 ring-black/5"
                   style={{
                     background: `linear-gradient(135deg, ${t.swatch[0]} 0%, ${t.swatch[1]} 42%, ${t.swatch[2]} 100%)`,
                   }}
                 />
-                <p className="text-[12px] font-semibold">{t.name}</p>
-                <p className="text-[10px] text-muted-foreground">{t.description}</p>
+                <p className="theme-card__name">{t.name}</p>
+                <p className="theme-card__desc">{t.description}</p>
               </button>
             )})}
           </div>

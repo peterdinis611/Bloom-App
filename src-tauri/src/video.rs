@@ -168,6 +168,24 @@ pub struct OptimizeOptions {
     /// H.265 / HEVC encode for smaller MP4 (when supported).
     #[serde(default)]
     pub use_hevc: bool,
+    /// Mirror horizontally.
+    #[serde(default)]
+    pub flip_h: bool,
+    /// Mirror vertically.
+    #[serde(default)]
+    pub flip_v: bool,
+    /// Clockwise rotation in degrees: 0 | 90 | 180 | 270.
+    #[serde(default)]
+    pub rotate: u16,
+    /// Fade-in duration in seconds (0 = off).
+    #[serde(default)]
+    pub fade_in_secs: f64,
+    /// Fade-out duration in seconds (0 = off).
+    #[serde(default)]
+    pub fade_out_secs: f64,
+    /// Linear volume gain (1.0 = unchanged). Clamped ~0.05–4.0 at encode time.
+    #[serde(default = "default_volume")]
+    pub volume: f64,
 }
 
 fn default_true() -> bool {
@@ -176,6 +194,37 @@ fn default_true() -> bool {
 
 fn default_speed() -> f64 {
     1.0
+}
+
+fn default_volume() -> f64 {
+    1.0
+}
+
+fn effective_volume(v: f64) -> f64 {
+    if !v.is_finite() {
+        return 1.0;
+    }
+    v.clamp(0.05, 4.0)
+}
+
+fn effective_fade(secs: f64) -> f64 {
+    if secs.is_finite() && secs > 0.02 {
+        secs.min(8.0)
+    } else {
+        0.0
+    }
+}
+
+fn has_geometry_transform(opts: &OptimizeOptions) -> bool {
+    opts.flip_h || opts.flip_v || matches!(opts.rotate, 90 | 180 | 270)
+}
+
+fn has_fades(opts: &OptimizeOptions) -> bool {
+    effective_fade(opts.fade_in_secs) > 0.0 || effective_fade(opts.fade_out_secs) > 0.0
+}
+
+fn volume_changed(opts: &OptimizeOptions) -> bool {
+    (effective_volume(opts.volume) - 1.0).abs() > 0.01
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1056,6 +1105,9 @@ pub(crate) fn can_stream_copy(opts: &OptimizeOptions, info: &VideoInfo) -> bool 
         && !opts.remove_audio
         && !has_subtitles(opts)
         && !has_spatial_crop(opts)
+        && !has_geometry_transform(opts)
+        && !has_fades(opts)
+        && !volume_changed(opts)
         && opts.keep_ranges.len() <= 1
         && is_h264_codec(&info.codec)
 }
@@ -1131,10 +1183,51 @@ fn denoise_filter(preset: &str) -> &'static str {
     }
 }
 
-fn append_video_filters(vf: &mut Vec<String>, opts: &OptimizeOptions, height: Option<u32>, format: &str) {
+fn append_geometry_filters(vf: &mut Vec<String>, opts: &OptimizeOptions) {
+    match opts.rotate {
+        90 => vf.push("transpose=1".into()),
+        180 => {
+            vf.push("transpose=1".into());
+            vf.push("transpose=1".into());
+        }
+        270 => vf.push("transpose=2".into()),
+        _ => {}
+    }
+    if opts.flip_h {
+        vf.push("hflip".into());
+    }
+    if opts.flip_v {
+        vf.push("vflip".into());
+    }
+}
+
+fn append_fade_filters(vf: &mut Vec<String>, opts: &OptimizeOptions, out_duration: Option<f64>) {
+    let fade_in = effective_fade(opts.fade_in_secs);
+    let fade_out = effective_fade(opts.fade_out_secs);
+    let speed = effective_speed(opts.speed);
+    if fade_in > 0.0 {
+        vf.push(format!("fade=t=in:st=0:d={fade_in:.2}"));
+    }
+    if fade_out > 0.0 {
+        if let Some(dur) = out_duration {
+            let timeline = (dur / speed).max(0.05);
+            let st = (timeline - fade_out).max(0.0);
+            vf.push(format!("fade=t=out:st={st:.2}:d={fade_out:.2}"));
+        }
+    }
+}
+
+fn append_video_filters(
+    vf: &mut Vec<String>,
+    opts: &OptimizeOptions,
+    height: Option<u32>,
+    format: &str,
+    out_duration: Option<f64>,
+) {
     if let Some(crop) = crop_filter(opts) {
         vf.push(crop);
     }
+    append_geometry_filters(vf, opts);
     if format == "gif" {
         vf.push("fps=12".into());
         vf.push(scale_filter(height.unwrap_or(480), &opts.preset));
@@ -1148,10 +1241,14 @@ fn append_video_filters(vf: &mut Vec<String>, opts: &OptimizeOptions, height: Op
     if opts.denoise && format != "gif" {
         vf.push(denoise_filter(&opts.preset).into());
     }
+    append_fade_filters(vf, opts, out_duration);
     vf.extend(subtitle_drawtext_filters(opts));
 }
 
 fn append_audio_filters(af: &mut Vec<String>, opts: &OptimizeOptions, speed: f64) {
+    if volume_changed(opts) {
+        af.push(format!("volume={:.3}", effective_volume(opts.volume)));
+    }
     if opts.normalize_audio {
         af.push("dynaudnorm=f=150:g=12".into());
     }
@@ -1253,6 +1350,7 @@ fn can_copy_audio(opts: &OptimizeOptions, info: &VideoInfo, speed: f64) -> bool 
     info.has_audio
         && !opts.remove_audio
         && !opts.normalize_audio
+        && !volume_changed(opts)
         && effective_speed(speed) == 1.0
         && is_mp4_family(&opts.format)
         && opts.keep_ranges.len() <= 1
@@ -1486,7 +1584,7 @@ fn build_args(
         }
 
         let mut post: Vec<String> = Vec::new();
-        append_video_filters(&mut post, opts, height, format);
+        append_video_filters(&mut post, opts, height, format, trim_duration(opts));
         if post.is_empty() {
             parts.push("[vc]null[outv]".into());
         } else {
@@ -1509,7 +1607,7 @@ fn build_args(
         }
     } else {
         let mut vf: Vec<String> = Vec::new();
-        append_video_filters(&mut vf, opts, height, format);
+        append_video_filters(&mut vf, opts, height, format, trim_duration(opts));
         if !vf.is_empty() {
             a.push("-vf".into());
             a.push(vf.join(","));

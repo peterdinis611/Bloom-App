@@ -37,6 +37,12 @@ fn opts(preset: &str, resolution: &str, format: &str) -> OptimizeOptions {
         normalize_audio: false,
         remove_audio: false,
         use_hevc: false,
+        flip_h: false,
+        flip_v: false,
+        rotate: 0,
+        fade_in_secs: 0.0,
+        fade_out_secs: 0.0,
+        volume: 1.0,
     }
 }
 

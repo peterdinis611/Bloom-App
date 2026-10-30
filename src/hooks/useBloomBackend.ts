@@ -281,6 +281,11 @@ export async function importRecording(sourcePath: string): Promise<RecordingEntr
   return invoke<RecordingEntry>("import_recording", { sourcePath })
 }
 
+/** Seed (or reuse) the bundled Bloom Demo clip for trying the editor. */
+export async function ensureDemoRecording(): Promise<RecordingEntry> {
+  return invoke<RecordingEntry>("ensure_demo_recording")
+}
+
 /**
  * Opens the recording's parent folder in Finder / Explorer / file-manager
  * with the file highlighted.

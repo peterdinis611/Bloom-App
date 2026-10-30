@@ -118,9 +118,9 @@ export function buildPreviewFault(
   if (status === "idle" && source === "screen") {
     return {
       kind: "idle_screen",
-      title: "Náhľad sa spustí pri nahrávaní",
-      body: "macOS neumožňuje ukázať obrazovku skôr, než potvrdíš zdieľanie v systémovom dialógu.",
-      steps: ["Klikni Nahrať a vyber monitor v systémovom okne macOS."],
+      title: "Náhľad pri nahrávaní",
+      body: "Obrazovku uvidíš až po potvrdení zdieľania v dialógu macOS.",
+      steps: ["Klikni Nahrať a vyber monitor."],
       recordingMayWork: false,
     }
   }

@@ -130,3 +130,26 @@ export function clampCrop(crop: EditorCrop): EditorCrop {
   const y = Math.max(0, Math.min(1 - h, crop.y))
   return { x, y, w, h }
 }
+
+export type CropAspectId = "free" | "16:9" | "9:16" | "1:1" | "4:3"
+
+/** Centered crop that matches a target aspect inside a source frame. */
+export function cropForAspect(
+  aspect: CropAspectId,
+  sourceW: number,
+  sourceH: number,
+): EditorCrop | null {
+  if (aspect === "free" || sourceW <= 0 || sourceH <= 0) return null
+  const target = aspect === "16:9" ? 16 / 9 : aspect === "9:16" ? 9 / 16 : aspect === "1:1" ? 1 : 4 / 3
+  const src = sourceW / sourceH
+  let w: number
+  let h: number
+  if (src > target) {
+    h = 1
+    w = (target * sourceH) / sourceW
+  } else {
+    w = 1
+    h = sourceW / (target * sourceH)
+  }
+  return clampCrop({ x: (1 - w) / 2, y: (1 - h) / 2, w, h })
+}

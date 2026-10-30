@@ -10,6 +10,7 @@ import { TitleBar } from "@/components/layout/TitleBar"
 import { Sidebar, type AppView } from "@/components/layout/Sidebar"
 import { RecordPage } from "@/pages/RecordPage"
 import { LibraryPage } from "@/pages/LibraryPage"
+import { EditorPage } from "@/pages/EditorPage"
 import { SettingsPage } from "@/pages/SettingsPage"
 import { DocsPage } from "@/pages/DocsPage"
 import { WhatsNewPage } from "@/pages/WhatsNewPage"
@@ -192,7 +193,7 @@ function AppShell() {
   }
 
   const handleEditRecording = (id: string) => {
-    setView("library")
+    setView("editor")
     setEditRecordingId(id)
   }
 
@@ -233,6 +234,13 @@ function AppShell() {
                 onStartRecording={() => setView("record")}
                 openRecordingId={openRecordingId}
                 onOpenRecordingHandled={() => setOpenRecordingId(null)}
+                editRecordingId={null}
+                onEditRecordingHandled={() => {}}
+              />
+            )}
+            {view === "editor" && (
+              <EditorPage
+                active
                 editRecordingId={editRecordingId}
                 onEditRecordingHandled={() => setEditRecordingId(null)}
               />

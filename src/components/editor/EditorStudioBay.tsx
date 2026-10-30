@@ -3,8 +3,11 @@ import {
   BookmarkPlus,
   Clapperboard,
   FileVideo,
+  FlipHorizontal2,
+  FlipVertical2,
   Gauge,
   MousePointerClick,
+  RotateCcw,
   Sparkles,
   Trash2,
   Volume2,
@@ -21,6 +24,8 @@ export interface EditorChapter {
   t: number
   label: string
 }
+
+export type RotateDeg = 0 | 90 | 180 | 270
 
 interface EditorStudioBayProps {
   title: string
@@ -40,14 +45,35 @@ interface EditorStudioBayProps {
   normalizeAudio: boolean
   removeAudio: boolean
   useHevc: boolean
+  flipH: boolean
+  flipV: boolean
+  rotate: RotateDeg
+  fadeIn: number
+  fadeOut: number
+  volume: number
   onToggleDenoise: () => void
   onToggleNormalize: () => void
   onToggleRemoveAudio: () => void
   onToggleHevc: () => void
+  onToggleFlipH: () => void
+  onToggleFlipV: () => void
+  onRotate: (deg: RotateDeg) => void
+  onFadeIn: (secs: number) => void
+  onFadeOut: (secs: number) => void
+  onVolume: (v: number) => void
   analysis: VideoAnalyze | null
   onApplySuggestion?: () => void
   className?: string
 }
+
+const ROTATES: RotateDeg[] = [0, 90, 180, 270]
+const FADE_OPTS = [0, 0.3, 0.6, 1, 1.5]
+const VOLUME_OPTS = [
+  { v: 0.5, label: "0.5×" },
+  { v: 1, label: "1×" },
+  { v: 1.5, label: "1.5×" },
+  { v: 2, label: "2×" },
+]
 
 export function EditorStudioBay({
   title,
@@ -67,10 +93,22 @@ export function EditorStudioBay({
   normalizeAudio,
   removeAudio,
   useHevc,
+  flipH,
+  flipV,
+  rotate,
+  fadeIn,
+  fadeOut,
+  volume,
   onToggleDenoise,
   onToggleNormalize,
   onToggleRemoveAudio,
   onToggleHevc,
+  onToggleFlipH,
+  onToggleFlipV,
+  onRotate,
+  onFadeIn,
+  onFadeOut,
+  onVolume,
   analysis,
   onApplySuggestion,
   className,
@@ -92,8 +130,8 @@ export function EditorStudioBay({
       )}
     >
       <div className="flex items-center gap-2 border-b border-border/40 px-4 py-3">
-        <div className="flex size-8 items-center justify-center rounded-lg bg-accent/15">
-          <Clapperboard className="size-4 text-accent" />
+        <div className="flex size-8 items-center justify-center rounded-lg bg-primary/12">
+          <Clapperboard className="size-4 text-primary" />
         </div>
         <div className="min-w-0">
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/80">
@@ -104,7 +142,6 @@ export function EditorStudioBay({
       </div>
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-        {/* Clip dossier */}
         <section className="rounded-xl border border-border/40 bg-background/40 p-3">
           <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">
             <FileVideo className="size-3" />
@@ -123,7 +160,6 @@ export function EditorStudioBay({
           </p>
         </section>
 
-        {/* Chapters — new section */}
         <section className="rounded-xl border border-border/40 bg-background/40 p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">
@@ -165,7 +201,7 @@ export function EditorStudioBay({
                     onClick={() => onSeekChapter(ch.t)}
                     className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-secondary"
                   >
-                    <span className="font-mono text-[10px] tabular-nums text-accent">
+                    <span className="font-mono text-[10px] tabular-nums text-primary">
                       {formatDurationSecs(ch.t)}
                     </span>
                     <span className="truncate text-[12px] font-medium text-foreground">{ch.label}</span>
@@ -184,10 +220,9 @@ export function EditorStudioBay({
           )}
         </section>
 
-        {/* Clicks / spotlight */}
         {clickCount > 0 && (
-          <section className="rounded-xl border border-accent/25 bg-accent/5 p-3">
-            <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-accent">
+          <section className="rounded-xl border border-primary/25 bg-primary/5 p-3">
+            <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-primary">
               <MousePointerClick className="size-3" />
               {sk.ux.editor.spotlightTitle}
             </div>
@@ -199,7 +234,7 @@ export function EditorStudioBay({
                 className={cn(
                   "rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors",
                   spotlightPreview
-                    ? "border-accent/40 bg-accent/20 text-accent"
+                    ? "border-primary/40 bg-primary/20 text-primary"
                     : "border-border/60 bg-background text-foreground hover:bg-secondary",
                 )}
               >
@@ -217,7 +252,125 @@ export function EditorStudioBay({
           </section>
         )}
 
-        {/* Enhance */}
+        {/* Transform */}
+        <section className="rounded-xl border border-border/40 bg-background/40 p-3">
+          <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">
+            <RotateCcw className="size-3" />
+            {sk.editor.studio.transform}
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={onToggleFlipH}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-left text-[11px] font-semibold transition-colors",
+                flipH
+                  ? "border-primary/40 bg-primary/12 text-foreground"
+                  : "border-border/50 bg-background text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <FlipHorizontal2 className={cn("size-3.5", flipH && "text-primary")} />
+              {sk.editor.transform.flipH}
+            </button>
+            <button
+              type="button"
+              onClick={onToggleFlipV}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-left text-[11px] font-semibold transition-colors",
+                flipV
+                  ? "border-primary/40 bg-primary/12 text-foreground"
+                  : "border-border/50 bg-background text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <FlipVertical2 className={cn("size-3.5", flipV && "text-primary")} />
+              {sk.editor.transform.flipV}
+            </button>
+          </div>
+          <p className="mb-1.5 mt-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            {sk.editor.transform.rotate}
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {ROTATES.map((deg) => (
+              <button
+                key={deg}
+                type="button"
+                onClick={() => onRotate(deg)}
+                className={cn(
+                  "min-w-[2.75rem] rounded-md px-2 py-1.5 text-[11px] font-semibold tabular-nums transition-colors",
+                  rotate === deg
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-secondary text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {deg}°
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {/* Fade + volume */}
+        <section className="rounded-xl border border-border/40 bg-background/40 p-3">
+          <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">
+            <Volume2 className="size-3" />
+            {sk.editor.studio.audioMotion}
+          </div>
+          <p className="mb-1.5 text-[10px] font-semibold text-muted-foreground">{sk.editor.transform.fadeIn}</p>
+          <div className="mb-2.5 flex flex-wrap gap-1">
+            {FADE_OPTS.map((s) => (
+              <button
+                key={`in-${s}`}
+                type="button"
+                onClick={() => onFadeIn(s)}
+                className={cn(
+                  "rounded-md px-2 py-1 text-[10px] font-semibold tabular-nums transition-colors",
+                  Math.abs(fadeIn - s) < 0.01
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-secondary text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {s === 0 ? sk.editor.transform.off : `${s}s`}
+              </button>
+            ))}
+          </div>
+          <p className="mb-1.5 text-[10px] font-semibold text-muted-foreground">{sk.editor.transform.fadeOut}</p>
+          <div className="mb-2.5 flex flex-wrap gap-1">
+            {FADE_OPTS.map((s) => (
+              <button
+                key={`out-${s}`}
+                type="button"
+                onClick={() => onFadeOut(s)}
+                className={cn(
+                  "rounded-md px-2 py-1 text-[10px] font-semibold tabular-nums transition-colors",
+                  Math.abs(fadeOut - s) < 0.01
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-secondary text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {s === 0 ? sk.editor.transform.off : `${s}s`}
+              </button>
+            ))}
+          </div>
+          <p className="mb-1.5 text-[10px] font-semibold text-muted-foreground">{sk.editor.transform.volume}</p>
+          <div className="flex flex-wrap gap-1">
+            {VOLUME_OPTS.map((o) => (
+              <button
+                key={o.v}
+                type="button"
+                onClick={() => onVolume(o.v)}
+                disabled={removeAudio}
+                className={cn(
+                  "rounded-md px-2 py-1 text-[10px] font-semibold tabular-nums transition-colors disabled:opacity-40",
+                  Math.abs(volume - o.v) < 0.01
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-secondary text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </section>
+
         <section className="rounded-xl border border-border/40 bg-background/40 p-3">
           <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">
             <Wand2 className="size-3" />
