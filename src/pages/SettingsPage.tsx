@@ -396,12 +396,12 @@ export function SettingsPage({
                 type="button"
                 onClick={() => handleThemeChange(t.id)}
                 className={cn(
-                  "bloom-card relative rounded-lg p-2.5 text-left transition-[background-color,box-shadow] duration-150 min-h-[72px] cursor-pointer",
-                  active && "bloom-card-active ring-2 ring-accent/30",
+                  "bloom-card relative rounded-lg p-2.5 text-left min-h-[72px] cursor-pointer",
+                  active && "bloom-card-active",
                 )}
               >
                 {active && (
-                  <span className="absolute right-2 top-2 flex size-5 items-center justify-center rounded-full bg-accent text-white">
+                  <span className="absolute right-2 top-2 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
                     <Check className="size-3" strokeWidth={3} />
                   </span>
                 )}
@@ -470,6 +470,16 @@ export function SettingsPage({
             <MacToggle
               on={general.confirmDelete}
               onChange={() => updateGeneral({ confirmDelete: !general.confirmDelete })}
+            />
+          </MacRow>
+          <MacRow
+            label={sk.settings.reduceTransparency}
+            hint={sk.settings.reduceTransparencyHint}
+            onClick={() => updateGeneral({ reduceTransparency: !general.reduceTransparency })}
+          >
+            <MacToggle
+              on={general.reduceTransparency}
+              onChange={() => updateGeneral({ reduceTransparency: !general.reduceTransparency })}
             />
           </MacRow>
         </MacGroup>

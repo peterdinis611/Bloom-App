@@ -25,17 +25,16 @@ export function Sidebar({ view, onChange, locked = false, recording = false, new
     { id: "settings", label: sk.nav.settings, icon: Settings },
   ]
   return (
-    <aside className="mac-sidebar relative flex w-[204px] shrink-0 flex-col">
-      <div className="flex items-center gap-2.5 px-4 pb-3 pt-4">
-        <div className="brand-icon flex size-9 items-center justify-center">
-          <Video className="size-4 text-accent" />
+    <aside className="mac-sidebar relative flex w-[212px] shrink-0 flex-col">
+      <div className="flex items-center gap-2.5 px-4 pb-3.5 pt-3.5">
+        <div className="flex size-8 items-center justify-center rounded-[9px] bg-primary text-primary-foreground">
+          <Video className="size-3.5" strokeWidth={2.25} />
         </div>
         <div className="min-w-0">
-          <p className="brand-mark">
+          <p className="text-[15px] font-semibold tracking-[-0.02em] text-foreground">
             {sk.app.name}
-            <span className="brand-mark-dot" aria-hidden>.</span>
           </p>
-          <p className="font-mono-bay text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">
+          <p className="text-[11px] tracking-[-0.01em] text-muted-foreground">
             {sk.app.tagline}
           </p>
         </div>

@@ -6,16 +6,11 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  FileVideo,
   Zap,
   SplitSquareHorizontal,
   Trash2,
   Crop,
   ArrowLeftRight,
-  MousePointerClick,
-  Loader2,
-  Bookmark,
-  Wrench,
 } from "lucide-react"
 import { useCloseOnEscape } from "@/hooks/useCloseOnEscape"
 import { cn } from "@/lib/utils"
@@ -42,8 +37,7 @@ import {
 import { FilmstripTimeline } from "@/components/editor/FilmstripTimeline"
 import { EditorCropOverlay } from "@/components/editor/EditorCropOverlay"
 import { CompareSlider } from "@/components/editor/CompareSlider"
-import { EditorChaptersPanel } from "@/components/editor/EditorChaptersPanel"
-import { chaptersToSubtitleCards, type EditorChapter } from "@/lib/editorChapters"
+import { EditorStudioBay, type EditorChapter } from "@/components/editor/EditorStudioBay"
 import { BloomVideoPlayer, type BloomVideoPlayerHandle } from "@/components/video/BloomVideoPlayer"
 import { useExportQueue } from "@/hooks/useExportQueue"
 import type {
@@ -74,7 +68,6 @@ import { localizeError } from "@/lib/i18n/localizeError"
 type Step = "preview" | "trim" | "export" | "queued"
 type SaveMode = "copy" | "replace"
 type PartsMode = "separate" | "join"
-type InspectorTab = "tools" | "chapters" | "spotlight"
 
 const STEPS: Step[] = ["preview", "trim", "export"]
 const FORMATS = [
@@ -209,8 +202,6 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
   const [spotlightPreview, setSpotlightPreview] = useState(false)
   const [spotlightBusy, setSpotlightBusy] = useState(false)
   const [chapters, setChapters] = useState<EditorChapter[]>([])
-  const [burnChapters, setBurnChapters] = useState(true)
-  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("tools")
 
   const active = segments[activeSegment] ?? segments[0]!
   const multiClip = segments.length > 1
@@ -228,13 +219,9 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
       add_to_library: !replaceOriginal,
       replace_original: replaceOriginal,
       srt_path: subtitlesOn && srtPath.trim() ? srtPath.trim() : null,
-      subtitle_cards: (() => {
-        const fromUi = subtitlesOn
-          ? cards.filter((c) => c.text.trim() && c.end_secs > c.start_secs)
-          : []
-        const fromChapters = burnChapters ? chaptersToSubtitleCards(chapters) : []
-        return [...fromUi, ...fromChapters]
-      })(),
+      subtitle_cards: subtitlesOn
+        ? cards.filter((c) => c.text.trim() && c.end_secs > c.start_secs)
+        : [],
       denoise,
       normalize_audio: normalizeAudio,
       remove_audio: removeAudio,
@@ -244,7 +231,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
       crop_w: hasCrop ? crop!.w : null,
       crop_h: hasCrop ? crop!.h : null,
     }),
-    [entry.path, preset, resolution, format, speed, replaceOriginal, subtitlesOn, srtPath, cards, denoise, normalizeAudio, removeAudio, useHevc, hasCrop, crop, burnChapters, chapters],
+    [entry.path, preset, resolution, format, speed, replaceOriginal, subtitlesOn, srtPath, cards, denoise, normalizeAudio, removeAudio, useHevc, hasCrop, crop],
   )
 
   const syncFieldsFromSegment = useCallback((seg: EditorSegment) => {
@@ -266,16 +253,15 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
       .catch(() => {})
   }, [entry.path, syncFieldsFromSegment])
 
-  // Click track (screen recordings only) — drives the clicks lane + spotlight tools.
+  // Click track (screen recordings) — studio bay + filmstrip lane.
   useEffect(() => {
-    if (step !== "trim") return
     if (entry.meta.source !== "screen" && entry.meta.source !== "both") return
     let alive = true
     getClickTrack(entry.meta.id)
       .then((track) => { if (alive) setClickTimes(track?.clicks.map((c) => c.t) ?? []) })
       .catch(() => { if (alive) setClickTimes([]) })
     return () => { alive = false }
-  }, [entry.meta.id, entry.meta.source, step])
+  }, [entry.meta.id, entry.meta.source])
 
   // Spotlight preview: flash while the playhead is just after a recorded click.
   const spotlightActive = spotlightPreview
@@ -480,470 +466,372 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
   }, [buildExportJobs, enqueue, onComplete])
 
   const clipDuration = multiClip ? totalSegmentsDuration(segments) : segmentDuration(active)
+  const showStudio = step === "preview" || step === "trim" || step === "export"
+
+  const studioBay = showStudio ? (
+    <EditorStudioBay
+      title={entry.meta.title}
+      info={info}
+      clipDuration={clipDuration}
+      playhead={playhead}
+      chapters={chapters}
+      onAddChapter={(label) => {
+        setChapters((prev) => [
+          ...prev,
+          { id: crypto.randomUUID(), t: playhead, label },
+        ].sort((a, b) => a.t - b.t))
+      }}
+      onSeekChapter={(t) => playerRef.current?.seek(t)}
+      onRemoveChapter={(id) => setChapters((prev) => prev.filter((c) => c.id !== id))}
+      clickCount={clickTimes.length}
+      spotlightPreview={spotlightPreview}
+      onToggleSpotlightPreview={() => setSpotlightPreview((v) => !v)}
+      onApplySpotlight={() => { void handleApplySpotlight() }}
+      spotlightBusy={spotlightBusy}
+      denoise={denoise}
+      normalizeAudio={normalizeAudio}
+      removeAudio={removeAudio}
+      useHevc={useHevc}
+      onToggleDenoise={() => setDenoise((v) => !v)}
+      onToggleNormalize={() => setNormalizeAudio((v) => !v)}
+      onToggleRemoveAudio={() => setRemoveAudio((v) => !v)}
+      onToggleHevc={() => setUseHevc((v) => !v)}
+      analysis={analysis}
+      onApplySuggestion={analysis ? () => {
+        setPreset(analysis.suggested_preset)
+        setResolution(analysis.suggested_resolution)
+      } : undefined}
+    />
+  ) : null
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4 fade-up"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-2 sm:p-4 backdrop-blur-xl fade-up"
       onClick={() => step !== "queued" && onClose()}
     >
       <div
-        className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+        className="editor-shell flex h-[min(94vh,920px)] w-full max-w-[min(96vw,1440px)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3 border-b border-border/60 px-4 py-3">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-primary/15">
+        <header className="flex shrink-0 items-center gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
+          <div className="flex size-10 items-center justify-center rounded-xl bg-primary/15">
             <Scissors className="size-4 text-accent" />
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-sm font-bold text-foreground">{sk.editor.title}</h3>
+            <h3 className="truncate text-[15px] font-bold tracking-tight text-foreground">{sk.editor.title}</h3>
             <p className="truncate text-[11px] text-muted-foreground">{entry.meta.title}</p>
+          </div>
+          <div className="hidden min-w-0 flex-[1.2] sm:block">
+            <StepIndicator step={step} />
           </div>
           <button
             onClick={onClose}
-            className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
           >
             <X className="size-4" />
           </button>
+        </header>
+
+        <div className="border-b border-border/40 px-4 py-2.5 sm:hidden">
+          <StepIndicator step={step} />
         </div>
 
-        {(STEPS.includes(step as (typeof STEPS)[number]) || step === "queued") && (
-          <div className="border-b border-border/40 px-4 py-3">
-            <StepIndicator step={step} />
+        {step === "queued" ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
+            <div className="flex size-16 items-center justify-center rounded-full border tone-soft-success">
+              <Check className="size-8 tone-fg-success" />
+            </div>
+            <div>
+              <p className="text-base font-bold tone-fg-success">{sk.editor.queuedTitle}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{sk.editor.queuedBody(queuedCount)}</p>
+            </div>
+            <button
+              onClick={onClose}
+              className="mt-2 min-w-[12rem] rounded-xl bg-primary px-6 py-3 text-sm font-bold text-primary-foreground hover:bg-accent"
+            >
+              {sk.editor.close}
+            </button>
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <div className={cn(
+                "editor-stage relative min-h-0 overflow-hidden bg-black/90",
+                step === "export" ? "max-h-[38%] shrink-0 basis-[38%]" : "flex-1",
+              )}>
+                {(step === "trim" || step === "export") && (
+                  <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-4">
+                    <div className="relative aspect-video h-full max-h-full w-full max-w-full overflow-hidden rounded-xl ring-1 ring-white/10">
+                      <BloomVideoPlayer
+                        ref={playerRef}
+                        path={entry.path}
+                        controlsLayout="docked"
+                        onTimeUpdate={setPlayhead}
+                      />
+                      {spotlightPreview && (
+                        <div
+                          aria-hidden
+                          className={cn(
+                            "pointer-events-none absolute inset-0 rounded-xl ring-4 ring-inset ring-accent/80 transition-opacity duration-150",
+                            spotlightActive ? "opacity-100" : "opacity-0",
+                          )}
+                        />
+                      )}
+                      {cropMode && step === "trim" && (
+                        <EditorCropOverlay
+                          value={crop}
+                          onChange={(c) => {
+                            setCrop(c)
+                            if (c) setCropMode(false)
+                          }}
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
+                {step === "preview" && (
+                  <div className="absolute inset-0 overflow-y-auto p-4 sm:p-6">
+                    <div className="mx-auto flex max-w-4xl flex-col gap-4">
+                      <CompareSlider path={entry.path} info={info} estimate={previewEstimate} />
+                      <p className="text-xs text-muted-foreground">{sk.editor.compare.hint}</p>
+                      <button
+                        onClick={() => setStep("trim")}
+                        className="flex items-center justify-center gap-2 rounded-xl bg-primary py-3.5 text-sm font-bold text-primary-foreground shadow-lg shadow-primary/25 transition-[color,background-color,box-shadow,transform] hover:bg-accent active:scale-[0.98]"
+                      >
+                        {sk.editor.continueToTrim}
+                        <ChevronRight className="size-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {step === "trim" && (
+                <div className="shrink-0 space-y-3 border-t border-border/50 bg-card px-4 py-3 sm:px-5">
+                  <p className="text-[11px] text-muted-foreground">{sk.editor.splitHint}</p>
+                  <FilmstripTimeline
+                    duration={duration}
+                    playhead={playhead}
+                    frames={frames}
+                    loading={framesLoading}
+                    segments={segments}
+                    activeSegment={activeSegment}
+                    onChangeSegment={(index, start, end) => {
+                      setActiveSegment(index)
+                      setSegments((prev) => updateSegment(prev, index, start, end, duration))
+                      if (index === activeSegment) syncFieldsFromSegment({ start, end })
+                    }}
+                    onSeek={(t) => playerRef.current?.seek(t)}
+                    clickTimes={[...clickTimes, ...chapters.map((c) => c.t)]}
+                  />
+
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={splitAtPlayhead} disabled={segments.length >= MAX_SEGMENTS} className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-[var(--surface)] px-3 py-2 text-[11px] font-semibold text-foreground transition-colors hover:bg-secondary disabled:opacity-40">
+                      <SplitSquareHorizontal className="size-3.5" /> {sk.editor.splitAtPlayhead}
+                    </button>
+                    <button type="button" onClick={cutOutActive} disabled={segments.length >= MAX_SEGMENTS} title={sk.editor.cutOutHint} className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-[var(--surface)] px-3 py-2 text-[11px] font-semibold text-foreground transition-colors hover:bg-secondary disabled:opacity-40">
+                      <Scissors className="size-3.5" /> {sk.editor.cutOutRange}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCropMode((v) => !v)}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-semibold transition-colors",
+                        cropMode || hasCrop
+                          ? "border-accent/40 bg-accent/15 text-accent"
+                          : "border-border/60 bg-[var(--surface)] text-foreground hover:bg-secondary",
+                      )}
+                    >
+                      <Crop className="size-3.5" /> {sk.editor.cropToggle}
+                    </button>
+                    {segments.map((_, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => {
+                          setActiveSegment(i)
+                          syncFieldsFromSegment(segments[i]!)
+                        }}
+                        className={cn(
+                          "rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors",
+                          i === activeSegment ? "bg-primary text-white" : "bg-secondary text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {sk.editor.segment(i + 1)}
+                      </button>
+                    ))}
+                    {activeSegment > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const merged = mergeSegment(segments, activeSegment)
+                          setSegments(merged)
+                          setActiveSegment(Math.max(0, activeSegment - 1))
+                          syncFieldsFromSegment(merged[Math.max(0, activeSegment - 1)]!)
+                        }}
+                        className="rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground"
+                      >
+                        {sk.editor.mergeSegment}
+                      </button>
+                    )}
+                    {segments.length > 1 && (
+                      <>
+                        <button type="button" onClick={() => shiftActive(-1)} disabled={activeSegment === 0} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40">
+                          <ArrowLeftRight className="size-3.5" /> {sk.editor.moveLeft}
+                        </button>
+                        <button type="button" onClick={() => shiftActive(1)} disabled={activeSegment >= segments.length - 1} className="rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40">
+                          {sk.editor.moveRight}
+                        </button>
+                        <button type="button" onClick={removeActivePart} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold tone-fg-error hover:bg-[var(--status-error-bg)]">
+                          <Trash2 className="size-3.5" /> {sk.editor.deleteSegment}
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="flex flex-col gap-2 rounded-xl border border-border/50 bg-[var(--surface)] p-3">
+                      <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">{sk.editor.startField}</label>
+                      <div className="flex gap-2">
+                        <input
+                          value={startText}
+                          onChange={(e) => { setStartText(e.target.value); setStartError(false) }}
+                          onBlur={applyStartField}
+                          onKeyDown={(e) => e.key === "Enter" && applyStartField()}
+                          className={cn("min-w-0 flex-1 rounded-lg border bg-background px-2.5 py-2 font-mono text-sm tabular-nums", startError ? "border-[var(--status-error-border)]" : "border-border/60")}
+                          spellCheck={false}
+                        />
+                        <button type="button" onClick={setInAtPlayhead} className="rounded-lg border border-border/60 bg-secondary px-2.5 text-[11px] font-semibold">{sk.editor.setIn}</button>
+                      </div>
+                      {startError && <p className="text-[10px] tone-fg-error">{sk.editor.invalidTime}</p>}
+                    </div>
+                    <div className="flex flex-col gap-2 rounded-xl border border-border/50 bg-[var(--surface)] p-3">
+                      <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">{sk.editor.endField}</label>
+                      <div className="flex gap-2">
+                        <input
+                          value={endText}
+                          onChange={(e) => { setEndText(e.target.value); setEndError(false) }}
+                          onBlur={applyEndField}
+                          onKeyDown={(e) => e.key === "Enter" && applyEndField()}
+                          className={cn("min-w-0 flex-1 rounded-lg border bg-background px-2.5 py-2 font-mono text-sm tabular-nums", endError ? "border-[var(--status-error-border)]" : "border-border/60")}
+                          spellCheck={false}
+                        />
+                        <button type="button" onClick={setOutAtPlayhead} className="rounded-lg border border-border/60 bg-secondary px-2.5 text-[11px] font-semibold">{sk.editor.setOut}</button>
+                      </div>
+                      {endError && <p className="text-[10px] tone-fg-error">{sk.editor.invalidTime}</p>}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button onClick={() => setStep("preview")} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-border/60 bg-[var(--surface)] py-2.5 text-sm font-semibold hover:bg-secondary">
+                      <ChevronLeft className="size-4" /> {sk.editor.back}
+                    </button>
+                    <button onClick={() => setStep("export")} className="flex flex-[2] items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-bold text-primary-foreground hover:bg-accent">
+                      {sk.editor.continueToExport} <ChevronRight className="size-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {step === "export" && (
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto border-t border-border/50 px-4 py-4 sm:px-5">
+                  <p className="text-xs text-muted-foreground">{sk.editor.exportHint}</p>
+                  <ChoiceGroup label={sk.optimize.qualityPreset} options={presets} value={preset} onChange={setPreset} />
+                  <ChoiceGroup label={sk.optimize.resolution} layout="wrap" options={resolutions} value={resolution} onChange={setResolution} />
+                  <ChoiceGroup label={sk.optimize.speed} layout="wrap" options={speeds} value={speed} onChange={setSpeed} />
+                  <ChoiceGroup label={sk.optimize.format} layout="wrap" options={FORMATS} value={format} onChange={setFormat} />
+                  {multiClip && (
+                    <ChoiceGroup label={sk.editor.partsTitle} options={partsModes} value={partsMode} onChange={setPartsMode} />
+                  )}
+                  {!multiClip && (
+                    <ChoiceGroup label={sk.editor.saveMode} options={saveModes} value={saveMode} onChange={setSaveMode} />
+                  )}
+                  {replaceOriginal && format !== "mp4" && (
+                    <p className="text-[11px] tone-fg-warning">{sk.editor.replaceMp4Only}</p>
+                  )}
+
+                  <div className="rounded-xl border border-border/50 bg-[var(--surface)] p-3">
+                    <button
+                      type="button"
+                      onClick={() => setSubtitlesOn((v) => !v)}
+                      className="flex w-full items-center justify-between text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70"
+                    >
+                      {sk.editor.subtitles}
+                      <span className={cn("rounded-full px-2 py-0.5 text-[10px]", subtitlesOn ? "bg-primary/20 text-primary" : "bg-secondary text-muted-foreground")}>
+                        {subtitlesOn ? "Zapnuté" : sk.editor.subtitlesOff}
+                      </span>
+                    </button>
+                    {subtitlesOn && (
+                      <div className="mt-3 flex flex-col gap-3">
+                        <label className="flex flex-col gap-1 text-[11px]">
+                          <span className="font-semibold text-muted-foreground">{sk.editor.srtPath}</span>
+                          <input
+                            value={srtPath}
+                            onChange={(e) => setSrtPath(e.target.value)}
+                            placeholder={sk.editor.srtPlaceholder}
+                            className="rounded-lg border border-border/60 bg-background px-2.5 py-2 font-mono text-[11px]"
+                          />
+                        </label>
+                        {cards.slice(0, 2).map((card, i) => (
+                          <div key={i} className="grid gap-2 sm:grid-cols-4">
+                            <input
+                              value={card.text}
+                              onChange={(e) => setCards((prev) => prev.map((c, j) => (j === i ? { ...c, text: e.target.value } : c)))}
+                              placeholder={sk.editor.cardText}
+                              className="rounded-lg border border-border/60 bg-background px-2.5 py-2 text-[11px] sm:col-span-2"
+                            />
+                            <input type="number" min={0} step={0.1} value={card.start_secs} onChange={(e) => setCards((prev) => prev.map((c, j) => (j === i ? { ...c, start_secs: Number(e.target.value) } : c)))} placeholder={sk.editor.cardStart} className="rounded-lg border border-border/60 bg-background px-2 py-2 font-mono text-[11px]" />
+                            <input type="number" min={0} step={0.1} value={card.end_secs} onChange={(e) => setCards((prev) => prev.map((c, j) => (j === i ? { ...c, end_secs: Number(e.target.value) } : c)))} placeholder={sk.editor.cardEnd} className="rounded-lg border border-border/60 bg-background px-2 py-2 font-mono text-[11px]" />
+                          </div>
+                        ))}
+                        {cards.length < 2 && (
+                          <button type="button" onClick={() => setCards((prev) => [...prev, { text: "", start_secs: 0, end_secs: 3 }])} className="self-start text-[11px] font-semibold text-accent hover:underline">
+                            {sk.editor.addCard}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-accent/30 bg-accent/5 px-3 py-2.5">
+                    <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-accent">
+                      <Sparkles className="size-3.5" /> {sk.editor.estimateTitle}
+                    </div>
+                    <p className="mt-1.5 text-sm text-foreground">
+                      {estimateLoading || !estimate
+                        ? sk.editor.estimateLoading
+                        : sk.editor.estimateBody(
+                            formatBytes(estimate.size_bytes),
+                            formatDurationSecs(estimate.duration_secs),
+                            estimate.resolution_label,
+                            estimate.format_label,
+                          )}
+                    </p>
+                    {estimate?.stream_copy && (
+                      <p className="mt-1 text-[11px] tone-fg-success">{sk.editor.streamCopyHint}</p>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 pb-2">
+                    <button onClick={() => setStep("trim")} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-border/60 bg-[var(--surface)] py-2.5 text-sm font-semibold hover:bg-secondary">
+                      <ChevronLeft className="size-4" /> {sk.editor.back}
+                    </button>
+                    <button onClick={startExport} className="flex flex-[2] items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-bold text-primary-foreground shadow-lg shadow-primary/25 hover:bg-accent">
+                      <Zap className="size-4" />
+                      {joinOutput
+                        ? sk.editor.joinParts
+                        : multiClip
+                          ? sk.editor.multiClipExport(segments.length)
+                          : sk.editor.startExport}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {studioBay}
           </div>
         )}
-
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
-          <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border/50 bg-[var(--surface)] px-3 py-2.5 text-[11px] font-semibold text-muted-foreground">
-            <FileVideo className="size-3.5 text-muted-foreground/70" />
-            {info ? (
-              <>
-                <span className="text-foreground">{info.width}×{info.height}</span>
-                <span>· {info.fps ? `${info.fps.toFixed(0)} fps` : "—"}</span>
-                <span>· {formatDurationSecs(info.duration_secs)}</span>
-                <span>· {formatBytes(info.size_bytes)}</span>
-              </>
-            ) : (
-              <span>{sk.editor.readingSource}</span>
-            )}
-          </div>
-
-          {step === "trim" && (
-            <div className="relative overflow-hidden rounded-xl">
-              <BloomVideoPlayer
-                ref={playerRef}
-                path={entry.path}
-                controlsLayout="docked"
-                onTimeUpdate={setPlayhead}
-              />
-              {spotlightPreview && (
-                <div
-                  aria-hidden
-                  className={cn(
-                    "pointer-events-none absolute inset-0 rounded-xl ring-4 ring-inset ring-accent/80 transition-opacity duration-150",
-                    spotlightActive ? "opacity-100" : "opacity-0",
-                  )}
-                />
-              )}
-              {cropMode && (
-                <EditorCropOverlay
-                  value={crop}
-                  onChange={(c) => {
-                    setCrop(c)
-                    if (c) setCropMode(false)
-                  }}
-                />
-              )}
-            </div>
-          )}
-
-          {step === "preview" && (
-            <>
-              <CompareSlider path={entry.path} info={info} estimate={previewEstimate} />
-              <p className="text-xs text-muted-foreground">{sk.editor.compare.hint}</p>
-              <button
-                onClick={() => setStep("trim")}
-                className="flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground shadow-lg shadow-primary/25 transition-[color,background-color,box-shadow,transform] hover:bg-accent active:scale-[0.98]"
-              >
-                {sk.editor.continueToTrim}
-                <ChevronRight className="size-4" />
-              </button>
-            </>
-          )}
-
-          {step === "trim" && (
-            <>
-              <p className="text-xs text-muted-foreground">{sk.editor.splitHint}</p>
-              <FilmstripTimeline
-                duration={duration}
-                playhead={playhead}
-                frames={frames}
-                loading={framesLoading}
-                segments={segments}
-                activeSegment={activeSegment}
-                onChangeSegment={(index, start, end) => {
-                  setActiveSegment(index)
-                  setSegments((prev) => updateSegment(prev, index, start, end, duration))
-                  if (index === activeSegment) syncFieldsFromSegment({ start, end })
-                }}
-                onSeek={(t) => playerRef.current?.seek(t)}
-                clickTimes={clickTimes}
-              />
-
-              {clickTimes.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/50 bg-[var(--surface)] px-3 py-2.5">
-                  <MousePointerClick className="size-4 shrink-0 text-accent" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[12px] font-bold text-foreground">{sk.ux.editor.spotlightTitle}</p>
-                    <p className="text-[10px] text-muted-foreground">{sk.ux.editor.spotlightHint(clickTimes.length)}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSpotlightPreview((v) => !v)}
-                    className={cn(
-                      "rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition-colors",
-                      spotlightPreview
-                        ? "border-accent/40 bg-accent/15 text-accent"
-                        : "border-border/60 bg-[var(--surface)] text-foreground hover:bg-secondary",
-                    )}
-                  >
-                    {spotlightPreview ? sk.ux.editor.previewOn : sk.ux.editor.previewSpotlight}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={spotlightBusy}
-                    onClick={() => { void handleApplySpotlight() }}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-bold text-primary-foreground transition-colors hover:bg-accent disabled:opacity-50"
-                  >
-                    {spotlightBusy && <Loader2 className="size-3 animate-spin" />}
-                    {spotlightBusy ? sk.ux.editor.applying : sk.ux.editor.applySpotlight}
-                  </button>
-                </div>
-              )}
-
-              <div className="flex flex-col gap-2">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">
-                  {sk.editor.partsTitle}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={splitAtPlayhead}
-                    disabled={segments.length >= MAX_SEGMENTS}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-[var(--surface)] px-3 py-2 text-[11px] font-semibold text-foreground transition-colors hover:bg-secondary disabled:opacity-40"
-                  >
-                    <SplitSquareHorizontal className="size-3.5" /> {sk.editor.splitAtPlayhead}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={cutOutActive}
-                    disabled={segments.length >= MAX_SEGMENTS}
-                    title={sk.editor.cutOutHint}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-[var(--surface)] px-3 py-2 text-[11px] font-semibold text-foreground transition-colors hover:bg-secondary disabled:opacity-40"
-                  >
-                    <Scissors className="size-3.5" /> {sk.editor.cutOutRange}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCropMode((v) => !v)}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-semibold transition-colors",
-                      cropMode || hasCrop
-                        ? "border-accent/40 bg-accent/15 text-accent"
-                        : "border-border/60 bg-[var(--surface)] text-foreground hover:bg-secondary",
-                    )}
-                  >
-                    <Crop className="size-3.5" /> {sk.editor.cropToggle}
-                  </button>
-                  {segments.map((_, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => {
-                        setActiveSegment(i)
-                        syncFieldsFromSegment(segments[i]!)
-                      }}
-                      className={cn(
-                        "rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors",
-                        i === activeSegment ? "bg-primary text-white" : "bg-secondary text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      {sk.editor.segment(i + 1)}
-                    </button>
-                  ))}
-                  {activeSegment > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const merged = mergeSegment(segments, activeSegment)
-                        setSegments(merged)
-                        setActiveSegment(Math.max(0, activeSegment - 1))
-                        syncFieldsFromSegment(merged[Math.max(0, activeSegment - 1)]!)
-                      }}
-                      className="rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground"
-                    >
-                      {sk.editor.mergeSegment}
-                    </button>
-                  )}
-                  {segments.length > 1 && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => shiftActive(-1)}
-                        disabled={activeSegment === 0}
-                        className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
-                      >
-                        <ArrowLeftRight className="size-3.5" /> {sk.editor.moveLeft}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => shiftActive(1)}
-                        disabled={activeSegment >= segments.length - 1}
-                        className="rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
-                      >
-                        {sk.editor.moveRight}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={removeActivePart}
-                        className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold tone-fg-error hover:bg-[var(--status-error-bg)]"
-                      >
-                        <Trash2 className="size-3.5" /> {sk.editor.deleteSegment}
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="flex flex-col gap-2 rounded-xl border border-border/50 bg-[var(--surface)] p-3">
-                  <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">{sk.editor.startField}</label>
-                  <div className="flex gap-2">
-                    <input
-                      value={startText}
-                      onChange={(e) => { setStartText(e.target.value); setStartError(false) }}
-                      onBlur={applyStartField}
-                      onKeyDown={(e) => e.key === "Enter" && applyStartField()}
-                      className={cn("min-w-0 flex-1 rounded-lg border bg-background px-2.5 py-2 font-mono text-sm tabular-nums", startError ? "border-[var(--status-error-border)]" : "border-border/60")}
-                      spellCheck={false}
-                    />
-                    <button type="button" onClick={setInAtPlayhead} className="rounded-lg border border-border/60 bg-secondary px-2.5 text-[11px] font-semibold">{sk.editor.setIn}</button>
-                  </div>
-                  {startError && <p className="text-[10px] tone-fg-error">{sk.editor.invalidTime}</p>}
-                </div>
-                <div className="flex flex-col gap-2 rounded-xl border border-border/50 bg-[var(--surface)] p-3">
-                  <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">{sk.editor.endField}</label>
-                  <div className="flex gap-2">
-                    <input
-                      value={endText}
-                      onChange={(e) => { setEndText(e.target.value); setEndError(false) }}
-                      onBlur={applyEndField}
-                      onKeyDown={(e) => e.key === "Enter" && applyEndField()}
-                      className={cn("min-w-0 flex-1 rounded-lg border bg-background px-2.5 py-2 font-mono text-sm tabular-nums", endError ? "border-[var(--status-error-border)]" : "border-border/60")}
-                      spellCheck={false}
-                    />
-                    <button type="button" onClick={setOutAtPlayhead} className="rounded-lg border border-border/60 bg-secondary px-2.5 text-[11px] font-semibold">{sk.editor.setOut}</button>
-                  </div>
-                  {endError && <p className="text-[10px] tone-fg-error">{sk.editor.invalidTime}</p>}
-                </div>
-              </div>
-
-              <p className="text-[11px] text-muted-foreground">
-                {sk.editor.clipLength}: <span className="font-mono text-foreground">{formatDurationSecs(clipDuration)}</span>
-              </p>
-
-              <div className="flex gap-2">
-                <button onClick={() => setStep("preview")} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-border/60 bg-[var(--surface)] py-2.5 text-sm font-semibold hover:bg-secondary">
-                  <ChevronLeft className="size-4" /> {sk.editor.back}
-                </button>
-                <button onClick={() => setStep("export")} className="flex flex-[2] items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-bold text-white hover:bg-accent">
-                  {sk.editor.continueToExport} <ChevronRight className="size-4" />
-                </button>
-              </div>
-            </>
-          )}
-
-          {step === "export" && (
-            <>
-              <p className="text-xs text-muted-foreground">{sk.editor.exportHint}</p>
-              <ChoiceGroup label={sk.optimize.qualityPreset} options={presets} value={preset} onChange={setPreset} />
-              <ChoiceGroup label={sk.optimize.resolution} layout="wrap" options={resolutions} value={resolution} onChange={setResolution} />
-              <ChoiceGroup label={sk.optimize.speed} layout="wrap" options={speeds} value={speed} onChange={setSpeed} />
-              <ChoiceGroup label={sk.optimize.format} layout="wrap" options={FORMATS} value={format} onChange={setFormat} />
-              {multiClip && (
-                <ChoiceGroup label={sk.editor.partsTitle} options={partsModes} value={partsMode} onChange={setPartsMode} />
-              )}
-              {!multiClip && (
-                <ChoiceGroup label={sk.editor.saveMode} options={saveModes} value={saveMode} onChange={setSaveMode} />
-              )}
-              {analysis && (
-                <div className="rounded-xl border border-border/50 bg-[var(--surface)] p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">{sk.editor.analyzeTitle}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{analysis.notes[0]}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPreset(analysis.suggested_preset)
-                        setResolution(analysis.suggested_resolution)
-                      }}
-                      className="shrink-0 rounded-lg border border-border/60 bg-secondary px-2.5 py-1.5 text-[10px] font-semibold hover:bg-secondary/80"
-                    >
-                      {sk.editor.applySuggestion}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className="grid gap-2 sm:grid-cols-2">
-                {([
-                  [denoise, setDenoise, sk.editor.enhance.denoise, sk.editor.enhance.denoiseHint],
-                  [normalizeAudio, setNormalizeAudio, sk.editor.enhance.normalizeAudio, ""],
-                  [removeAudio, setRemoveAudio, sk.editor.enhance.removeAudio, ""],
-                  [useHevc, setUseHevc, sk.editor.enhance.useHevc, sk.editor.enhance.useHevcHint],
-                ] as const).map(([on, setOn, label, hint]) => (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => setOn(!on)}
-                    className={cn(
-                      "rounded-xl border px-3 py-2 text-left text-[11px] transition-colors",
-                      on ? "border-primary/40 bg-primary/10 text-foreground" : "border-border/50 bg-[var(--surface)] text-muted-foreground",
-                    )}
-                  >
-                    <span className="font-semibold">{label}</span>
-                    {hint && <span className="mt-0.5 block text-[10px] opacity-70">{hint}</span>}
-                  </button>
-                ))}
-              </div>
-              {multiClip && (
-                <p className="text-[11px] text-muted-foreground">
-                  {joinOutput
-                    ? sk.editor.joinParts
-                    : sk.editor.multiClipExport(segments.length)}
-                </p>
-              )}
-              {replaceOriginal && format !== "mp4" && (
-                <p className="text-[11px] tone-fg-warning">{sk.editor.replaceMp4Only}</p>
-              )}
-
-              <div className="rounded-xl border border-border/50 bg-[var(--surface)] p-3">
-                <button
-                  type="button"
-                  onClick={() => setSubtitlesOn((v) => !v)}
-                  className="flex w-full items-center justify-between text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70"
-                >
-                  {sk.editor.subtitles}
-                  <span className={cn("rounded-full px-2 py-0.5 text-[10px]", subtitlesOn ? "bg-primary/20 text-primary" : "bg-secondary text-muted-foreground")}>
-                    {subtitlesOn ? "Zapnuté" : sk.editor.subtitlesOff}
-                  </span>
-                </button>
-                {subtitlesOn && (
-                  <div className="mt-3 flex flex-col gap-3">
-                    <label className="flex flex-col gap-1 text-[11px]">
-                      <span className="font-semibold text-muted-foreground">{sk.editor.srtPath}</span>
-                      <input
-                        value={srtPath}
-                        onChange={(e) => setSrtPath(e.target.value)}
-                        placeholder={sk.editor.srtPlaceholder}
-                        className="rounded-lg border border-border/60 bg-background px-2.5 py-2 font-mono text-[11px]"
-                      />
-                    </label>
-                    {cards.slice(0, 2).map((card, i) => (
-                      <div key={i} className="grid gap-2 sm:grid-cols-4">
-                        <input
-                          value={card.text}
-                          onChange={(e) => setCards((prev) => prev.map((c, j) => (j === i ? { ...c, text: e.target.value } : c)))}
-                          placeholder={sk.editor.cardText}
-                          className="rounded-lg border border-border/60 bg-background px-2.5 py-2 text-[11px] sm:col-span-2"
-                        />
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.1}
-                          value={card.start_secs}
-                          onChange={(e) => setCards((prev) => prev.map((c, j) => (j === i ? { ...c, start_secs: Number(e.target.value) } : c)))}
-                          placeholder={sk.editor.cardStart}
-                          className="rounded-lg border border-border/60 bg-background px-2 py-2 font-mono text-[11px]"
-                        />
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.1}
-                          value={card.end_secs}
-                          onChange={(e) => setCards((prev) => prev.map((c, j) => (j === i ? { ...c, end_secs: Number(e.target.value) } : c)))}
-                          placeholder={sk.editor.cardEnd}
-                          className="rounded-lg border border-border/60 bg-background px-2 py-2 font-mono text-[11px]"
-                        />
-                      </div>
-                    ))}
-                    {cards.length < 2 && (
-                      <button
-                        type="button"
-                        onClick={() => setCards((prev) => [...prev, { text: "", start_secs: 0, end_secs: 3 }])}
-                        className="self-start text-[11px] font-semibold text-accent hover:underline"
-                      >
-                        {sk.editor.addCard}
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-xl border border-accent/30 bg-accent/5 px-3 py-2.5">
-                <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-accent">
-                  <Sparkles className="size-3.5" /> {sk.editor.estimateTitle}
-                </div>
-                <p className="mt-1.5 text-sm text-foreground">
-                  {estimateLoading || !estimate
-                    ? sk.editor.estimateLoading
-                    : sk.editor.estimateBody(
-                        formatBytes(estimate.size_bytes),
-                        formatDurationSecs(estimate.duration_secs),
-                        estimate.resolution_label,
-                        estimate.format_label,
-                      )}
-                </p>
-                {estimate?.stream_copy && (
-                  <p className="mt-1 text-[11px] tone-fg-success">{sk.editor.streamCopyHint}</p>
-                )}
-              </div>
-
-              <div className="flex gap-2">
-                <button onClick={() => setStep("trim")} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-border/60 bg-[var(--surface)] py-2.5 text-sm font-semibold hover:bg-secondary">
-                  <ChevronLeft className="size-4" /> {sk.editor.back}
-                </button>
-                <button onClick={startExport} className="flex flex-[2] items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/25 hover:bg-accent">
-                  <Zap className="size-4" />
-                  {joinOutput
-                    ? sk.editor.joinParts
-                    : multiClip
-                      ? sk.editor.multiClipExport(segments.length)
-                      : sk.editor.startExport}
-                </button>
-              </div>
-            </>
-          )}
-
-          {step === "queued" && (
-            <div className="flex flex-col items-center gap-3 py-6 text-center">
-              <div className="flex size-14 items-center justify-center rounded-full border tone-soft-success">
-                <Check className="size-7 tone-fg-success" />
-              </div>
-              <div>
-                <p className="text-sm font-bold tone-fg-success">{sk.editor.queuedTitle}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{sk.editor.queuedBody(queuedCount)}</p>
-              </div>
-              <button
-                onClick={onClose}
-                className="mt-2 w-full rounded-xl bg-primary py-2.5 text-sm font-bold text-white hover:bg-accent"
-              >
-                {sk.editor.close}
-              </button>
-            </div>
-          )}
-        </div>
       </div>
     </div>
   )

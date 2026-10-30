@@ -42,7 +42,7 @@ export interface ThemeMeta {
 
 export const THEMES: ThemeMeta[] = [
   { id: "mac",      name: "Darkroom",     description: "Monitor + tungsten",        swatch: ["#6B9EFF", "#E6A94C", "#090A0D"] },
-  { id: "daylight", name: "Svetlý",       description: "Teplý papier + med",        swatch: ["#2F6FED", "#C8781A", "#F0EDE6"] },
+  { id: "daylight", name: "Svetlý",       description: "Apple light + system blue", swatch: ["#007AFF", "#007AFF", "#F5F5F7"] },
   { id: "paper",    name: "Papier",       description: "Svetlý editor + ink",       swatch: ["#1D4ED8", "#B45309", "#F7F5F0"] },
   { id: "sand",     name: "Piesok",       description: "Svetlý piesok + terakota",  swatch: ["#C2410C", "#D97706", "#F5F0E8"] },
   { id: "honey",    name: "Med",          description: "Svetlý med + jantár",       swatch: ["#CA8A04", "#D97706", "#FBF6EB"] },

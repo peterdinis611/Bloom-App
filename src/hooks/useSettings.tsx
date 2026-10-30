@@ -42,6 +42,8 @@ export interface GeneralSettings {
   showNewsBadge: boolean
   /** Confirm before deleting a single recording. */
   confirmDelete: boolean
+  /** Disable frosted glass / blur (solid surfaces). */
+  reduceTransparency: boolean
   /** UI language (synced to Rust tray / backend strings). */
   locale: LocaleId
 }
@@ -140,6 +142,7 @@ export const DEFAULTS: AppSettings = {
     openLibraryAfterRecord: false,
     showNewsBadge: true,
     confirmDelete: true,
+    reduceTransparency: false,
     locale: "sk",
   },
   exportDefaults: {
@@ -219,6 +222,10 @@ export function applyTheme(theme: ThemeId) {
   }
 }
 
+export function applyReduceTransparency(on: boolean) {
+  document.documentElement.setAttribute("data-reduce-transparency", on ? "true" : "false")
+}
+
 /** Load persisted settings (usable outside React – e.g. annotation overlay window). */
 export async function readStoredSettings(): Promise<AppSettings> {
   const { settings } = await loadSettings()
@@ -263,6 +270,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       }
       setSettings(next)
       applyTheme(next.theme)
+      applyReduceTransparency(next.general.reduceTransparency)
       setReady(true)
       // Rust owns the registered global shortcuts — mirror them into the UI state.
       void import("@/hooks/useBloomBackend")
@@ -288,6 +296,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (ready) applyTheme(settings.theme)
   }, [settings.theme, ready])
+
+  useEffect(() => {
+    if (!ready) return
+    applyReduceTransparency(settings.general.reduceTransparency)
+  }, [settings.general.reduceTransparency, ready])
 
   const persistSettings = useDebouncedCallback((next: AppSettings) => {
     void idbSet(STORAGE_KEY, JSON.stringify(next))

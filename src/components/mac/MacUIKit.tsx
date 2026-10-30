@@ -94,7 +94,7 @@ export function MacButton({
     <Button
       variant={MAC_BTN_VARIANT[variant]}
       size="sm"
-      className={cn(variant === "primary" && "shadow-md shadow-primary/20", className)}
+      className={cn(variant === "primary" && "active:scale-[0.97]", className)}
       {...props}
     >
       {children}

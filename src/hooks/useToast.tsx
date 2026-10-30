@@ -1,13 +1,14 @@
 import { createContext, useCallback, useContext, useRef, useState, type CSSProperties } from "react"
 import { Check, CircleAlert, Info, TriangleAlert, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { feedback } from "@/lib/feedback"
 import { getMessagesSync } from "@/lib/i18n/I18nProvider"
 
 export type ToastVariant = "success" | "error" | "info" | "warning"
 
-const TOAST_DURATION_MS = 4800
-const TOAST_WITH_ACTIONS_MS = 9000
-const TOAST_EXIT_MS = 240
+const TOAST_DURATION_MS = 3600
+const TOAST_WITH_ACTIONS_MS = 7800
+const TOAST_EXIT_MS = 180
 
 export interface ToastAction {
   label: string
@@ -70,7 +71,6 @@ function ToastCard({
       style={{ "--toast-stagger": `${index * 70}ms` } as CSSProperties}
       role="status"
     >
-      <div className="bloom-toast__sheen" aria-hidden />
       <div className="bloom-toast__accent" aria-hidden />
 
       <div className="bloom-toast__body">
@@ -192,16 +192,21 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const push = useCallback(
     (input: ToastInput & { variant?: ToastVariant }) => {
       const id = Date.now() + Math.random()
+      const variant = input.variant ?? "info"
       const item: ToastItem = {
         id,
         title: input.title,
         description: input.description,
-        variant: input.variant ?? "info",
+        variant,
         actions: input.actions,
       }
       setToasts((prev) => [...prev.slice(-4), item])
       const ms = input.actions?.length ? TOAST_WITH_ACTIONS_MS : TOAST_DURATION_MS
       scheduleDismiss(id, ms)
+      if (variant === "success") feedback("success")
+      else if (variant === "error") feedback("error")
+      else if (variant === "warning") feedback("warning")
+      else feedback("select")
     },
     [scheduleDismiss],
   )

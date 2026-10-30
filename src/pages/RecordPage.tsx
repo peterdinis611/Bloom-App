@@ -78,6 +78,7 @@ import {
 import { useMediaDevices } from "@/hooks/useMediaDevices"
 import { useSettings } from "@/hooks/useSettings"
 import { useToast } from "@/hooks/useToast"
+import { feedback } from "@/lib/feedback"
 import { useExportQueue } from "@/hooks/useExportQueue"
 import { ShareVideoSheet } from "@/components/library/ShareVideoSheet"
 import { startCapture, openCameraStream, type CaptureHandle, type CropRect } from "@/lib/capture"
@@ -703,6 +704,7 @@ export function RecordPage({
     }))
     setPipRect(defaultPipRect(preset.pipSize, preset.pipPosition))
     updateRecording({ activePresetId: preset.id })
+    feedback("select")
   }
 
   async function startWithPreset(presetId: string) {
@@ -993,6 +995,7 @@ export function RecordPage({
   async function startCountdown() {
     setStatus("preparing")
     setError(null)
+    feedback("commit")
 
     if (needsScreen) {
       try {
@@ -1289,7 +1292,7 @@ export function RecordPage({
 
       {/* Audio meters */}
       {isActive && (settings.microphone || settings.systemAudio) && (
-        <div className="flex gap-3 rounded-xl border border-border/50 bg-[var(--surface)] px-3.5 py-2.5">
+        <div className="flex gap-3 rounded-[10px] bg-secondary/60 px-3.5 py-2.5">
           {settings.microphone && <AudioMeterBar label={sk.record.microphone} level={micLevel} active={settings.microphone} />}
           {settings.systemAudio && <AudioMeterBar label={sk.record.systemAudio} level={sysLevel} active={settings.systemAudio} />}
         </div>
@@ -1310,17 +1313,17 @@ export function RecordPage({
                   type="button"
                   onClick={() => applyPreset(p)}
                   className={cn(
-                    "bloom-card relative flex flex-1 min-w-[120px] flex-col items-start gap-1 px-3.5 py-3 text-left active:scale-[0.98]",
-                    active && "bloom-card-active ring-2 ring-accent/30",
+                    "bloom-card relative flex flex-1 min-w-[120px] flex-col items-start gap-1 px-3.5 py-3 text-left",
+                    active && "bloom-card-active",
                   )}
                 >
                   {active && (
-                    <span className="absolute right-2 top-2 flex size-5 items-center justify-center rounded-full bg-accent text-white">
+                    <span className="absolute right-2 top-2 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
                       <CheckIcon className="size-3" strokeWidth={3} />
                     </span>
                   )}
-                  <span className="flex items-center gap-1.5 pr-6 text-xs font-bold text-foreground">
-                    <Zap className="size-3 text-accent" /> {p.name}
+                  <span className="flex items-center gap-1.5 pr-6 text-[13px] font-semibold text-foreground">
+                    <Zap className="size-3 text-primary" /> {p.name}
                   </span>
                   <span className="text-[10px] leading-tight text-muted-foreground">{p.description}</span>
                 </button>
@@ -1328,7 +1331,7 @@ export function RecordPage({
             </div>
             <button
               onClick={() => startWithPreset(appSettings.recording.activePresetId)}
-              className="flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/8 py-2.5 text-xs font-bold text-primary transition-colors hover:bg-primary/15"
+              className="mac-btn mac-btn-primary flex w-full items-center justify-center gap-2 py-2.5 text-[13px] font-semibold"
             >
               <Zap className="size-3.5" />
               {sk.record.recordWithPreset(findPreset(appSettings.recording.activePresetId, appSettings.recording.presets)?.name ?? "predvoľba")}
@@ -1405,7 +1408,7 @@ export function RecordPage({
                   onClick={() => setRegionMode((v) => !v)}
                   className={cn(
                     "bloom-card mt-2 flex w-full items-center justify-between px-3.5 py-3 text-left min-h-[48px] cursor-pointer",
-                    regionMode && "bloom-card-active ring-2 ring-accent/25",
+                    regionMode && "bloom-card-active",
                   )}
                 >
                   <div className="flex items-center gap-2.5">
@@ -1479,7 +1482,7 @@ export function RecordPage({
                 onClick={() => setSettings((p) => ({ ...p, cameraBlur: !p.cameraBlur }))}
                 className={cn(
                   "bloom-card flex w-full items-center justify-between px-3.5 py-3.5 text-left min-h-[52px] cursor-pointer",
-                  settings.cameraBlur && "bloom-card-active ring-2 ring-accent/25",
+                  settings.cameraBlur && "bloom-card-active",
                 )}
               >
                 <div className="flex items-center gap-2.5">
@@ -1533,7 +1536,7 @@ export function RecordPage({
               onClick={() => setSettings((p) => ({ ...p, cursorHighlight: !p.cursorHighlight }))}
               className={cn(
                 "bloom-card flex w-full items-center justify-between px-3.5 py-3.5 text-left min-h-[52px] cursor-pointer",
-                settings.cursorHighlight && "bloom-card-active ring-2 ring-accent/25",
+                settings.cursorHighlight && "bloom-card-active",
               )}
             >
               <div className="flex items-center gap-2.5">
@@ -1623,7 +1626,7 @@ export function RecordPage({
       <div className="shrink-0 border-t border-border px-6 py-3">
         <div className="flex justify-end gap-2">
         {status === "idle" && (
-          <MacButton variant="primary" onClick={startCountdown} className={cn("min-w-[140px] py-2", armHighlight && "ring-2 ring-[var(--accent)]")}>
+          <MacButton variant="primary" onClick={startCountdown} className={cn("min-w-[140px] py-2", armHighlight && "ring-2 ring-primary/50")}>
             <Video className="size-4" /> {sk.record.record}
           </MacButton>
         )}

@@ -145,7 +145,7 @@ export function TitleBar() {
         </div>
       </div>
       <div className="pointer-events-none flex flex-1 items-center justify-center" data-tauri-drag-region>
-        <span className="font-mono-bay text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground/75">
+        <span className="text-[13px] font-semibold tracking-[-0.02em] text-foreground/80">
           Bloom
         </span>
       </div>

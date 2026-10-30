@@ -148,11 +148,11 @@ export function OnboardingModal({ bloomDir, onDone }: OnboardingModalProps) {
               key={stepId}
               className="onboard-step flex items-start gap-3"
             >
-              <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-accent/20 to-primary/10 text-accent shadow-inner">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-[11px] bg-primary/15 text-primary">
                 {stepIcon()}
               </span>
               <div className="min-w-0 flex-1">
-                <h3 className="font-display text-[17px] font-bold tracking-tight">{copy.title}</h3>
+                <h3 className="text-[17px] font-semibold tracking-[-0.022em] text-foreground">{copy.title}</h3>
                 <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
                   {copy.body}
                 </p>

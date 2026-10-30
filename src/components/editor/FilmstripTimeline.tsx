@@ -21,8 +21,6 @@ interface FilmstripTimelineProps {
   onChangeSegment?: (index: number, start: number, end: number) => void
   /** Recorded click timestamps (seconds) — rendered as a thin lane under the trim track. */
   clickTimes?: number[]
-  /** Chapter markers (seconds + label). */
-  chapters?: { time: number; title: string }[]
 }
 
 export function FilmstripTimeline({
@@ -38,7 +36,6 @@ export function FilmstripTimeline({
   activeSegment = 0,
   onChangeSegment,
   clickTimes,
-  chapters,
 }: FilmstripTimelineProps) {
   const sk = useMessages()
   const trackRef = useRef<HTMLDivElement>(null)
@@ -89,7 +86,7 @@ export function FilmstripTimeline({
   return (
     <div className="flex flex-col gap-2">
       <div className="overflow-hidden rounded-xl border border-border/50 bg-secondary/40">
-        <div className="flex h-16 sm:h-20">
+        <div className="flex h-14">
           {loading ? (
             <div className="flex flex-1 items-center justify-center text-[11px] text-muted-foreground">…</div>
           ) : frames.length > 0 ? (
@@ -102,7 +99,7 @@ export function FilmstripTimeline({
         </div>
       </div>
 
-      <div ref={trackRef} className="relative h-12 cursor-pointer rounded-xl bg-secondary" onPointerDown={drag("seek")}>
+      <div ref={trackRef} className="relative h-10 cursor-pointer rounded-xl bg-secondary" onPointerDown={drag("seek")}>
         {ranges.map((seg, i) => (
           <div
             key={`${seg.start}-${seg.end}-${i}`}
@@ -111,14 +108,6 @@ export function FilmstripTimeline({
               i === activeSegment ? "bg-primary/30 ring-1 ring-primary/40" : "bg-accent/15",
             )}
             style={{ left: `${pct(seg.start)}%`, right: `${100 - pct(seg.end)}%` }}
-          />
-        ))}
-        {chapters?.map((ch, i) => (
-          <div
-            key={`ch-${ch.time}-${i}`}
-            className="pointer-events-none absolute top-0 bottom-0 w-px bg-[var(--status-warning)]/80"
-            style={{ left: `${pct(ch.time)}%` }}
-            title={ch.title}
           />
         ))}
         <div className="absolute top-0 bottom-0 w-0.5 bg-white/90" style={{ left: `${pct(playhead)}%` }} />
@@ -137,26 +126,6 @@ export function FilmstripTimeline({
           </>
         )}
       </div>
-
-      {chapters && chapters.length > 0 && duration > 0 && (
-        <div
-          className="relative h-5 rounded-md bg-[var(--status-warning)]/10"
-          aria-label={sk.editor.chapters.lane(chapters.length)}
-        >
-          {chapters.map((ch, i) => (
-            <button
-              key={`lane-${ch.time}-${i}`}
-              type="button"
-              onClick={() => onSeek(Math.max(0, Math.min(duration, ch.time)))}
-              title={`${ch.title} · ${formatDurationSecs(ch.time)}`}
-              className="absolute top-1/2 max-w-[28%] -translate-x-1/2 -translate-y-1/2 truncate rounded px-1 py-0.5 text-[9px] font-bold text-[var(--status-warning)] hover:bg-[var(--status-warning)]/20"
-              style={{ left: `${pct(ch.time)}%` }}
-            >
-              {ch.title}
-            </button>
-          ))}
-        </div>
-      )}
 
       {clickTimes && clickTimes.length > 0 && duration > 0 && (
         <div

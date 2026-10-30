@@ -140,38 +140,35 @@ function EmptyLibrary({ onStartRecording, ffmpeg, onRecheckFfmpeg, onInstallFfmp
 }) {
   const sk = useMessages()
   const hints = [
-    { icon: Monitor, label: sk.library.screenCapture, tint: "text-accent bg-primary/12 border-primary/20" },
-    { icon: Camera, label: sk.library.webcam, tint: "tone-fg-success tone-soft-success border" },
-    { icon: Sparkles, label: sk.library.optimiseTrim, tint: "tone-fg-info tone-soft-info border" },
+    { icon: Monitor, label: sk.library.screenCapture },
+    { icon: Camera, label: sk.library.webcam },
+    { icon: Sparkles, label: sk.library.optimiseTrim },
   ]
 
   return (
     <div className="flex h-full flex-col items-center justify-center px-6 py-10 text-center">
-      <div className="relative mb-6">
-        <div className="absolute inset-0 scale-150 rounded-full bg-primary/10 blur-3xl" />
-        <div className="relative flex size-20 items-center justify-center rounded-3xl border border-primary/25 bg-gradient-to-br from-primary/15 to-[var(--surface)] shadow-xl shadow-primary/10">
-          <Film className="size-9 text-accent/80" />
-        </div>
+      <div className="mb-5 flex size-16 items-center justify-center rounded-[18px] bg-secondary">
+        <Film className="size-7 text-primary" strokeWidth={1.75} />
       </div>
 
-      <h2 className="text-lg font-black tracking-tight text-foreground">{sk.library.emptyTitle}</h2>
-      <p className="mt-2 max-w-[260px] text-sm leading-relaxed text-muted-foreground">
+      <h2 className="text-[22px] font-semibold tracking-[-0.022em] text-foreground">{sk.library.emptyTitle}</h2>
+      <p className="mt-2 max-w-[280px] text-[13px] leading-relaxed text-muted-foreground">
         {sk.library.emptyBody}
       </p>
 
-      <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-1.5">
         {hints.map((h) => (
-          <span key={h.label} className={cn("flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold", h.tint)}>
-            <h.icon className="size-3.5" /> {h.label}
+          <span key={h.label} className="flex items-center gap-1.5 rounded-lg bg-secondary px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground">
+            <h.icon className="size-3.5 text-primary" /> {h.label}
           </span>
         ))}
       </div>
 
       <button
         onClick={onStartRecording}
-        className="group mt-8 flex items-center gap-2.5 rounded-2xl bg-primary px-6 py-3.5 text-sm font-bold text-primary-foreground shadow-xl shadow-primary/25 transition-[color,background-color,box-shadow,transform] hover:bg-accent hover:shadow-primary/35 active:scale-[0.98]"
+        className="mac-btn mac-btn-primary mt-8 min-w-[10rem] gap-2 px-5 py-3 text-[14px] font-semibold"
       >
-        <Video className="size-4 transition-transform group-hover:scale-110" />
+        <Video className="size-4" />
         {sk.library.startFirst}
       </button>
 
@@ -347,14 +344,14 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
 
   return (
     <div className={cn(
-      "bloom-card group flex flex-col gap-3 p-3 transition-colors hover:border-border",
-      selected ? "bloom-card-active ring-1 ring-primary/25" : "",
+      "bloom-card group flex flex-col gap-3 p-3",
+      selected && "bloom-card-active",
     )}>
       <div className="flex items-start gap-3">
         {batchMode && (
           <button
             onClick={onSelect}
-            className="mt-1 shrink-0 text-muted-foreground hover:text-primary"
+            className="mt-1 shrink-0 text-muted-foreground hover:text-primary active:scale-95"
           >
             {selected ? <CheckSquare className="size-5 text-primary" /> : <Square className="size-5" />}
           </button>
@@ -362,19 +359,19 @@ function RecordingCard({ entry, onPlay, onDelete, onReveal, onRename, onValidate
         {/* Thumbnail */}
         <button
           onClick={onPlay}
-          className="relative flex aspect-video w-28 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border/60 bg-gradient-to-br from-secondary to-black/60"
+          className="relative flex aspect-video w-28 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-secondary"
         >
           {thumb ? (
             <img src={thumb} alt="" className="absolute inset-0 h-full w-full object-cover" />
           ) : (
             <src.icon className={cn("size-6 opacity-40", src.tint.split(" ")[0])} />
           )}
-          <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/30">
-            <div className="flex size-9 scale-90 items-center justify-center rounded-full bg-white/90 opacity-0 shadow-lg transition-all group-hover:scale-100 group-hover:opacity-100">
-              <Play className="size-4 translate-x-0.5 fill-black text-black" />
+          <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/25">
+            <div className="flex size-8 scale-95 items-center justify-center rounded-full bg-white/92 opacity-0 transition-[opacity,transform] duration-150 group-hover:scale-100 group-hover:opacity-100">
+              <Play className="size-3.5 translate-x-0.5 fill-black text-black" />
             </div>
           </div>
-          <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white">
+          <span className="absolute bottom-1 right-1 rounded-md bg-black/65 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-white">
             {formatDurationSecs(meta.duration_secs)}
           </span>
         </button>
@@ -1324,8 +1321,8 @@ export function LibraryPage({
             type="button"
             onClick={() => setStarredOnly((s) => !s)}
             className={cn(
-              "flex min-h-[36px] items-center gap-1.5 rounded-lg border px-3 py-2 text-[12px] font-medium transition-colors",
-              starredOnly ? "border tone-soft-warning" : "border-border/60 text-muted-foreground hover:text-foreground",
+              "choice-chip flex min-h-[32px] items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium",
+              starredOnly && "choice-chip-active",
             )}
           >
             <Star className={cn("size-3", starredOnly && "fill-current")} /> {sk.library.starred}
@@ -1334,8 +1331,8 @@ export function LibraryPage({
             type="button"
             onClick={() => setHasClicksOnly((v) => !v)}
             className={cn(
-              "flex min-h-[36px] items-center gap-1.5 rounded-lg border px-3 py-2 text-[12px] font-medium transition-colors",
-              hasClicksOnly ? "border border-accent/40 bg-accent/12 text-accent" : "border-border/60 text-muted-foreground hover:text-foreground",
+              "choice-chip flex min-h-[32px] items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium",
+              hasClicksOnly && "choice-chip-active",
             )}
           >
             <MousePointerClick className="size-3" /> {sk.ux.filters.hasClicks}

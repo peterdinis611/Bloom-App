@@ -11,6 +11,17 @@ export interface NewsItem {
 
 export const WHATS_NEW: NewsItem[] = [
   {
+    version: "1.1.1",
+    date: "2026-10-30",
+    title: "Bloom 1.1.1 — Apple shell a jemnejší feedback",
+    highlights: [
+      "Svetlá téma so system blue (bez dvojakého accentu)",
+      "Tichšie toast notifikácie a focus ringy na kartách",
+      "Nastavenie „Znížiť priehľadnosť“ — bez frosted skla",
+      "Ľahký haptic feedback pri úspechu / chybe (kde OS podporuje)",
+    ],
+  },
+  {
     version: "1.1.0",
     date: "2026-10-29",
     title: "Bloom 1.1 — kliky, obnova a poriadok v knižnici",
