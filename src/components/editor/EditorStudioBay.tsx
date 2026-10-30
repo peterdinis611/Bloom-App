@@ -10,6 +10,7 @@ import {
   RotateCcw,
   Sparkles,
   Trash2,
+  AudioLines,
   Volume2,
   VolumeX,
   Wand2,
@@ -42,6 +43,7 @@ interface EditorStudioBayProps {
   onApplySpotlight: () => void
   spotlightBusy: boolean
   denoise: boolean
+  denoiseAudio: boolean
   normalizeAudio: boolean
   removeAudio: boolean
   useHevc: boolean
@@ -52,6 +54,7 @@ interface EditorStudioBayProps {
   fadeOut: number
   volume: number
   onToggleDenoise: () => void
+  onToggleDenoiseAudio: () => void
   onToggleNormalize: () => void
   onToggleRemoveAudio: () => void
   onToggleHevc: () => void
@@ -90,6 +93,7 @@ export function EditorStudioBay({
   onApplySpotlight,
   spotlightBusy,
   denoise,
+  denoiseAudio,
   normalizeAudio,
   removeAudio,
   useHevc,
@@ -100,6 +104,7 @@ export function EditorStudioBay({
   fadeOut,
   volume,
   onToggleDenoise,
+  onToggleDenoiseAudio,
   onToggleNormalize,
   onToggleRemoveAudio,
   onToggleHevc,
@@ -379,8 +384,9 @@ export function EditorStudioBay({
           <div className="grid grid-cols-2 gap-1.5">
             {(
               [
-                [denoise, onToggleDenoise, sk.editor.enhance.denoise, Sparkles],
+                [denoiseAudio, onToggleDenoiseAudio, sk.editor.enhance.denoiseAudio, AudioLines],
                 [normalizeAudio, onToggleNormalize, sk.editor.enhance.normalizeAudio, Volume2],
+                [denoise, onToggleDenoise, sk.editor.enhance.denoise, Sparkles],
                 [removeAudio, onToggleRemoveAudio, sk.editor.enhance.removeAudio, VolumeX],
                 [useHevc, onToggleHevc, sk.editor.enhance.useHevc, Gauge],
               ] as const
@@ -389,8 +395,9 @@ export function EditorStudioBay({
                 key={label}
                 type="button"
                 onClick={toggle}
+                disabled={label === sk.editor.enhance.denoiseAudio && removeAudio}
                 className={cn(
-                  "flex flex-col items-start gap-1 rounded-lg border px-2.5 py-2 text-left transition-colors",
+                  "flex flex-col items-start gap-1 rounded-lg border px-2.5 py-2 text-left transition-colors disabled:opacity-40",
                   on
                     ? "border-primary/40 bg-primary/12 text-foreground"
                     : "border-border/50 bg-background text-muted-foreground hover:border-border hover:text-foreground",

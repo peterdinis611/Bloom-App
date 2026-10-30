@@ -617,8 +617,10 @@ export const de: Messages = {
       optimized: "Nach Export",
     },
     enhance: {
-      denoise: "Rauschreduzierung",
+      denoise: "Video-Rauschen",
       denoiseHint: "Für Bildschirmaufnahmen",
+      denoiseAudio: "Klare Stimme",
+      denoiseAudioHint: "Hintergrundgeräusche entfernen",
       normalizeAudio: "Audio normalisieren",
       removeAudio: "Ohne Audiospur",
       useHevc: "HEVC (H.265)",

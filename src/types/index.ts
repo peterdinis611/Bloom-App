@@ -245,6 +245,8 @@ export interface OptimizeOptions {
   /** Manual timed text cards (max ~2 in UI). */
   subtitle_cards?: SubtitleCard[]
   denoise?: boolean
+  /** Remove background hiss / fan noise so speech is clearer. */
+  denoise_audio?: boolean
   normalize_audio?: boolean
   remove_audio?: boolean
   use_hevc?: boolean

@@ -616,8 +616,10 @@ export const sk = {
       optimized: "Po exporte",
     },
     enhance: {
-      denoise: "Redukcia šumu",
+      denoise: "Video šum",
       denoiseHint: "Pre nahrávky obrazovky",
+      denoiseAudio: "Čistý hlas",
+      denoiseAudioHint: "Odstráni šum z pozadia",
       normalizeAudio: "Normalizovať zvuk",
       removeAudio: "Bez zvukovej stopy",
       useHevc: "HEVC (H.265)",

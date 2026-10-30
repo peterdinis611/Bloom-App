@@ -196,6 +196,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
   const [srtPath, setSrtPath] = useState("")
   const [cards, setCards] = useState<SubtitleCard[]>([{ text: "", start_secs: 0, end_secs: 3 }])
   const [denoise, setDenoise] = useState(false)
+  const [denoiseAudio, setDenoiseAudio] = useState(false)
   const [normalizeAudio, setNormalizeAudio] = useState(false)
   const [removeAudio, setRemoveAudio] = useState(false)
   const [useHevc, setUseHevc] = useState(false)
@@ -232,6 +233,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
         ? cards.filter((c) => c.text.trim() && c.end_secs > c.start_secs)
         : [],
       denoise,
+      denoise_audio: denoiseAudio,
       normalize_audio: normalizeAudio,
       remove_audio: removeAudio,
       use_hevc: useHevc,
@@ -246,7 +248,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
       crop_w: hasCrop ? crop!.w : null,
       crop_h: hasCrop ? crop!.h : null,
     }),
-    [entry.path, preset, resolution, format, speed, replaceOriginal, subtitlesOn, srtPath, cards, denoise, normalizeAudio, removeAudio, useHevc, flipH, flipV, rotate, fadeIn, fadeOut, volume, hasCrop, crop],
+    [entry.path, preset, resolution, format, speed, replaceOriginal, subtitlesOn, srtPath, cards, denoise, denoiseAudio, normalizeAudio, removeAudio, useHevc, flipH, flipV, rotate, fadeIn, fadeOut, volume, hasCrop, crop],
   )
 
   const syncFieldsFromSegment = useCallback((seg: EditorSegment) => {
@@ -504,6 +506,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
       onApplySpotlight={() => { void handleApplySpotlight() }}
       spotlightBusy={spotlightBusy}
       denoise={denoise}
+      denoiseAudio={denoiseAudio}
       normalizeAudio={normalizeAudio}
       removeAudio={removeAudio}
       useHevc={useHevc}
@@ -514,6 +517,13 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
       fadeOut={fadeOut}
       volume={volume}
       onToggleDenoise={() => setDenoise((v) => !v)}
+      onToggleDenoiseAudio={() => {
+        setDenoiseAudio((v) => {
+          const next = !v
+          if (next) setNormalizeAudio(true)
+          return next
+        })
+      }}
       onToggleNormalize={() => setNormalizeAudio((v) => !v)}
       onToggleRemoveAudio={() => setRemoveAudio((v) => !v)}
       onToggleHevc={() => setUseHevc((v) => !v)}

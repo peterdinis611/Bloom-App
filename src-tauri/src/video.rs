@@ -159,6 +159,9 @@ pub struct OptimizeOptions {
     /// Light temporal denoise (good for screen recordings).
     #[serde(default)]
     pub denoise: bool,
+    /// Remove background hiss / fan noise so speech is clearer.
+    #[serde(default)]
+    pub denoise_audio: bool,
     /// Normalize audio loudness before export.
     #[serde(default)]
     pub normalize_audio: bool,
@@ -1101,6 +1104,7 @@ pub(crate) fn can_stream_copy(opts: &OptimizeOptions, info: &VideoInfo) -> bool 
         && effective_speed(opts.speed) == 1.0
         && !opts.use_hevc
         && !opts.denoise
+        && !opts.denoise_audio
         && !opts.normalize_audio
         && !opts.remove_audio
         && !has_subtitles(opts)
@@ -1246,11 +1250,18 @@ fn append_video_filters(
 }
 
 fn append_audio_filters(af: &mut Vec<String>, opts: &OptimizeOptions, speed: f64) {
+    if opts.denoise_audio {
+        // Cut rumble, FFT-denoise stationary hiss/fans, then a soft speech shelf.
+        af.push("highpass=f=80".into());
+        af.push("afftdn=nr=10:nf=-25:tn=1".into());
+        af.push("equalizer=f=2500:t=q:w=1.2:g=2".into());
+    }
     if volume_changed(opts) {
         af.push(format!("volume={:.3}", effective_volume(opts.volume)));
     }
     if opts.normalize_audio {
-        af.push("dynaudnorm=f=150:g=12".into());
+        // Speech-friendly dynamic loudness so quiet voice sits forward.
+        af.push("dynaudnorm=f=75:g=15:p=0.95:m=10".into());
     }
     if speed != 1.0 {
         let tempo = build_atempo_chain(speed);
@@ -1349,6 +1360,7 @@ fn append_mp4_video_codec(
 fn can_copy_audio(opts: &OptimizeOptions, info: &VideoInfo, speed: f64) -> bool {
     info.has_audio
         && !opts.remove_audio
+        && !opts.denoise_audio
         && !opts.normalize_audio
         && !volume_changed(opts)
         && effective_speed(speed) == 1.0

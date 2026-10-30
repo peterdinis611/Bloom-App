@@ -619,8 +619,10 @@ export const hu: Messages = {
       optimized: "Export után",
     },
     enhance: {
-      denoise: "Zajcsökkentés",
+      denoise: "Videózaj",
       denoiseHint: "Képernyőfelvételekhez",
+      denoiseAudio: "Tiszta hang",
+      denoiseAudioHint: "Háttérzaj eltávolítása",
       normalizeAudio: "Hang normalizálása",
       removeAudio: "Hang sáv nélkül",
       useHevc: "HEVC (H.265)",

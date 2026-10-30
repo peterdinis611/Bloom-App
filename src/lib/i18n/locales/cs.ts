@@ -617,8 +617,10 @@ export const cs: Messages = {
       optimized: "Po exportu",
     },
     enhance: {
-      denoise: "Redukce šumu",
+      denoise: "Video šum",
       denoiseHint: "Pro nahrávky obrazovky",
+      denoiseAudio: "Čistý hlas",
+      denoiseAudioHint: "Odstraní šum z pozadí",
       normalizeAudio: "Normalizovat zvuk",
       removeAudio: "Bez zvukové stopy",
       useHevc: "HEVC (H.265)",

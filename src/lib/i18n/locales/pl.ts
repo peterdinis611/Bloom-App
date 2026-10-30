@@ -638,8 +638,10 @@ export const pl: Messages = {
       optimized: "Po eksporcie",
     },
     enhance: {
-      denoise: "Redukcja szumu",
+      denoise: "Szum wideo",
       denoiseHint: "Dla nagrań ekranu",
+      denoiseAudio: "Czysty głos",
+      denoiseAudioHint: "Usuwa szum tła",
       normalizeAudio: "Normalizuj dźwięk",
       removeAudio: "Bez ścieżki dźwiękowej",
       useHevc: "HEVC (H.265)",

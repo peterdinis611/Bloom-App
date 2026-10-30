@@ -34,6 +34,7 @@ fn opts(preset: &str, resolution: &str, format: &str) -> OptimizeOptions {
         srt_path: None,
         subtitle_cards: vec![],
         denoise: false,
+        denoise_audio: false,
         normalize_audio: false,
         remove_audio: false,
         use_hevc: false,
@@ -252,6 +253,17 @@ fn build_args_denoise_and_normalize() {
     let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mp4", &info, false, false, false);
     assert!(args.iter().any(|a| a.contains("hqdn3d")));
     assert!(args.iter().any(|a| a.contains("dynaudnorm")));
+}
+
+#[test]
+fn build_args_denoise_audio() {
+    let mut o = opts("medium", "720p", "mp4");
+    o.denoise_audio = true;
+    let info = sample_info();
+    let args = build_args(&o, "/tmp/in.mp4", "/tmp/out.mp4", &info, false, false, false);
+    assert!(args.iter().any(|a| a.contains("afftdn")));
+    assert!(args.iter().any(|a| a.contains("highpass")));
+    assert!(args.windows(2).any(|w| w == ["-c:a", "aac"]));
 }
 
 #[test]
