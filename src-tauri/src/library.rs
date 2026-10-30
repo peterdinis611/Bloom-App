@@ -21,20 +21,44 @@ use crate::video::{
 
 /// Save a still-frame snapshot (PNG bytes from the frontend) into the Bloom
 /// directory. Used by the "pause → annotate → save" flow.
+/// Binary IPC: raw PNG body + `x-filename` header (fallback: JSON `{filename,data}`).
 #[tauri::command]
 pub(crate) fn save_snapshot(
     app: tauri::AppHandle,
-    filename: String,
-    data: Vec<u8>,
+    request: tauri::ipc::Request<'_>,
 ) -> Result<String, String> {
     let dir = bloom_dir(&app)?;
+    let (filename, bytes): (String, Vec<u8>) = match request.body() {
+        tauri::ipc::InvokeBody::Raw(data) => {
+            let name = request
+                .headers()
+                .get("x-filename")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("snapshot.png")
+                .to_string();
+            (name, data.clone())
+        }
+        tauri::ipc::InvokeBody::Json(v) => {
+            let filename = v
+                .get("filename")
+                .and_then(|x| x.as_str())
+                .unwrap_or("snapshot.png")
+                .to_string();
+            let data = v
+                .get("data")
+                .and_then(|x| x.as_array())
+                .map(|arr| arr.iter().filter_map(|n| n.as_u64().map(|u| u as u8)).collect())
+                .unwrap_or_default();
+            (filename, data)
+        }
+    };
     // Guard against path traversal – keep only the file name.
     let name = Path::new(&filename)
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or_else(|| "Invalid filename".to_string())?;
     let path = dir.join(name);
-    fs::write(&path, &data).map_err(|e| format!("Cannot write snapshot: {e}"))?;
+    fs::write(&path, &bytes).map_err(|e| format!("Cannot write snapshot: {e}"))?;
     Ok(path.to_string_lossy().into_owned())
 }
 

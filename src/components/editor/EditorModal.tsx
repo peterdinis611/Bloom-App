@@ -26,6 +26,7 @@ import {
   deleteSegment,
   isFullFrameCrop,
   MAX_SEGMENTS,
+  MIN_SPEECH_SECS,
   mergeSegment,
   moveSegment,
   segmentDuration,
@@ -335,7 +336,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
     setAudioBusy(true)
     try {
       const report = await detectSilence(entry.path)
-      const ranges = report.speech_ranges.filter((r) => r.end - r.start >= 0.25)
+      const ranges = report.speech_ranges.filter((r) => r.end - r.start >= MIN_SPEECH_SECS)
       if (ranges.length === 0) {
         toastError({ title: sk.toast.actionFailed, description: sk.editor.enhance.skipSilenceHint })
         return

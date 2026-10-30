@@ -120,6 +120,8 @@ export const hu: Messages = {
     permissionDenied: "Hozzáférés megtagadva. Engedélyezd a jogosultságokat a Rendszerbeállításokban.",
     deviceNotFound: "Az eszköz nem található",
     cancelled: "A művelet megszakítva",
+    diskLow: "Kevés a szabad hely a lemezen",
+    invalidOptions: "Érvénytelen exportbeállítások",
   },
   privacy: {
     openScreen: "Képernyőfelvétel megnyitása",

@@ -7,6 +7,18 @@ describe("localizeError", () => {
     expect(localizeError("ffmpeg not found")).not.toMatch(/not found/)
   })
 
+  it("maps structured BloomError codes", () => {
+    expect(
+      localizeError(JSON.stringify({ code: "ffmpeg_missing", message: "ffmpeg not found" })),
+    ).toMatch(/ffmpeg/i)
+    expect(
+      localizeError(JSON.stringify({ code: "disk_low", message: "low" })),
+    ).toMatch(/disku|miesta|Disk|space/i)
+    expect(
+      localizeError(JSON.stringify({ code: "invalid_options", message: "bad" })),
+    ).toMatch(/Neplatn|Invalid|nastaven/i)
+  })
+
   it("maps recording not found", () => {
     expect(localizeError("Recording abc not found")).toMatch(/nenašla|nahrávka/i)
   })

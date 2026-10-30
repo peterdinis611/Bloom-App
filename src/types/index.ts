@@ -226,68 +226,22 @@ export interface VideoInfo {
   has_audio: boolean
 }
 
-export type OptimizePreset = "small" | "medium" | "high"
-export type OptimizeResolution = "480p" | "720p" | "1080p" | "original"
-export type OptimizeFormat =
-  | "mp4"
-  | "mov"
-  | "m4v"
-  | "mkv"
-  | "avi"
-  | "mpeg"
-  | "ts"
-  | "flv"
-  | "3gp"
-  | "ogv"
-  | "webm"
-  | "gif"
+import type {
+  OptimizeFormat,
+  OptimizeOptions,
+  OptimizePreset,
+  OptimizeResolution,
+  SubtitleCard,
+  TimeRange,
+} from "@/types/generated/optimizeOptions"
 
-/** Payload sent to optimize_video (mirrors OptimizeOptions in Rust). */
-export interface OptimizeOptions {
-  input_path: string
-  preset: OptimizePreset
-  resolution: OptimizeResolution
-  format: OptimizeFormat
-  trim_start?: number | null
-  trim_end?: number | null
-  /** Multiple keep-ranges joined into one output (overrides single trim). */
-  keep_ranges?: { start: number; end: number }[]
-  /** Normalized spatial crop 0–1. */
-  crop_x?: number | null
-  crop_y?: number | null
-  crop_w?: number | null
-  crop_h?: number | null
-  /** Playback speed multiplier (1 = normal, 2 = 2× faster). */
-  speed?: number
-  output_name?: string | null
-  add_to_library?: boolean
-  /** Overwrite the source file in the library instead of creating a copy. */
-  replace_original?: boolean
-  /** Path to an .srt subtitle file burned in via ffmpeg drawtext. */
-  srt_path?: string | null
-  /** Manual timed text cards (max ~2 in UI). */
-  subtitle_cards?: SubtitleCard[]
-  denoise?: boolean
-  /** Remove background hiss / fan noise so speech is clearer. */
-  denoise_audio?: boolean
-  normalize_audio?: boolean
-  remove_audio?: boolean
-  use_hevc?: boolean
-  flip_h?: boolean
-  flip_v?: boolean
-  /** Clockwise degrees: 0 | 90 | 180 | 270 */
-  rotate?: 0 | 90 | 180 | 270
-  fade_in_secs?: number
-  fade_out_secs?: number
-  /** Linear gain; 1 = unchanged */
-  volume?: number
-}
-
-/** Mirrors SubtitleCard in Rust. */
-export interface SubtitleCard {
-  text: string
-  start_secs: number
-  end_secs: number
+export type {
+  OptimizeFormat,
+  OptimizeOptions,
+  OptimizePreset,
+  OptimizeResolution,
+  SubtitleCard,
+  TimeRange,
 }
 
 /** Mirrors ExtractAudioOptions in Rust. */

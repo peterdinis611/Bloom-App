@@ -119,6 +119,8 @@ export const sk = {
     permissionDenied: "Prístup zamietnutý. Povoľ oprávnenia v Systémových nastaveniach.",
     deviceNotFound: "Zariadenie sa nenašlo",
     cancelled: "Operácia bola zrušená",
+    diskLow: "Na disku je málo miesta",
+    invalidOptions: "Neplatné nastavenia exportu",
   },
   privacy: {
     openScreen: "Otvoriť nahrávanie obrazovky",

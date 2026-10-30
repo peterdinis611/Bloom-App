@@ -73,6 +73,16 @@ pub(crate) fn run_optimize(
         Ok(c) => c,
         Err(e) => {
             remove_job(&app, &job_id);
+            let err = format!("Could not start ffmpeg: {e}");
+            crate::export_queue::remember_job_result(
+                &app,
+                &job_id,
+                crate::export_queue::JobResult {
+                    output_path: None,
+                    error: Some(err.clone()),
+                    cancelled: false,
+                },
+            );
             emit(OptimizeProgress {
                 job_id: job_id.clone(),
                 percent: 0.0,
@@ -80,7 +90,7 @@ pub(crate) fn run_optimize(
                 cancelled: false,
                 output_path: None,
                 output_size_bytes: None,
-                error: Some(format!("Could not start ffmpeg: {e}")),
+                error: Some(err),
             });
             return;
         }
@@ -133,6 +143,15 @@ pub(crate) fn run_optimize(
     // Cancelled?
     if cancel.load(Ordering::Relaxed) {
         let _ = std::fs::remove_file(&output);
+        crate::export_queue::remember_job_result(
+            &app,
+            &job_id,
+            crate::export_queue::JobResult {
+                output_path: None,
+                error: None,
+                cancelled: true,
+            },
+        );
         emit(OptimizeProgress {
             job_id: job_id.clone(),
             percent: 0.0,
@@ -149,6 +168,20 @@ pub(crate) fn run_optimize(
     if !ok {
         let _ = std::fs::remove_file(&output);
         let tail: String = stderr_text.lines().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join(" ");
+        let err = if tail.is_empty() {
+            "ffmpeg failed".into()
+        } else {
+            tail
+        };
+        crate::export_queue::remember_job_result(
+            &app,
+            &job_id,
+            crate::export_queue::JobResult {
+                output_path: None,
+                error: Some(err.clone()),
+                cancelled: false,
+            },
+        );
         emit(OptimizeProgress {
             job_id: job_id.clone(),
             percent: 0.0,
@@ -156,7 +189,7 @@ pub(crate) fn run_optimize(
             cancelled: false,
             output_path: None,
             output_size_bytes: None,
-            error: Some(if tail.is_empty() { "ffmpeg failed".into() } else { tail }),
+            error: Some(err),
         });
         return;
     }
@@ -172,6 +205,15 @@ pub(crate) fn run_optimize(
             }
             Err(e) => {
                 let _ = std::fs::remove_file(&output);
+                crate::export_queue::remember_job_result(
+                    &app,
+                    &job_id,
+                    crate::export_queue::JobResult {
+                        output_path: None,
+                        error: Some(e.clone()),
+                        cancelled: false,
+                    },
+                );
                 emit(OptimizeProgress {
                     job_id: job_id.clone(),
                     percent: 0.0,
@@ -194,16 +236,36 @@ pub(crate) fn run_optimize(
     };
 
     let final_size = std::fs::metadata(&final_path).map(|m| m.len()).unwrap_or(size);
+    let out_str = final_path.to_string_lossy().into_owned();
+    let title = opts
+        .output_name
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| {
+            final_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "export".into());
 
-    // Encode / stream-copy already use -movflags +faststart — skip a second full-file remux
-    // (was rewriting multi-GB outputs after every export).
+    crate::export_queue::remember_job_result(
+        &app,
+        &job_id,
+        crate::export_queue::JobResult {
+            output_path: Some(out_str.clone()),
+            error: None,
+            cancelled: false,
+        },
+    );
+    crate::post_export::run_post_export(&app, &out_str, &title, Some(job_id.clone()));
 
     emit(OptimizeProgress {
         job_id: job_id.clone(),
         percent: 100.0,
         done: true,
         cancelled: false,
-        output_path: Some(final_path.to_string_lossy().into_owned()),
+        output_path: Some(out_str),
         output_size_bytes: Some(final_size),
         error: None,
     });

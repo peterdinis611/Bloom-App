@@ -219,11 +219,17 @@ export async function openSession(filename: string, meta: SessionMeta): Promise<
 }
 
 /**
- * Streams a raw binary chunk into the open session file.
+ * Streams a raw binary chunk into the open session file (Uint8Array body + header).
  * Returns the cumulative bytes written (useful for a live progress indicator).
  */
-export async function writeChunk(sessionId: number, data: number[]): Promise<number> {
-  return invoke<number>("write_chunk", { sessionId, data })
+export async function writeChunk(
+  sessionId: number,
+  data: Uint8Array | number[],
+): Promise<number> {
+  const bytes = data instanceof Uint8Array ? data : Uint8Array.from(data)
+  return invoke<number>("write_chunk", bytes, {
+    headers: { "x-session-id": String(sessionId) },
+  })
 }
 
 /**
@@ -255,10 +261,16 @@ export async function getLibraryStats(): Promise<LibraryStats> {
 
 /**
  * Save a still-frame PNG snapshot into ~/Movies/Bloom. Returns the saved path.
- * `data` is the raw PNG bytes as a number array.
+ * Binary IPC: raw PNG body + `x-filename` header.
  */
-export async function saveSnapshot(filename: string, data: number[]): Promise<string> {
-  return invoke<string>("save_snapshot", { filename, data })
+export async function saveSnapshot(
+  filename: string,
+  data: Uint8Array | number[],
+): Promise<string> {
+  const bytes = data instanceof Uint8Array ? data : Uint8Array.from(data)
+  return invoke<string>("save_snapshot", bytes, {
+    headers: { "x-filename": filename },
+  })
 }
 
 // ── Recording management ───────────────────────────────────────────────────
@@ -530,6 +542,133 @@ export async function getThumbnail(id: string, atSecs?: number): Promise<string>
  */
 export async function optimizeVideo(options: OptimizeOptions): Promise<string> {
   return invoke<string>("optimize_video", { options })
+}
+
+/** Normalize / validate OptimizeOptions in Rust before encode. */
+export async function planExport(request: {
+  options: OptimizeOptions
+  speech_ranges?: { start: number; end: number }[]
+  preferred_stem?: string | null
+}): Promise<{ options: OptimizeOptions; warnings: string[] }> {
+  return invoke("plan_export", { request })
+}
+
+export interface ExportLimits {
+  max_segments: number
+  min_segment_secs: number
+  min_crop: number
+  min_speech_secs: number
+}
+
+/** Segment / crop floors shared with encode validation. */
+export async function getExportLimits(): Promise<ExportLimits> {
+  return invoke<ExportLimits>("get_export_limits")
+}
+
+export interface EnqueueExportJob {
+  label: string
+  options: OptimizeOptions
+  speechRanges?: { start: number; end: number }[]
+  preferredStem?: string | null
+}
+
+export interface ExportQueueItemDto {
+  id: string
+  label: string
+  status: string
+  percent: number
+  jobId?: string | null
+  error?: string | null
+  outputPath?: string | null
+}
+
+/** Enqueue exports into the Rust worker (no FE pump required). */
+export async function enqueueExports(jobs: EnqueueExportJob[]): Promise<ExportQueueItemDto[]> {
+  return invoke<ExportQueueItemDto[]>("enqueue_exports", {
+    jobs: jobs.map((j) => ({
+      label: j.label,
+      options: j.options,
+      speechRanges: j.speechRanges ?? [],
+      preferredStem: j.preferredStem ?? null,
+    })),
+  })
+}
+
+export async function cancelExportQueueItem(id: string): Promise<void> {
+  return invoke<void>("cancel_export_queue_item", { id })
+}
+
+export async function listExportQueue(): Promise<ExportQueueItemDto[]> {
+  return invoke<ExportQueueItemDto[]>("list_export_queue")
+}
+
+export async function clearExportQueueFinished(): Promise<void> {
+  return invoke<void>("clear_export_queue_finished")
+}
+
+export async function onExportQueueChanged(
+  cb: (items: ExportQueueItemDto[]) => void,
+): Promise<UnlistenFn> {
+  return listen<ExportQueueItemDto[]>("export-queue-changed", (e) => cb(e.payload))
+}
+
+export interface ExportFinishedPayload {
+  path: string
+  title: string
+  job_id?: string | null
+  auto_share: boolean
+}
+
+export async function onExportFinished(
+  cb: (p: ExportFinishedPayload) => void,
+): Promise<UnlistenFn> {
+  return listen<ExportFinishedPayload>("export-finished", (e) => cb(e.payload))
+}
+
+export interface IntegrationConfigDto {
+  slack_webhook_url: string
+  discord_webhook_url: string
+  notify_on_export: boolean
+  open_after_export: boolean
+  copy_path_after_export: boolean
+  auto_share_after_export: boolean
+}
+
+export interface ExportDefaultsConfigDto {
+  preset: string
+  resolution: string
+  format: string
+  prefer_stream_copy: boolean
+  prefer_hardware_encode: boolean
+}
+
+export interface RecordingLimitsConfigDto {
+  max_duration_secs: number
+  idle_stop_secs: number
+}
+
+export async function getIntegrationsConfig(): Promise<IntegrationConfigDto> {
+  return invoke<IntegrationConfigDto>("get_integrations_config")
+}
+
+export async function setIntegrationsConfig(integrations: IntegrationConfigDto): Promise<void> {
+  return invoke<void>("set_integrations_config", { integrations })
+}
+
+export async function getExportDefaultsConfig(): Promise<ExportDefaultsConfigDto> {
+  return invoke<ExportDefaultsConfigDto>("get_export_defaults_config")
+}
+
+export async function setExportDefaultsConfig(defaults: ExportDefaultsConfigDto): Promise<void> {
+  return invoke<void>("set_export_defaults_config", { defaults })
+}
+
+export async function getRecordingLimitsConfig(): Promise<RecordingLimitsConfigDto> {
+  return invoke<RecordingLimitsConfigDto>("get_recording_limits_config")
+}
+
+export async function setRecordingLimitsConfig(limits: RecordingLimitsConfigDto): Promise<void> {
+  return invoke<void>("set_recording_limits_config", { limits })
 }
 
 /** Request cancellation of a running transcode job. */

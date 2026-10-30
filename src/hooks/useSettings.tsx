@@ -293,6 +293,40 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           /* Vite-only / non-Tauri */
         }
       }
+      // Pull segment limits + seed Rust config.json from IDB (post-export / tray).
+      try {
+        const {
+          getExportLimits,
+          setIntegrationsConfig,
+          setExportDefaultsConfig,
+          setRecordingLimitsConfig,
+        } = await import("@/hooks/useBloomBackend")
+        const { applyExportLimits } = await import("@/lib/editorSegments")
+        applyExportLimits(await getExportLimits())
+        await Promise.all([
+          setIntegrationsConfig({
+            slack_webhook_url: next.integrations.slackWebhookUrl,
+            discord_webhook_url: next.integrations.discordWebhookUrl,
+            notify_on_export: next.integrations.notifyOnExport,
+            open_after_export: next.integrations.openAfterExport,
+            copy_path_after_export: next.integrations.copyPathAfterExport,
+            auto_share_after_export: next.integrations.autoShareAfterExport,
+          }),
+          setExportDefaultsConfig({
+            preset: next.exportDefaults.preset,
+            resolution: next.exportDefaults.resolution,
+            format: next.exportDefaults.format,
+            prefer_stream_copy: next.exportDefaults.preferStreamCopy,
+            prefer_hardware_encode: next.exportDefaults.preferHardwareEncode,
+          }),
+          setRecordingLimitsConfig({
+            max_duration_secs: next.recording.maxDurationSecs,
+            idle_stop_secs: next.recording.idleStopSecs,
+          }),
+        ])
+      } catch {
+        /* Vite-only / non-Tauri */
+      }
       setSettings(next)
       applyTheme(next.theme)
       applyReduceTransparency(next.general.reduceTransparency)
@@ -329,6 +363,34 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const persistSettings = useDebouncedCallback((next: AppSettings) => {
     void idbSet(STORAGE_KEY, JSON.stringify(next))
+    // Mirror export-relevant settings into Rust config.json (tray / headless post-export).
+    void import("@/hooks/useBloomBackend")
+      .then(({ setIntegrationsConfig, setExportDefaultsConfig, setRecordingLimitsConfig }) =>
+        Promise.all([
+          setIntegrationsConfig({
+            slack_webhook_url: next.integrations.slackWebhookUrl,
+            discord_webhook_url: next.integrations.discordWebhookUrl,
+            notify_on_export: next.integrations.notifyOnExport,
+            open_after_export: next.integrations.openAfterExport,
+            copy_path_after_export: next.integrations.copyPathAfterExport,
+            auto_share_after_export: next.integrations.autoShareAfterExport,
+          }),
+          setExportDefaultsConfig({
+            preset: next.exportDefaults.preset,
+            resolution: next.exportDefaults.resolution,
+            format: next.exportDefaults.format,
+            prefer_stream_copy: next.exportDefaults.preferStreamCopy,
+            prefer_hardware_encode: next.exportDefaults.preferHardwareEncode,
+          }),
+          setRecordingLimitsConfig({
+            max_duration_secs: next.recording.maxDurationSecs,
+            idle_stop_secs: next.recording.idleStopSecs,
+          }),
+        ]),
+      )
+      .catch(() => {
+        /* Vite-only / non-Tauri */
+      })
   }, { wait: PACER.persist })
 
   useEffect(() => {

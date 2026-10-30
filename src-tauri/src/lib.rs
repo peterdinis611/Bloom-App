@@ -6,14 +6,19 @@ mod backup;
 mod config;
 mod clipboard;
 mod cursor;
+mod error;
+mod export_plan;
+mod export_queue;
 mod finalize;
 mod i18n;
 mod library;
 mod naming;
+mod post_export;
 mod session;
 mod share;
 mod system;
 mod tray;
+mod type_export;
 mod types;
 mod util;
 mod video;
@@ -29,6 +34,8 @@ pub fn run() {
     tauri::Builder::default()
         .manage(session::Sessions::default())
         .manage(video::VideoJobs::default())
+        .manage(export_queue::ExportQueue::default())
+        .manage(export_queue::JobOutputs::default())
         .manage(cursor::CursorTracker::default())
         .manage(cursor::ClickTracker::default())
         .manage(tray::RecordingTrayState::default())
@@ -131,6 +138,20 @@ pub fn run() {
             video::detect_silence,
             video::concat_recordings,
             video::apply_click_spotlight,
+            export_plan::plan_export,
+            export_plan::get_export_limits,
+            export_queue::enqueue_exports,
+            export_queue::cancel_export_queue_item,
+            export_queue::list_export_queue,
+            export_queue::clear_export_queue_finished,
+            post_export::get_integrations_config,
+            post_export::set_integrations_config,
+            post_export::get_export_defaults_config,
+            post_export::set_export_defaults_config,
+            post_export::get_recording_limits_config,
+            post_export::set_recording_limits_config,
+            post_export::get_full_app_config,
+            type_export::get_optimize_options_ts,
             cursor::start_cursor_tracker,
             cursor::stop_cursor_tracker,
             cursor::start_click_tracker,

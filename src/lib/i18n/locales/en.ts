@@ -121,6 +121,8 @@ export const en: Messages = {
     permissionDenied: "Access denied. Grant permissions in System Settings.",
     deviceNotFound: "Device not found",
     cancelled: "Operation was cancelled",
+    diskLow: "Disk space is low",
+    invalidOptions: "Invalid export options",
   },
   privacy: {
     openScreen: "Open Screen Recording",

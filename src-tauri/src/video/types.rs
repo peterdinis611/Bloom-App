@@ -41,13 +41,13 @@ pub struct SubtitleCard {
     pub end_secs: f64,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TimeRange {
     pub start: f64,
     pub end: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OptimizeOptions {
     pub input_path: String,
     /// "small" | "medium" | "high"

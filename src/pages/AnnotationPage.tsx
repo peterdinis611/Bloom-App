@@ -232,7 +232,7 @@ export function AnnotationPage() {
       if (blob) {
         const bytes = new Uint8Array(await blob.arrayBuffer())
         const stamp = new Date().toISOString().replace(/[:.]/g, "-")
-        await saveSnapshotToLibrary(`annotation-${stamp}.png`, Array.from(bytes))
+        await saveSnapshotToLibrary(`annotation-${stamp}.png`, bytes)
         ok = true
       }
     } catch { /* ignore */ }

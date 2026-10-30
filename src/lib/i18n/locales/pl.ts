@@ -130,6 +130,8 @@ export const pl: Messages = {
     permissionDenied: "Odmowa dostępu. Zezwól na uprawnienia w Ustawieniach systemowych.",
     deviceNotFound: "Urządzenie nie zostało znalezione",
     cancelled: "Operacja została anulowana",
+    diskLow: "Mało miejsca na dysku",
+    invalidOptions: "Nieprawidłowe opcje eksportu",
   },
   privacy: {
     openScreen: "Otwórz nagrywanie ekranu",

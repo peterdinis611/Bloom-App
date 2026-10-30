@@ -14,6 +14,71 @@ pub(crate) struct ShortcutConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct IntegrationConfig {
+    #[serde(default)]
+    pub slack_webhook_url: String,
+    #[serde(default)]
+    pub discord_webhook_url: String,
+    #[serde(default)]
+    pub notify_on_export: bool,
+    #[serde(default)]
+    pub open_after_export: bool,
+    #[serde(default)]
+    pub copy_path_after_export: bool,
+    #[serde(default)]
+    pub auto_share_after_export: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportDefaultsConfig {
+    #[serde(default = "default_preset")]
+    pub preset: String,
+    #[serde(default = "default_resolution")]
+    pub resolution: String,
+    #[serde(default = "default_format")]
+    pub format: String,
+    #[serde(default = "default_true")]
+    pub prefer_stream_copy: bool,
+    #[serde(default = "default_true")]
+    pub prefer_hardware_encode: bool,
+}
+
+impl Default for ExportDefaultsConfig {
+    fn default() -> Self {
+        Self {
+            preset: default_preset(),
+            resolution: default_resolution(),
+            format: default_format(),
+            prefer_stream_copy: true,
+            prefer_hardware_encode: true,
+        }
+    }
+}
+
+fn default_preset() -> String {
+    "medium".into()
+}
+fn default_resolution() -> String {
+    "original".into()
+}
+fn default_format() -> String {
+    "mp4".into()
+}
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RecordingLimitsConfig {
+    /// Auto-stop after N seconds (0 = off).
+    #[serde(default)]
+    pub max_duration_secs: u64,
+    /// Auto-stop after N seconds of idle (0 = off).
+    #[serde(default)]
+    pub idle_stop_secs: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub(crate) struct AppConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub library_dir: Option<String>,
@@ -41,6 +106,15 @@ pub(crate) struct AppConfig {
     /// Default relative folder for new recordings (empty = inbox / library root).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_recording_folder: Option<String>,
+    /// Post-export open/copy/webhooks (also usable from tray when UI is closed).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub integrations: Option<IntegrationConfig>,
+    /// Default editor / batch export options.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub export_defaults: Option<ExportDefaultsConfig>,
+    /// Recording auto-stop limits.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recording_limits: Option<RecordingLimitsConfig>,
 }
 
 fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {

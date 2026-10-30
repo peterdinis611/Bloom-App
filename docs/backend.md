@@ -74,14 +74,15 @@ Frontend MediaRecorder
 
 Vstup: `OptimizeOptions` (cesta, preset, trim, titulky, …)
 
-1. **Analýza** — `analyze_video`, `estimate_export`
-2. **Rozhodnutie** — `can_stream_copy` pre trim-only H.264 MP4 (bez prekódovania)
-3. **Kódovanie** — priorita: VideoToolbox (macOS) → NVENC → libx264/libx265
-4. **Filtre** — `hqdn3d` (video), `afftdn` + highpass (`denoise_audio`), `dynaudnorm`, `drawtext`
-5. **Remux** — MP4 faststart po encode
+1. **`plan_export`** — jedna pravda pre HEVC/GIF/replace/speech limity (`export_plan.rs`)
+2. **Analýza** — `analyze_video`, `estimate_export`
+3. **Rozhodnutie** — `can_stream_copy` pre trim-only H.264 MP4 (bez prekódovania)
+4. **Kódovanie** — priorita: VideoToolbox (macOS) → NVENC → libx264/libx265
+5. **Filtre** — `hqdn3d` (video), `afftdn` + highpass (`denoise_audio`), `dynaudnorm`, `drawtext`
 6. **Progress** — event `video-progress` s `job_id`, percent, `done`
+7. **Post-export** — open / copy path / webhooks z `config.json` (`post_export.rs`), event `export-finished`
 
-Fronta na frontende (`useExportQueue`) spúšťa exporty **sekvenčne**. Dávková optimalizácia knižnice volá `batch_optimize` (jeden Rust worker).
+Fronta beží v Rusti (`enqueue_exports` + `export_queue.rs`); FE len enqueue + UI. `write_chunk` / `save_snapshot` berú binárne telo (`Uint8Array`) + headery.
 
 ### `OptimizeOptions` (výber polí)
 

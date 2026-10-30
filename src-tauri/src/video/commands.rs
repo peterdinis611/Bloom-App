@@ -77,25 +77,38 @@ pub fn optimize_video(
     state: tauri::State<VideoJobs>,
     options: OptimizeOptions,
 ) -> Result<String, String> {
-    let ffmpeg = find_ffmpeg().ok_or_else(|| "ffmpeg nie je nainštalovaný. Nainštaluj ho a skús znova.".to_string())?;
-    let ffprobe = find_ffprobe(Some(&ffmpeg)).ok_or_else(|| "ffprobe nie je nainštalovaný. Nainštaluj ffmpeg a skús znova.".to_string())?;
+    use crate::error::{coded, codes};
+    use crate::export_plan::{plan_export_inner, PlanExportRequest};
+
+    let options = plan_export_inner(PlanExportRequest {
+        options,
+        speech_ranges: vec![],
+        preferred_stem: None,
+    })?
+    .options;
+
+    let ffmpeg = find_ffmpeg().ok_or_else(|| {
+        coded(
+            codes::FFMPEG_MISSING,
+            "ffmpeg nie je nainštalovaný. Nainštaluj ho a skús znova.",
+        )
+    })?;
+    let ffprobe = find_ffprobe(Some(&ffmpeg)).ok_or_else(|| {
+        coded(
+            codes::FFMPEG_MISSING,
+            "ffprobe nie je nainštalovaný. Nainštaluj ffmpeg a skús znova.",
+        )
+    })?;
 
     let input = PathBuf::from(&options.input_path);
     if !input.exists() {
-        return Err("Vstupné video neexistuje".into());
+        return Err(coded(codes::VIDEO_MISSING, "Vstupné video neexistuje"));
     }
 
     // Determine total duration for progress (trimmed window or full clip).
     let info = probe_cached(&ffprobe, &options.input_path)?;
     let total_secs = trim_duration(&options).unwrap_or(info.duration_secs)
         / effective_speed(options.speed);
-
-    if options.replace_original && options.format != "mp4" {
-        return Err("Nahradenie originálu je podporované len pre MP4.".into());
-    }
-    if options.replace_original && options.use_hevc {
-        return Err("Nahradenie originálu nepodporuje HEVC.".into());
-    }
 
     let output = if options.replace_original {
         input.with_extension("bloom-replace.tmp.mp4")

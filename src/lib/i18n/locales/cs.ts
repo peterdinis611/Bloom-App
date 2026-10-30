@@ -120,6 +120,8 @@ export const cs: Messages = {
     permissionDenied: "Přístup zamítnut. Povol oprávnění v Systémových nastaveních.",
     deviceNotFound: "Zařízení se nenašlo",
     cancelled: "Operace byla zrušena",
+    diskLow: "Na disku je málo místa",
+    invalidOptions: "Neplatné nastavení exportu",
   },
   privacy: {
     openScreen: "Otevřít nahrávání obrazovky",

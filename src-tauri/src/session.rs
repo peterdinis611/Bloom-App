@@ -174,12 +174,45 @@ pub(crate) fn open_session(
     Ok(id)
 }
 
+/// Binary IPC: FE passes `Uint8Array` as the invoke body and `x-session-id` header.
 #[tauri::command]
 pub(crate) fn write_chunk(
     app: tauri::AppHandle,
     state: tauri::State<Sessions>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<u64, String> {
+    let session_id = request
+        .headers()
+        .get("x-session-id")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u32>().ok())
+        .ok_or_else(|| {
+            crate::error::coded(crate::error::codes::SESSION_MISSING, "No session")
+        })?;
+
+    let data: &[u8] = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes.as_slice(),
+        tauri::ipc::InvokeBody::Json(v) => {
+            // Fallback for older callers that still send number[].
+            if let Some(arr) = v.as_array() {
+                let owned: Vec<u8> = arr.iter().filter_map(|n| n.as_u64().map(|u| u as u8)).collect();
+                return write_chunk_bytes(&app, &state, session_id, &owned);
+            }
+            return Err(crate::error::coded(
+                crate::error::codes::WRITE_FAILED,
+                "Invalid chunk body",
+            ));
+        }
+    };
+
+    write_chunk_bytes(&app, &state, session_id, data)
+}
+
+fn write_chunk_bytes(
+    app: &tauri::AppHandle,
+    state: &tauri::State<Sessions>,
     session_id: u32,
-    data: Vec<u8>,
+    data: &[u8],
 ) -> Result<u64, String> {
     // Take Arc under a short map lock, then write without holding the map.
     let write = {
@@ -187,7 +220,12 @@ pub(crate) fn write_chunk(
         sm.map
             .get(&session_id)
             .map(|s| Arc::clone(&s.write))
-            .ok_or_else(|| format!("No session {session_id}"))?
+            .ok_or_else(|| {
+                crate::error::coded(
+                    crate::error::codes::SESSION_MISSING,
+                    format!("No session {session_id}"),
+                )
+            })?
     };
 
     let mut w = write.lock().unwrap();
@@ -198,23 +236,29 @@ pub(crate) fn write_chunk(
         Some(n) => n >= DISK_CHECK_INTERVAL,
     };
     if due {
-        let min_mb = load_config(&app)
+        let min_mb = load_config(app)
             .ok()
             .and_then(|c| c.disk_space_min_mb)
             .unwrap_or(DEFAULT_DISK_MIN_MB);
         let available = available_space_bytes(&w.dir).map(|(avail, _)| avail);
         if !has_enough_space(available, min_mb, data.len() as u64) {
             let _ = w.writer.flush();
-            let locale = tauri::Manager::state::<crate::i18n::LocaleState>(&app);
+            let locale = tauri::Manager::state::<crate::i18n::LocaleState>(app);
             let msg = crate::i18n::current_strings(&*locale).err_disk_low;
-            return Err(format!("{msg} (<{min_mb} MB)"));
+            return Err(crate::error::coded(
+                crate::error::codes::DISK_LOW,
+                format!("{msg} (<{min_mb} MB)"),
+            ));
         }
         w.since_check = Some(0);
     }
 
-    w.writer
-        .write_all(&data)
-        .map_err(|e| format!("Write error: {e}"))?;
+    w.writer.write_all(data).map_err(|e| {
+        crate::error::coded(
+            crate::error::codes::WRITE_FAILED,
+            format!("Write error: {e}"),
+        )
+    })?;
     w.bytes_written += data.len() as u64;
     if let Some(n) = w.since_check.as_mut() {
         *n += data.len() as u64;

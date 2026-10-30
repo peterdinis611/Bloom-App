@@ -120,6 +120,8 @@ export const de: Messages = {
     permissionDenied: "Zugriff verweigert. Erteile Berechtigungen in den Systemeinstellungen.",
     deviceNotFound: "Gerät nicht gefunden",
     cancelled: "Vorgang abgebrochen",
+    diskLow: "Speicherplatz ist knapp",
+    invalidOptions: "Ungültige Exportoptionen",
   },
   privacy: {
     openScreen: "Bildschirmaufnahme öffnen",

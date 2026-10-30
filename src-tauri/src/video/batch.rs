@@ -45,15 +45,19 @@ pub fn batch_optimize(
     let mut job_ids = Vec::with_capacity(options.len());
 
     for opts in options {
+        let opts = crate::export_plan::plan_export_inner(crate::export_plan::PlanExportRequest {
+            options: opts,
+            speech_ranges: vec![],
+            preferred_stem: None,
+        })?
+        .options;
+
         let input = PathBuf::from(&opts.input_path);
         if !input.exists() {
-            return Err(format!("Vstupné video neexistuje: {}", opts.input_path));
-        }
-        if opts.replace_original && opts.format != "mp4" {
-            return Err("Nahradenie originálu je podporované len pre MP4.".into());
-        }
-        if opts.replace_original && opts.use_hevc {
-            return Err("Nahradenie originálu nepodporuje HEVC.".into());
+            return Err(crate::error::coded(
+                crate::error::codes::VIDEO_MISSING,
+                format!("Vstupné video neexistuje: {}", opts.input_path),
+            ));
         }
 
         let info = probe_cached(&ffprobe, &opts.input_path)?;

@@ -11,9 +11,41 @@ export interface EditorCrop {
   h: number
 }
 
+/** Mirrored from Rust `export_plan` — encode validation is the source of truth. */
 export const MAX_SEGMENTS = 8
 export const MIN_SEGMENT_SECS = 0.5
 export const MIN_CROP = 0.05
+export const MIN_SPEECH_SECS = 0.25
+
+/** Apply limits returned by `get_export_limits` (keeps editor UI in sync with Rust). */
+export function applyExportLimits(lim: {
+  max_segments: number
+  min_segment_secs: number
+  min_crop: number
+  min_speech_secs: number
+}): void {
+  ;(globalThis as { __bloomExportLimits?: typeof lim }).__bloomExportLimits = lim
+}
+
+export function exportLimits(): {
+  maxSegments: number
+  minSegmentSecs: number
+  minCrop: number
+  minSpeechSecs: number
+} {
+  const o = (globalThis as { __bloomExportLimits?: {
+    max_segments: number
+    min_segment_secs: number
+    min_crop: number
+    min_speech_secs: number
+  } }).__bloomExportLimits
+  return {
+    maxSegments: o?.max_segments ?? MAX_SEGMENTS,
+    minSegmentSecs: o?.min_segment_secs ?? MIN_SEGMENT_SECS,
+    minCrop: o?.min_crop ?? MIN_CROP,
+    minSpeechSecs: o?.min_speech_secs ?? MIN_SPEECH_SECS,
+  }
+}
 
 export function segmentDuration(seg: EditorSegment): number {
   return Math.max(0, seg.end - seg.start)

@@ -1,4 +1,8 @@
-/** Optional Slack / Discord webhook notifications after export. */
+/**
+ * Post-export Slack / Discord webhooks run from Rust (`post_export`) using
+ * config.json so they work without an open window. This helper remains for
+ * rare FE-only callers / tests.
+ */
 
 export async function notifyExportWebhooks(opts: {
   slackUrl?: string

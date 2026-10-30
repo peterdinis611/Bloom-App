@@ -3,16 +3,19 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useRef,
   useState,
   type ReactNode,
 } from "react"
 import type { OptimizeOptions } from "@/types"
 import {
-  batchOptimize,
-  cancelOptimize,
+  cancelExportQueueItem,
+  clearExportQueueFinished,
+  enqueueExports,
+  listExportQueue,
+  onExportFinished,
+  onExportQueueChanged,
   onOptimizeProgress,
-  optimizeVideo,
+  type ExportQueueItemDto,
 } from "@/hooks/useBloomBackend"
 import { useToast } from "@/hooks/useToast"
 import { getMessagesSync } from "@/lib/i18n/I18nProvider"
@@ -38,13 +41,15 @@ export interface ExportQueueItem {
 export interface EnqueueJob {
   label: string
   options: OptimizeOptions
+  speechRanges?: { start: number; end: number }[]
+  preferredStem?: string
 }
 
 interface ExportQueueContextValue {
   items: ExportQueueItem[]
   activeCount: number
   enqueue: (jobs: EnqueueJob | EnqueueJob[]) => void
-  /** Start all jobs via Rust `batch_optimize` (one worker, sequential). */
+  /** Start all jobs via Rust export queue (one worker, sequential). */
   enqueueBatch: (jobs: EnqueueJob[]) => Promise<void>
   cancelItem: (id: string) => void
   clearFinished: () => void
@@ -52,190 +57,193 @@ interface ExportQueueContextValue {
 
 const ExportQueueContext = createContext<ExportQueueContextValue | null>(null)
 
-function newId(): string {
-  return crypto.randomUUID()
+function mapDto(
+  dto: ExportQueueItemDto,
+  prev?: ExportQueueItem,
+): ExportQueueItem {
+  const status = (dto.status as QueueItemStatus) || "pending"
+  return {
+    id: dto.id,
+    label: dto.label,
+    options: prev?.options ?? ({ input_path: "", preset: "medium", resolution: "original", format: "mp4" } as OptimizeOptions),
+    status,
+    percent: dto.percent,
+    error: dto.error ?? undefined,
+    outputPath: dto.outputPath ?? undefined,
+    jobId: dto.jobId ?? undefined,
+    outputSize: prev?.outputSize,
+  }
 }
 
 export function ExportQueueProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ExportQueueItem[]>([])
   const { success, error, info } = useToast()
-  const itemsRef = useRef(items)
-  const processingRef = useRef(false)
-  const jobResolversRef = useRef(new Map<string, (done: boolean) => void>())
 
-  itemsRef.current = items
-
-  const pump = useCallback(async () => {
-    if (processingRef.current) return
-    processingRef.current = true
-    try {
-      while (true) {
-        const next = itemsRef.current.find((i) => i.status === "pending")
-        if (!next) break
-
-        setItems((prev) =>
-          prev.map((i) => (i.id === next.id ? { ...i, status: "running", percent: 0 } : i)),
-        )
-
-        let jobId: string
-        try {
-          jobId = await optimizeVideo(next.options)
-        } catch (e) {
-          const sk = getMessagesSync()
-          error({ title: sk.toast.exportFailed, description: localizeError(e) })
-          setItems((prev) =>
-            prev.map((i) =>
-              i.id === next.id ? { ...i, status: "error", error: localizeError(e), percent: 0 } : i,
-            ),
-          )
-          continue
-        }
-
-        setItems((prev) => prev.map((i) => (i.id === next.id ? { ...i, jobId } : i)))
-
-        await new Promise<void>((resolve) => {
-          jobResolversRef.current.set(jobId, () => resolve())
-        })
-      }
-    } finally {
-      processingRef.current = false
+  useEffect(() => {
+    let cancelled = false
+    listExportQueue()
+      .then((list) => {
+        if (!cancelled) setItems(list.map((d) => mapDto(d)))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
     }
-  }, [error])
+  }, [])
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    onExportQueueChanged((list) => {
+      setItems((prev) => {
+        const byId = new Map(prev.map((i) => [i.id, i]))
+        return list.map((d) => mapDto(d, byId.get(d.id)))
+      })
+    }).then((fn) => {
+      unlisten = fn
+    })
+    return () => {
+      unlisten?.()
+    }
+  }, [])
 
   useEffect(() => {
     let unlisten: (() => void) | undefined
     onOptimizeProgress((p) => {
+      if (!p.job_id || !p.done) {
+        setItems((prev) =>
+          prev.map((item) =>
+            item.jobId === p.job_id && !p.done
+              ? { ...item, percent: Math.max(0, p.percent) }
+              : item,
+          ),
+        )
+        return
+      }
+      const sk = getMessagesSync()
       setItems((prev) =>
         prev.map((item) => {
           if (item.jobId !== p.job_id) return item
-          if (!p.done) return { ...item, percent: Math.max(0, p.percent) }
-          const resolver = jobResolversRef.current.get(p.job_id)
-          resolver?.(true)
-          jobResolversRef.current.delete(p.job_id)
-          const sk = getMessagesSync()
           if (p.cancelled) {
             info({ title: sk.toast.exportCancelled, description: item.label })
             return { ...item, status: "cancelled", percent: 0 }
           }
           if (p.error) {
-            error({ title: sk.toast.exportFailed, description: `${item.label}: ${localizeError(p.error)}` })
-            return { ...item, status: "error", error: localizeError(p.error), percent: 0 }
+            error({
+              title: sk.toast.exportFailed,
+              description: `${item.label}: ${localizeError(p.error)}`,
+            })
+            return {
+              ...item,
+              status: "error",
+              error: localizeError(p.error),
+              percent: 0,
+            }
           }
           success({ title: sk.toast.exportDone, description: item.label })
-          const outPath = p.output_path ?? undefined
-          if (outPath) {
-            void import("@/hooks/useSettings").then(({ readStoredSettings }) =>
-              readStoredSettings().then((s) => {
-                const integ = s.integrations
-                if (integ.openAfterExport) {
-                  void import("@/hooks/useBloomBackend").then(({ openWithSystemApp }) =>
-                    openWithSystemApp(outPath).catch(() => {}),
-                  )
-                }
-                if (integ.copyPathAfterExport) {
-                  void import("@/hooks/useBloomBackend").then(({ copyText }) =>
-                    copyText(outPath).catch(() => {}),
-                  )
-                }
-                if (integ.autoShareAfterExport) {
-                  window.dispatchEvent(
-                    new CustomEvent(SHARE_EXPORT_EVENT, { detail: { path: outPath } }),
-                  )
-                }
-                if (integ.notifyOnExport) {
-                  void import("@/lib/integrations").then(({ notifyExportWebhooks }) =>
-                    notifyExportWebhooks({
-                      enabled: true,
-                      slackUrl: integ.slackWebhookUrl,
-                      discordUrl: integ.discordWebhookUrl,
-                      title: item.label,
-                      path: outPath,
-                    }),
-                  )
-                }
-              }),
-            )
-          }
           return {
             ...item,
             status: "done",
             percent: 100,
-            outputPath: outPath,
+            outputPath: p.output_path ?? undefined,
             outputSize: p.output_size_bytes ?? undefined,
           }
         }),
       )
-    }).then((fn) => { unlisten = fn })
-    return () => { unlisten?.() }
+    }).then((fn) => {
+      unlisten = fn
+    })
+    return () => {
+      unlisten?.()
+    }
   }, [success, error, info])
 
   useEffect(() => {
-    if (items.some((i) => i.status === "pending")) void pump()
-  }, [items, pump])
-
-  const enqueue = useCallback((jobs: EnqueueJob | EnqueueJob[]) => {
-    const list = Array.isArray(jobs) ? jobs : [jobs]
-    const sk = getMessagesSync()
-    info({
-      title: sk.toast.exportQueued(list.length),
-      description: sk.toast.exportQueuedBody,
+    let unlisten: (() => void) | undefined
+    onExportFinished((p) => {
+      if (p.auto_share && p.path) {
+        window.dispatchEvent(
+          new CustomEvent(SHARE_EXPORT_EVENT, { detail: { path: p.path } }),
+        )
+      }
+    }).then((fn) => {
+      unlisten = fn
     })
-    setItems((prev) => [
-      ...prev,
-      ...list.map((job) => ({
-        id: newId(),
-        label: job.label,
-        options: job.options,
-        status: "pending" as const,
-        percent: 0,
-      })),
-    ])
-  }, [info])
-
-  const enqueueBatch = useCallback(async (jobs: EnqueueJob[]) => {
-    if (jobs.length === 0) return
-    const sk = getMessagesSync()
-    info({
-      title: sk.toast.exportQueued(jobs.length),
-      description: sk.toast.exportQueuedBody,
-    })
-    try {
-      const jobIds = await batchOptimize(jobs.map((j) => j.options))
-      setItems((prev) => [
-        ...prev,
-        ...jobs.map((job, i) => ({
-          id: newId(),
-          label: job.label,
-          options: job.options,
-          status: "running" as const,
-          percent: 0,
-          jobId: jobIds[i],
-        })),
-      ])
-    } catch (e) {
-      error({ title: sk.toast.exportFailed, description: localizeError(e) })
+    return () => {
+      unlisten?.()
     }
-  }, [info, error])
+  }, [])
+
+  const enqueue = useCallback(
+    (jobs: EnqueueJob | EnqueueJob[]) => {
+      const list = Array.isArray(jobs) ? jobs : [jobs]
+      const sk = getMessagesSync()
+      info({
+        title: sk.toast.exportQueued(list.length),
+        description: sk.toast.exportQueuedBody,
+      })
+      void enqueueExports(
+        list.map((j) => ({
+          label: j.label,
+          options: j.options,
+          speechRanges: j.speechRanges,
+          preferredStem: j.preferredStem,
+        })),
+      )
+        .then((added) => {
+          setItems((prev) => {
+            const byId = new Map(prev.map((i) => [i.id, i]))
+            const mapped = added.map((d, i) =>
+              mapDto(d, {
+                id: d.id,
+                label: list[i]?.label ?? d.label,
+                options: list[i]?.options ?? ({} as OptimizeOptions),
+                status: "pending",
+                percent: 0,
+              }),
+            )
+            for (const m of mapped) byId.set(m.id, m)
+            return Array.from(byId.values())
+          })
+        })
+        .catch((e) => {
+          error({ title: sk.toast.exportFailed, description: localizeError(e) })
+        })
+    },
+    [info, error],
+  )
+
+  const enqueueBatch = useCallback(
+    async (jobs: EnqueueJob[]) => {
+      if (jobs.length === 0) return
+      enqueue(jobs)
+    },
+    [enqueue],
+  )
 
   const cancelItem = useCallback((id: string) => {
-    const item = itemsRef.current.find((i) => i.id === id)
-    if (!item) return
-    if (item.status === "running" && item.jobId) {
-      cancelOptimize(item.jobId).catch(() => {})
-    }
+    cancelExportQueueItem(id).catch(() => {})
     setItems((prev) =>
-      prev.map((i) => (i.id === id && i.status !== "done" ? { ...i, status: "cancelled" } : i)),
+      prev.map((i) =>
+        i.id === id && i.status !== "done" ? { ...i, status: "cancelled" } : i,
+      ),
     )
   }, [])
 
   const clearFinished = useCallback(() => {
-    setItems((prev) => prev.filter((i) => i.status === "pending" || i.status === "running"))
+    clearExportQueueFinished().catch(() => {})
+    setItems((prev) =>
+      prev.filter((i) => i.status === "pending" || i.status === "running"),
+    )
   }, [])
 
-  const activeCount = items.filter((i) => i.status === "pending" || i.status === "running").length
+  const activeCount = items.filter(
+    (i) => i.status === "pending" || i.status === "running",
+  ).length
 
   return (
-    <ExportQueueContext.Provider value={{ items, activeCount, enqueue, enqueueBatch, cancelItem, clearFinished }}>
+    <ExportQueueContext.Provider
+      value={{ items, activeCount, enqueue, enqueueBatch, cancelItem, clearFinished }}
+    >
       {children}
     </ExportQueueContext.Provider>
   )

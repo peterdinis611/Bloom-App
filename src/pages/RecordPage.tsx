@@ -888,7 +888,7 @@ export function RecordPage({
         if (e.data.size === 0 || sessionIdRef.current === null) return
         try {
           const bytes = await blobToU8(e.data)
-          await writeChunk(sessionIdRef.current, Array.from(bytes))
+          await writeChunk(sessionIdRef.current, bytes)
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err ?? "")
           if (/disk|space|miesta|místa|<\s*\d+\s*MB|ENOSPC/i.test(msg) && !diskStopRef.current) {
@@ -1105,7 +1105,7 @@ export function RecordPage({
       if (!blob) throw new Error(sk.ux.snapshot.failed)
       const bytes = new Uint8Array(await blob.arrayBuffer())
       const stamp = new Date().toISOString().replace(/[:.]/g, "-")
-      const saved = await saveSnapshot(`snapshot-${stamp}.png`, Array.from(bytes))
+      const saved = await saveSnapshot(`snapshot-${stamp}.png`, bytes)
       toastSuccess({ title: sk.ux.snapshot.saved, description: saved })
     } catch (e) {
       toastError({ title: sk.ux.snapshot.failed, description: localizeError(e) })

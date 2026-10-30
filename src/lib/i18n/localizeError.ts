@@ -1,4 +1,53 @@
 import { getMessagesSync } from "@/lib/i18n/I18nProvider"
+import type { Messages } from "@/lib/i18n/types"
+
+interface BloomErrorPayload {
+  code: string
+  message: string
+}
+
+function tryParseBloomError(text: string): BloomErrorPayload | null {
+  const trimmed = text.trim()
+  if (!trimmed.startsWith("{")) return null
+  try {
+    const parsed = JSON.parse(trimmed) as unknown
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      typeof (parsed as BloomErrorPayload).code === "string" &&
+      typeof (parsed as BloomErrorPayload).message === "string"
+    ) {
+      return parsed as BloomErrorPayload
+    }
+  } catch {
+    /* plain string */
+  }
+  return null
+}
+
+function messageForCode(code: string, sk: Messages): string | null {
+  const map: Record<string, string> = {
+    ffmpeg_missing: sk.errors.ffmpegMissing,
+    session_missing: sk.errors.sessionMissing,
+    write_failed: sk.errors.writeFailed,
+    delete_failed: sk.errors.deleteFailed,
+    create_failed: sk.errors.createFailed,
+    video_missing: sk.errors.videoMissing,
+    export_temp_missing: sk.errors.exportTempMissing,
+    thumbnail_failed: sk.errors.thumbnailFailed,
+    probe_failed: sk.errors.probeFailed,
+    remux_failed: sk.errors.remuxFailed,
+    window_missing: sk.errors.windowMissing,
+    serialize_failed: sk.errors.serializeFailed,
+    permission_denied: sk.errors.permissionDenied,
+    recording_not_found: sk.errors.recordingNotFound,
+    disk_low: sk.errors.diskLow,
+    invalid_options: sk.errors.invalidOptions,
+    cancelled: sk.errors.cancelled,
+    unknown: sk.errors.unknown,
+  }
+  return map[code] ?? null
+}
 
 /** Map backend / DOM error text to a localized user-facing message. */
 export function localizeError(err: unknown): string {
@@ -6,6 +55,18 @@ export function localizeError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err ?? "")
   const text = raw.trim()
   if (!text) return sk.errors.unknown
+
+  const bloom = tryParseBloomError(text)
+  if (bloom) {
+    const mapped = messageForCode(bloom.code, sk)
+    if (mapped) return mapped
+    // Prefer structured message when code is unknown / already localized.
+    if (bloom.message.trim()) return bloom.message
+  }
+
+  // Bare code string from older call sites.
+  const bare = messageForCode(text, sk)
+  if (bare) return bare
 
   const lower = text.toLowerCase()
 

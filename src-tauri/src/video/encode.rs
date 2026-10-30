@@ -630,28 +630,24 @@ pub(crate) fn trim_duration(opts: &OptimizeOptions) -> Option<f64> {
 }
 
 /// Unique, non-clobbering output path in the same directory as the input.
+/// Stems go through `export_plan::sanitize_stem` (GIF / titled exports).
 pub(crate) fn build_output_path(opts: &OptimizeOptions, input: &Path) -> PathBuf {
     let dir = input.parent().unwrap_or_else(|| Path::new("."));
     let ext = ext_for_format(&opts.format);
 
-    let base = if let Some(name) = opts.output_name.as_ref().filter(|n| !n.trim().is_empty()) {
-        // Strip any extension the user typed; we control it from the format.
-        Path::new(name)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or(name)
-            .to_string()
+    let raw = if let Some(name) = opts.output_name.as_ref().filter(|n| !n.trim().is_empty()) {
+        name.clone()
     } else {
         let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("video");
         format!("{stem}-{}-{}", opts.resolution, opts.preset)
     };
+    let base = crate::export_plan::sanitize_stem(&raw);
+    let base = if base.is_empty() {
+        "export".to_string()
+    } else {
+        base
+    };
 
-    let mut candidate = dir.join(format!("{base}.{ext}"));
-    let mut n = 2;
-    while candidate.exists() {
-        candidate = dir.join(format!("{base}-{n}.{ext}"));
-        n += 1;
-    }
-    candidate
+    crate::util::unique_path(dir, &format!("{base}.{ext}"))
 }
 
