@@ -96,6 +96,29 @@ export interface LibraryDirectoryInfo {
   migrated_files?: number
 }
 
+/** Mirrors BackupDirectoryInfo in Rust. */
+export interface BackupDirectoryInfo {
+  path: string
+  is_custom: boolean
+  default_path: string
+}
+
+/** Mirrors BackupResult in Rust. */
+export interface BackupResult {
+  path: string
+  files: number
+  bytes: number
+}
+
+/** Mirrors BackupEntry in Rust. */
+export interface BackupEntry {
+  name: string
+  path: string
+  created_at: string
+  size_bytes: number
+  file_count: number
+}
+
 /** Mirrors CapturePermissions in Rust. */
 export interface CapturePermissions {
   screen: boolean
@@ -265,6 +288,31 @@ export interface SubtitleCard {
   text: string
   start_secs: number
   end_secs: number
+}
+
+/** Mirrors ExtractAudioOptions in Rust. */
+export interface ExtractAudioOptions {
+  path: string
+  format?: "wav" | "mp3"
+  denoise_audio?: boolean
+  normalize_audio?: boolean
+}
+
+/** Waveform peak buckets from get_audio_peaks. */
+export interface AudioPeaks {
+  duration_secs: number
+  peaks: number[]
+}
+
+export interface TimeSpan {
+  start: number
+  end: number
+}
+
+/** Silence + speech ranges from detect_silence. */
+export interface SilenceReport {
+  silences: TimeSpan[]
+  speech_ranges: TimeSpan[]
 }
 
 /** Mirrors ExportEstimate in Rust. */

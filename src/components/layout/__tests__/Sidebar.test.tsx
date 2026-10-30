@@ -9,6 +9,7 @@ vi.mock("@/hooks/useExportQueue", () => ({
     items: [],
     activeCount: 0,
     enqueue: () => {},
+    enqueueBatch: async () => {},
     cancelItem: () => {},
     clearFinished: () => {},
   }),

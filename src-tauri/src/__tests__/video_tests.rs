@@ -267,6 +267,44 @@ fn build_args_denoise_audio() {
 }
 
 #[test]
+fn stream_copy_blocked_by_denoise_audio() {
+    let mut o = opts("medium", "original", "mp4");
+    o.trim_start = Some(1.0);
+    o.trim_end = Some(5.0);
+    let info = sample_info();
+    assert!(can_stream_copy(&o, &info));
+    o.denoise_audio = true;
+    assert!(!can_stream_copy(&o, &info));
+}
+
+#[test]
+fn parse_silencedetect_and_invert() {
+    let log = r#"
+[silencedetect @ 0x1] silence_start: 1.2
+[silencedetect @ 0x1] silence_end: 3.5 | silence_duration: 2.3
+[silencedetect @ 0x1] silence_start: 8.0
+[silencedetect @ 0x1] silence_end: 9.0 | silence_duration: 1.0
+"#;
+    let silences = parse_silencedetect(log);
+    assert_eq!(silences.len(), 2);
+    assert!((silences[0].start - 1.2).abs() < 0.01);
+    assert!((silences[0].end - 3.5).abs() < 0.01);
+    let speech = invert_ranges(&silences, 10.0);
+    assert_eq!(speech.len(), 3);
+    assert!((speech[0].start - 0.0).abs() < 0.01);
+    assert!((speech[0].end - 1.2).abs() < 0.01);
+    assert!((speech[2].end - 10.0).abs() < 0.01);
+}
+
+#[test]
+fn bucket_peaks_normalizes() {
+    let samples = [0.0f32, 0.5, -1.0, 0.25, 0.0, 0.1];
+    let peaks = bucket_peaks(&samples, 3);
+    assert_eq!(peaks.len(), 3);
+    assert!((peaks.iter().cloned().fold(0.0f32, f32::max) - 1.0).abs() < 0.01);
+}
+
+#[test]
 fn build_args_copies_audio_when_unchanged() {
     let o = opts("medium", "720p", "mp4");
     let info = sample_info();

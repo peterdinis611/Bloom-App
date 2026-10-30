@@ -8,7 +8,12 @@ import {
   type ReactNode,
 } from "react"
 import type { OptimizeOptions } from "@/types"
-import { cancelOptimize, onOptimizeProgress, optimizeVideo } from "@/hooks/useBloomBackend"
+import {
+  batchOptimize,
+  cancelOptimize,
+  onOptimizeProgress,
+  optimizeVideo,
+} from "@/hooks/useBloomBackend"
 import { useToast } from "@/hooks/useToast"
 import { getMessagesSync } from "@/lib/i18n/I18nProvider"
 import { localizeError } from "@/lib/i18n/localizeError"
@@ -39,6 +44,8 @@ interface ExportQueueContextValue {
   items: ExportQueueItem[]
   activeCount: number
   enqueue: (jobs: EnqueueJob | EnqueueJob[]) => void
+  /** Start all jobs via Rust `batch_optimize` (one worker, sequential). */
+  enqueueBatch: (jobs: EnqueueJob[]) => Promise<void>
   cancelItem: (id: string) => void
   clearFinished: () => void
 }
@@ -185,6 +192,31 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
     ])
   }, [info])
 
+  const enqueueBatch = useCallback(async (jobs: EnqueueJob[]) => {
+    if (jobs.length === 0) return
+    const sk = getMessagesSync()
+    info({
+      title: sk.toast.exportQueued(jobs.length),
+      description: sk.toast.exportQueuedBody,
+    })
+    try {
+      const jobIds = await batchOptimize(jobs.map((j) => j.options))
+      setItems((prev) => [
+        ...prev,
+        ...jobs.map((job, i) => ({
+          id: newId(),
+          label: job.label,
+          options: job.options,
+          status: "running" as const,
+          percent: 0,
+          jobId: jobIds[i],
+        })),
+      ])
+    } catch (e) {
+      error({ title: sk.toast.exportFailed, description: localizeError(e) })
+    }
+  }, [info, error])
+
   const cancelItem = useCallback((id: string) => {
     const item = itemsRef.current.find((i) => i.id === id)
     if (!item) return
@@ -203,7 +235,7 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
   const activeCount = items.filter((i) => i.status === "pending" || i.status === "running").length
 
   return (
-    <ExportQueueContext.Provider value={{ items, activeCount, enqueue, cancelItem, clearFinished }}>
+    <ExportQueueContext.Provider value={{ items, activeCount, enqueue, enqueueBatch, cancelItem, clearFinished }}>
       {children}
     </ExportQueueContext.Provider>
   )

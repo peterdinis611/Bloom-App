@@ -10,8 +10,10 @@
 import { invoke, convertFileSrc } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import type {
+  AudioPeaks,
   DiskInfo,
   ExportEstimate,
+  ExtractAudioOptions,
   FfmpegStatus,
   FfmpegInstallResult,
   AutoOptimizeDone,
@@ -21,6 +23,9 @@ import type {
   ClickTrackInfo,
   ClickTrackSummary,
   IncompleteSession,
+  BackupDirectoryInfo,
+  BackupEntry,
+  BackupResult,
   LibraryDirectoryInfo,
   LibraryStats,
   MonitorInfo,
@@ -30,6 +35,7 @@ import type {
   RecordingMeta,
   SessionMeta,
   ShareResult,
+  SilenceReport,
   ValidationResult,
   VideoAnalyze,
   VideoInfo,
@@ -55,6 +61,38 @@ export async function setLibraryDirectory(
   migrate = false,
 ): Promise<LibraryDirectoryInfo> {
   return invoke<LibraryDirectoryInfo>("set_library_directory", { path, migrate })
+}
+
+export async function getBackupDirectory(): Promise<BackupDirectoryInfo> {
+  return invoke<BackupDirectoryInfo>("get_backup_directory")
+}
+
+export async function setBackupDirectory(path: string | null): Promise<BackupDirectoryInfo> {
+  return invoke<BackupDirectoryInfo>("set_backup_directory", { path })
+}
+
+export async function createLibraryBackup(): Promise<BackupResult> {
+  return invoke<BackupResult>("create_library_backup")
+}
+
+export async function listBackups(): Promise<BackupEntry[]> {
+  return invoke<BackupEntry[]>("list_backups")
+}
+
+export async function openBackupFolder(): Promise<void> {
+  return invoke<void>("open_backup_folder")
+}
+
+export async function openBackupPath(path: string): Promise<void> {
+  return invoke<void>("open_backup_path", { path })
+}
+
+export async function getDefaultRecordingFolder(): Promise<string> {
+  return invoke<string>("get_default_recording_folder")
+}
+
+export async function setDefaultRecordingFolder(folder: string): Promise<string> {
+  return invoke<string>("set_default_recording_folder", { folder })
 }
 
 /** Disk space info for the volume that holds the library directory. */
@@ -497,6 +535,30 @@ export async function optimizeVideo(options: OptimizeOptions): Promise<string> {
 /** Request cancellation of a running transcode job. */
 export async function cancelOptimize(jobId: string): Promise<void> {
   return invoke<void>("cancel_optimize", { jobId })
+}
+
+/** Sequential batch optimize — returns one job id per options entry. */
+export async function batchOptimize(options: OptimizeOptions[]): Promise<string[]> {
+  return invoke<string[]>("batch_optimize", { options })
+}
+
+/** Extract audio track next to the video (`*_audio.wav` / `.mp3`). */
+export async function extractAudio(options: ExtractAudioOptions): Promise<string> {
+  return invoke<string>("extract_audio", { options })
+}
+
+/** Waveform peak buckets (0–1) for the editor strip. */
+export async function getAudioPeaks(path: string, buckets?: number): Promise<AudioPeaks> {
+  return invoke<AudioPeaks>("get_audio_peaks", { path, buckets })
+}
+
+/** Detect silence; `speech_ranges` can be used as keep_ranges on export. */
+export async function detectSilence(
+  path: string,
+  noiseDb?: number,
+  minDuration?: number,
+): Promise<SilenceReport> {
+  return invoke<SilenceReport>("detect_silence", { path, noiseDb, minDuration })
 }
 
 /** Subscribe to transcode progress events. Returns an unlisten function. */

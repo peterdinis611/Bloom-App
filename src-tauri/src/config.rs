@@ -35,6 +35,12 @@ pub(crate) struct AppConfig {
     /// Abort write_chunk when free disk space falls below this many MiB.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub disk_space_min_mb: Option<u64>,
+    /// Directory where library backups are written.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backup_dir: Option<String>,
+    /// Default relative folder for new recordings (empty = inbox / library root).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_recording_folder: Option<String>,
 }
 
 fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {

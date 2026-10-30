@@ -100,7 +100,9 @@ Spustíte cez **Upraviť** v knižnici. Postup v troch krokoch:
 - Predvolby berie z **Nastavenia → Predvolby exportu**
 - **Uložiť kópiu** vs **Nahradiť originál** (nahradenie len MP4)
 - Titulky: cesta k `.srt` alebo manuálne textové karty (max. 2)
-- Voliteľne: redukcia šumu, normalizácia zvuku, HEVC, bez zvuku
+- Voliteľne: **Čistý hlas** (odstránenie šumu), normalizácia zvuku, video šum, HEVC, bez zvuku
+- **Export zvuku** — WAV vedľa videa; **Preskočiť ticho** — nechá len rečové úseky
+- Waveform strip nad timeline (z ffmpeg peaks)
 - Odhad veľkosti a dĺžky; pri orezaní H.264 MP4/MOV/M4V môže byť **rýchly export (stream copy)**
 
 Import do knižnice podporuje aj ďalšie kontajnery: `wmv`, `asf`, `f4v`, `mts`, `m2ts`, `vob`, `mxf`, `divx` a pod.
@@ -138,7 +140,7 @@ Knižnica sa po dokončení exportu automaticky obnoví.
 | **Predvolby exportu** | Preset, rozlíšenie, preferencia stream copy / HW encode |
 | **Integrácie** | Slack/Discord webhook, otvoriť súbor / kopírovať cestu po exporte |
 | **Predvoľby** | Uložené kombinácie zdroja a zariadení |
-| **Knižnica** | Priečinok úložiska, vymazať všetko |
+| **Priečinky a zálohy** | Priečinok knižnice, predvolený podpriečinok nahrávok, zálohy, údržba |
 
 ### Príklad: rýchly workflow pre demá
 

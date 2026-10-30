@@ -11,6 +11,24 @@ export interface NewsItem {
 
 export const WHATS_NEW: NewsItem[] = [
   {
+    version: "2.0.0",
+    date: "2026-10-30",
+    title: "Editor, čistý hlas a nový shell",
+    body: [
+      "Bloom 2.0 je plná striháreň — editor hub, demo klip, silnejšie exporty a jemnejší Apple shell. Stále všetko lokálne.",
+    ],
+    highlights: [
+      "Editor hub — vybrať, importovať alebo upraviť nahrávku",
+      "Balené demo video na vyskúšanie editora",
+      "Flip, rotácia, fade, volume a aspect presetty",
+      "Čistý hlas — odstránenie šumu z pozadia",
+      "Export zvuku (WAV/MP3) a waveform v editore",
+      "Preskočiť ticho — len rečové úseky",
+      "Batch optimalizácia v Rusti",
+      "Nový layout Noviniek a Dokumentácie",
+    ],
+  },
+  {
     version: "1.1.1",
     date: "2026-10-30",
     title: "Jemnejší shell a feedback",
@@ -80,4 +98,4 @@ export const WHATS_NEW: NewsItem[] = [
   },
 ]
 
-export const CURRENT_NEWS_VERSION = WHATS_NEW[0]?.version ?? "1.1.0"
+export const CURRENT_NEWS_VERSION = WHATS_NEW[0]?.version ?? "2.0.0"

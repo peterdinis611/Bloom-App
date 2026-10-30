@@ -87,7 +87,14 @@ pub(crate) fn open_session(
     meta: SessionMeta,
 ) -> Result<u32, String> {
     let dir = bloom_dir(&app)?;
-    let path = safe_join(&dir, &filename)?;
+    let default_folder = crate::backup::resolved_default_folder(&app);
+    let relative = if default_folder.is_empty() || filename.contains('/') || filename.contains('\\')
+    {
+        filename.clone()
+    } else {
+        format!("{default_folder}/{filename}")
+    };
+    let path = safe_join(&dir, &relative)?;
     let path_str = path.to_string_lossy().into_owned();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("Cannot create {}: {e}", parent.display()))?;
@@ -103,9 +110,13 @@ pub(crate) fn open_session(
     // 1 MiB buffer – fewer syscalls for MediaRecorder chunk writes
     let writer = BufWriter::with_capacity(1024 * 1024, file);
 
+    let title_base = Path::new(&filename)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&filename);
     let meta_template = RecordingMeta {
         id: Uuid::new_v4().to_string(),
-        title: filename
+        title: title_base
             .trim_end_matches(".mp4")
             .trim_end_matches(".m4v")
             .trim_end_matches(".webm")
@@ -120,7 +131,7 @@ pub(crate) fn open_session(
             .trim_end_matches(".ogv")
             .trim_end_matches(".gif")
             .to_owned(),
-        filename: filename.clone(),
+        filename: relative.replace('\\', "/"),
         created_at: now_iso(),
         duration_secs: 0.0,
         file_size_bytes: 0,
@@ -131,7 +142,7 @@ pub(crate) fn open_session(
         target_label: meta.target_label,
         starred: false,
         tags: vec![],
-        folder: String::new(),
+        folder: default_folder,
         notes: String::new(),
     };
 

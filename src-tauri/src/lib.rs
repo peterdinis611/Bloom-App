@@ -2,6 +2,7 @@
  * Bloom – Rust backend
  */
 
+mod backup;
 mod config;
 mod clipboard;
 mod cursor;
@@ -54,6 +55,14 @@ pub fn run() {
             system::get_bloom_dir,
             system::get_library_directory,
             system::set_library_directory,
+            backup::get_backup_directory,
+            backup::set_backup_directory,
+            backup::create_library_backup,
+            backup::list_backups,
+            backup::open_backup_folder,
+            backup::open_backup_path,
+            backup::get_default_recording_folder,
+            backup::set_default_recording_folder,
             system::get_disk_space,
             system::list_monitors,
             system::get_app_info,
@@ -116,6 +125,10 @@ pub fn run() {
             video::estimate_export,
             video::optimize_video,
             video::cancel_optimize,
+            video::batch_optimize,
+            video::extract_audio,
+            video::get_audio_peaks,
+            video::detect_silence,
             video::concat_recordings,
             video::apply_click_spotlight,
             cursor::start_cursor_tracker,

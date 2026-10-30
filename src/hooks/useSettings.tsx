@@ -48,6 +48,13 @@ export interface GeneralSettings {
   locale: LocaleId
 }
 
+export interface FolderSettings {
+  /** Remind to back up after this many days (0 = off). */
+  backupReminderDays: number
+  /** ISO date of last successful backup (local). */
+  lastBackupAt: string | null
+}
+
 export interface ExportDefaults {
   preset: "small" | "medium" | "high"
   resolution: "480p" | "720p" | "1080p" | "original"
@@ -98,6 +105,7 @@ export interface AppSettings {
   integrations: IntegrationSettings
   general: GeneralSettings
   exportDefaults: ExportDefaults
+  folders: FolderSettings
 }
 
 const STORAGE_KEY = "bloom-settings-v5"
@@ -151,6 +159,10 @@ export const DEFAULTS: AppSettings = {
     format: "mp4",
     preferStreamCopy: true,
     preferHardwareEncode: true,
+  },
+  folders: {
+    backupReminderDays: 7,
+    lastBackupAt: null,
   },
 }
 
@@ -208,6 +220,18 @@ function parseSettings(raw: string | null): AppSettings {
           ? parsed.exportDefaults.format
           : DEFAULTS.exportDefaults.format,
       },
+      folders: {
+        ...DEFAULTS.folders,
+        ...parsed.folders,
+        backupReminderDays:
+          typeof parsed.folders?.backupReminderDays === "number"
+            ? Math.max(0, Math.min(365, Math.round(parsed.folders.backupReminderDays)))
+            : DEFAULTS.folders.backupReminderDays,
+        lastBackupAt:
+          typeof parsed.folders?.lastBackupAt === "string" || parsed.folders?.lastBackupAt === null
+            ? parsed.folders.lastBackupAt
+            : DEFAULTS.folders.lastBackupAt,
+      },
     }
   } catch {
     return DEFAULTS
@@ -243,6 +267,7 @@ interface SettingsCtx {
   updateIntegrations: (patch: Partial<IntegrationSettings>) => void
   updateGeneral: (patch: Partial<GeneralSettings>) => void
   updateExportDefaults: (patch: Partial<ExportDefaults>) => void
+  updateFolders: (patch: Partial<FolderSettings>) => void
   resetSettings: () => void
 }
 
@@ -343,6 +368,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setSettings((s) => ({ ...s, exportDefaults: { ...s.exportDefaults, ...patch } }))
   }, [])
 
+  const updateFolders = useCallback((patch: Partial<FolderSettings>) => {
+    setSettings((s) => ({ ...s, folders: { ...s.folders, ...patch } }))
+  }, [])
+
   const resetSettings = useCallback(() => setSettings(DEFAULTS), [])
 
   const value = useMemo(
@@ -357,9 +386,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       updateIntegrations,
       updateGeneral,
       updateExportDefaults,
+      updateFolders,
       resetSettings,
     }),
-    [settings, ready, setTheme, updateSettings, updateAnnotation, updateRecording, updateShortcuts, updateIntegrations, updateGeneral, updateExportDefaults, resetSettings],
+    [settings, ready, setTheme, updateSettings, updateAnnotation, updateRecording, updateShortcuts, updateIntegrations, updateGeneral, updateExportDefaults, updateFolders, resetSettings],
   )
 
   if (!ready) return null

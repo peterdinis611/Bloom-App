@@ -12,32 +12,34 @@ interface BatchOptimizeModalProps {
   onComplete: () => void
 }
 
-/** Enqueues batch jobs and closes — progress lives in the sidebar queue. */
+/** Starts Rust batch_optimize and closes — progress lives in the sidebar queue. */
 export function BatchOptimizeModal({ entries, preset = "medium", onClose, onComplete }: BatchOptimizeModalProps) {
   const sk = useMessages()
   const { settings } = useSettings()
-  const { enqueue } = useExportQueue()
+  const { enqueueBatch } = useExportQueue()
   const startedRef = useRef(false)
   const format = settings.exportDefaults.format === "gif" ? "mp4" : settings.exportDefaults.format
 
   useEffect(() => {
     if (startedRef.current) return
     startedRef.current = true
-    enqueue(
-      entries.map((entry) => ({
-        label: entry.meta.title,
-        options: {
-          input_path: entry.path,
-          preset,
-          resolution: settings.exportDefaults.resolution,
-          format,
-          add_to_library: true,
-        },
-      })),
-    )
-    onComplete()
-    onClose()
-  }, [entries, preset, format, settings.exportDefaults.resolution, enqueue, onComplete, onClose])
+    void (async () => {
+      await enqueueBatch(
+        entries.map((entry) => ({
+          label: entry.meta.title,
+          options: {
+            input_path: entry.path,
+            preset,
+            resolution: settings.exportDefaults.resolution,
+            format,
+            add_to_library: true,
+          },
+        })),
+      )
+      onComplete()
+      onClose()
+    })()
+  }, [entries, preset, format, settings.exportDefaults.resolution, enqueueBatch, onComplete, onClose])
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-5 fade-up">

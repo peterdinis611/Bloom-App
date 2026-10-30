@@ -21,6 +21,8 @@ interface FilmstripTimelineProps {
   onChangeSegment?: (index: number, start: number, end: number) => void
   /** Recorded click timestamps (seconds) — rendered as a thin lane under the trim track. */
   clickTimes?: number[]
+  /** Normalized 0–1 peak buckets for a quiet waveform strip. */
+  peaks?: number[]
 }
 
 export function FilmstripTimeline({
@@ -36,6 +38,7 @@ export function FilmstripTimeline({
   activeSegment = 0,
   onChangeSegment,
   clickTimes,
+  peaks,
 }: FilmstripTimelineProps) {
   const sk = useMessages()
   const trackRef = useRef<HTMLDivElement>(null)
@@ -98,6 +101,21 @@ export function FilmstripTimeline({
           )}
         </div>
       </div>
+
+      {peaks && peaks.length > 0 && (
+        <div
+          className="flex h-8 items-end gap-px overflow-hidden rounded-lg bg-secondary/50 px-0.5 py-1"
+          aria-hidden
+        >
+          {peaks.map((p, i) => (
+            <div
+              key={i}
+              className="min-w-0 flex-1 rounded-sm bg-primary/55"
+              style={{ height: `${Math.max(8, p * 100)}%` }}
+            />
+          ))}
+        </div>
+      )}
 
       <div ref={trackRef} className="relative h-10 cursor-pointer rounded-xl bg-secondary" onPointerDown={drag("seek")}>
         {ranges.map((seg, i) => (

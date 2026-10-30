@@ -11,6 +11,8 @@ import {
   Sparkles,
   Trash2,
   AudioLines,
+  Download,
+  SkipForward,
   Volume2,
   VolumeX,
   Wand2,
@@ -64,6 +66,9 @@ interface EditorStudioBayProps {
   onFadeIn: (secs: number) => void
   onFadeOut: (secs: number) => void
   onVolume: (v: number) => void
+  onExtractAudio?: () => void
+  onSkipSilence?: () => void
+  audioBusy?: boolean
   analysis: VideoAnalyze | null
   onApplySuggestion?: () => void
   className?: string
@@ -114,6 +119,9 @@ export function EditorStudioBay({
   onFadeIn,
   onFadeOut,
   onVolume,
+  onExtractAudio,
+  onSkipSilence,
+  audioBusy,
   analysis,
   onApplySuggestion,
   className,
@@ -407,6 +415,40 @@ export function EditorStudioBay({
                 <span className="text-[10px] font-semibold leading-tight">{label}</span>
               </button>
             ))}
+          </div>
+          <div className="mt-2 grid grid-cols-1 gap-1.5">
+            {onExtractAudio && (
+              <button
+                type="button"
+                onClick={onExtractAudio}
+                disabled={removeAudio || audioBusy}
+                className="flex items-center gap-2 rounded-lg border border-border/50 bg-background px-2.5 py-2 text-left text-[10px] font-semibold text-muted-foreground transition-colors hover:border-border hover:text-foreground disabled:opacity-40"
+              >
+                <Download className="size-3.5" />
+                <span>
+                  {sk.editor.enhance.extractAudio}
+                  <span className="mt-0.5 block font-normal text-muted-foreground/80">
+                    {sk.editor.enhance.extractAudioHint}
+                  </span>
+                </span>
+              </button>
+            )}
+            {onSkipSilence && (
+              <button
+                type="button"
+                onClick={onSkipSilence}
+                disabled={removeAudio || audioBusy}
+                className="flex items-center gap-2 rounded-lg border border-border/50 bg-background px-2.5 py-2 text-left text-[10px] font-semibold text-muted-foreground transition-colors hover:border-border hover:text-foreground disabled:opacity-40"
+              >
+                <SkipForward className="size-3.5" />
+                <span>
+                  {sk.editor.enhance.skipSilence}
+                  <span className="mt-0.5 block font-normal text-muted-foreground/80">
+                    {sk.editor.enhance.skipSilenceHint}
+                  </span>
+                </span>
+              </button>
+            )}
           </div>
           {analysis && onApplySuggestion && (
             <button

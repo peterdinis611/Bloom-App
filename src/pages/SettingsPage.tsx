@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { RotateCcw, Trash2, Check, FolderOpen, RefreshCw, Shield, Mic, Video, Sparkles, Monitor, Wrench, Play, LifeBuoy } from "lucide-react"
+import { RotateCcw, Trash2, Check, FolderOpen, RefreshCw, Shield, Mic, Video, Sparkles, Monitor, Wrench, Play, LifeBuoy, HardDrive, Archive } from "lucide-react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -26,17 +26,32 @@ import {
   setAutoOptimizeAfterRecord,
   setDiskSpaceMinMb,
   getFilenameTemplate,
+  createLibraryBackup,
+  getBackupDirectory,
+  getDefaultRecordingFolder,
   getLibraryDirectory,
   getLibraryStats,
   getTrayRecentCount,
+  listBackups,
+  openBackupFolder,
+  openBackupPath,
   purgeLibraryOrphans,
+  setBackupDirectory,
+  setDefaultRecordingFolder,
   setFilenameTemplate,
   setLibraryDirectory,
   setTrayRecentCount,
   type AppInfo,
   type FilenamePreview,
 } from "@/hooks/useBloomBackend"
-import type { CapturePermissions, IncompleteSession, LibraryDirectoryInfo, RecordingEntry } from "@/types"
+import type {
+  BackupDirectoryInfo,
+  BackupEntry,
+  CapturePermissions,
+  IncompleteSession,
+  LibraryDirectoryInfo,
+  RecordingEntry,
+} from "@/types"
 import { useToast } from "@/hooks/useToast"
 import { ConfirmDeleteAll } from "@/components/library/ConfirmDeleteAll"
 import { PageScrollArea } from "@/components/layout/PageScrollArea"
@@ -67,6 +82,7 @@ export function SettingsPage({
     updateIntegrations,
     updateGeneral,
     updateExportDefaults,
+    updateFolders,
     resetSettings,
   } = useSettings()
   const { success: toastSuccess, error: toastError } = useToast()
@@ -76,6 +92,12 @@ export function SettingsPage({
   const [deleteAllBusy, setDeleteAllBusy] = useState(false)
   const [libraryDir, setLibraryDir] = useState<LibraryDirectoryInfo | null>(null)
   const [libraryDirBusy, setLibraryDirBusy] = useState(false)
+  const [backupDir, setBackupDir] = useState<BackupDirectoryInfo | null>(null)
+  const [backupDirBusy, setBackupDirBusy] = useState(false)
+  const [backupBusy, setBackupBusy] = useState(false)
+  const [backups, setBackups] = useState<BackupEntry[]>([])
+  const [defaultFolderDraft, setDefaultFolderDraft] = useState("")
+  const [defaultFolderBusy, setDefaultFolderBusy] = useState(false)
   const [updateBusy, setUpdateBusy] = useState(false)
   const [showPrivacy, setShowPrivacy] = useState(false)
   const [filenameDraft, setFilenameDraft] = useState("")
@@ -133,6 +155,22 @@ export function SettingsPage({
     }
   }, [])
 
+  const refreshBackupDir = useCallback(async () => {
+    try {
+      setBackupDir(await getBackupDirectory())
+    } catch {
+      setBackupDir(null)
+    }
+  }, [])
+
+  const refreshBackups = useCallback(async () => {
+    try {
+      setBackups(await listBackups())
+    } catch {
+      setBackups([])
+    }
+  }, [])
+
   const refreshLibraryStats = useCallback(async () => {
     try {
       const st = await getLibraryStats()
@@ -176,6 +214,11 @@ export function SettingsPage({
   useEffect(() => {
     void refreshLibraryStats()
     void refreshLibraryDir()
+    void refreshBackupDir()
+    void refreshBackups()
+    void getDefaultRecordingFolder()
+      .then(setDefaultFolderDraft)
+      .catch(() => {})
     void getFilenameTemplate()
       .then((p: FilenamePreview) => {
         setFilenameDraft(p.template)
@@ -188,7 +231,7 @@ export function SettingsPage({
     void getAppInfo()
       .then(setAppInfo)
       .catch(() => {})
-  }, [refreshLibraryStats, refreshLibraryDir])
+  }, [refreshLibraryStats, refreshLibraryDir, refreshBackupDir, refreshBackups])
 
   const handleDeleteAll = async () => {
     const count = libraryCount
@@ -257,6 +300,66 @@ export function SettingsPage({
       toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
     } finally {
       setLibraryDirBusy(false)
+    }
+  }
+
+  const handleChooseBackupFolder = async () => {
+    setBackupDirBusy(true)
+    try {
+      const selected = await open({ directory: true, multiple: false, title: sk.settings.backupFolder })
+      if (!selected || Array.isArray(selected)) return
+      const info = await setBackupDirectory(selected)
+      setBackupDir(info)
+      await refreshBackups()
+      toastSuccess({ title: sk.settings.backupFolder, description: info.path })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setBackupDirBusy(false)
+    }
+  }
+
+  const handleResetBackupFolder = async () => {
+    setBackupDirBusy(true)
+    try {
+      const info = await setBackupDirectory(null)
+      setBackupDir(info)
+      await refreshBackups()
+      toastSuccess({ title: sk.settings.backupFolderReset, description: info.path })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setBackupDirBusy(false)
+    }
+  }
+
+  const handleCreateBackup = async () => {
+    setBackupBusy(true)
+    try {
+      const result = await createLibraryBackup()
+      updateFolders({ lastBackupAt: new Date().toISOString() })
+      await refreshBackups()
+      toastSuccess({
+        title: sk.settings.backupCreated,
+        description: sk.settings.backupCreatedHint(result.files, formatBytes(result.bytes)),
+      })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+
+  const handleSaveDefaultFolder = async () => {
+    setDefaultFolderBusy(true)
+    try {
+      const saved = await setDefaultRecordingFolder(defaultFolderDraft.trim())
+      setDefaultFolderDraft(saved)
+      toastSuccess({ title: sk.settings.defaultFolderSaved })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setDefaultFolderBusy(false)
     }
   }
 
@@ -873,7 +976,7 @@ export function SettingsPage({
           </Button>
         </div>
 
-        <MacGroupHeader>{sk.settings.library}</MacGroupHeader>
+        <MacGroupHeader>{sk.settings.foldersSection}</MacGroupHeader>
         <MacGroup>
           <MacRow
             label={sk.settings.libraryFolder}
@@ -926,6 +1029,123 @@ export function SettingsPage({
           >
             <MacToggle on={migrateOnChoose} onChange={() => setMigrateOnChoose((v) => !v)} />
           </MacRow>
+          <MacRow
+            label={sk.settings.defaultRecordingFolder}
+            hint={sk.settings.defaultRecordingFolderHint}
+          >
+            <div className="flex max-w-[min(100%,18rem)] flex-col items-end gap-1.5">
+              <Input
+                value={defaultFolderDraft}
+                onChange={(e) => setDefaultFolderDraft(e.target.value)}
+                placeholder={sk.settings.defaultRecordingFolderPlaceholder}
+                className="w-full text-[11px]"
+                spellCheck={false}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={defaultFolderBusy}
+                onClick={() => { void handleSaveDefaultFolder() }}
+                className="text-[11px]"
+              >
+                {sk.settings.defaultFolderSave}
+              </Button>
+            </div>
+          </MacRow>
+          <MacRow label={sk.settings.backupFolder} hint={sk.settings.backupFolderHint}>
+            <div className="flex max-w-[min(100%,18rem)] flex-col items-end gap-1.5">
+              <p className="w-full truncate text-right font-mono text-[10px] text-muted-foreground">
+                {backupDir?.path ?? "…"}
+              </p>
+              <div className="flex flex-wrap justify-end gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={backupDirBusy}
+                  onClick={() => { void handleChooseBackupFolder() }}
+                  className="text-[11px]"
+                >
+                  <HardDrive className="size-3" /> {sk.settings.backupFolderChoose}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void openBackupFolder().catch((e) =>
+                      toastError({ title: sk.toast.actionFailed, description: localizeError(e) }),
+                    )
+                  }}
+                  className="text-[11px]"
+                >
+                  <FolderOpen className="size-3" /> {sk.settings.backupFolderOpen}
+                </Button>
+                {backupDir?.is_custom && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={backupDirBusy}
+                    onClick={() => { void handleResetBackupFolder() }}
+                    className="text-[11px] text-muted-foreground"
+                  >
+                    {sk.settings.backupFolderReset}
+                  </Button>
+                )}
+              </div>
+            </div>
+          </MacRow>
+          <MacRow label={sk.settings.backupNow} hint={sk.settings.backupNowHint}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={backupBusy}
+              onClick={() => { void handleCreateBackup() }}
+              className="text-[11px]"
+            >
+              <Archive className={cn("size-3", backupBusy && "animate-pulse")} />
+              {sk.settings.backupNowBtn}
+            </Button>
+          </MacRow>
+          <MacRow label={sk.settings.backupReminder} hint={sk.settings.backupReminderHint}>
+            <select
+              value={settings.folders.backupReminderDays}
+              onChange={(e) => updateFolders({ backupReminderDays: Number(e.target.value) })}
+              className="h-8 rounded-md border border-border bg-background px-2 text-[11px]"
+            >
+              <option value={0}>{sk.settings.backupReminderOff}</option>
+              <option value={3}>3 {sk.settings.backupReminderDays}</option>
+              <option value={7}>7 {sk.settings.backupReminderDays}</option>
+              <option value={14}>14 {sk.settings.backupReminderDays}</option>
+              <option value={30}>30 {sk.settings.backupReminderDays}</option>
+            </select>
+          </MacRow>
+          {settings.folders.lastBackupAt && (
+            <MacRow label={sk.settings.lastBackup} hint={sk.settings.lastBackupHint}>
+              <p className="text-right font-mono text-[10px] text-muted-foreground">
+                {new Date(settings.folders.lastBackupAt).toLocaleString()}
+              </p>
+            </MacRow>
+          )}
+          {backups.length > 0 && (
+            <MacRow label={sk.settings.recentBackups} hint={sk.settings.recentBackupsHint}>
+              <div className="flex max-w-[min(100%,18rem)] flex-col items-end gap-1">
+                {backups.slice(0, 4).map((b) => (
+                  <button
+                    key={b.path}
+                    type="button"
+                    onClick={() => {
+                      void openBackupPath(b.path).catch((e) =>
+                        toastError({ title: sk.toast.actionFailed, description: localizeError(e) }),
+                      )
+                    }}
+                    className="w-full truncate text-right font-mono text-[10px] text-primary hover:underline"
+                    title={b.path}
+                  >
+                    {b.name} · {formatBytes(b.size_bytes)}
+                  </button>
+                ))}
+              </div>
+            </MacRow>
+          )}
           <MacRow
             label={sk.settings.filenameTemplate}
             hint={sk.settings.filenameTemplateHint}

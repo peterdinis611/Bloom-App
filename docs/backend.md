@@ -1,6 +1,26 @@
 # Backend Bloom (Rust)
 
-Referencia pre Tauri backend. Všetky príkazy sú registrované v `src-tauri/src/lib.rs`.
+Referencia pre Tauri backend (Bloom **2.0.0**). Všetky príkazy sú registrované v `src-tauri/src/lib.rs`.
+
+## Modul `video/`
+
+Export a ffmpeg logika žije v `src-tauri/src/video/`:
+
+| Súbor | Úloha |
+|-------|--------|
+| `mod.rs` | `VideoJobs`, re-exporty |
+| `types.rs` | `OptimizeOptions`, `VideoInfo`, … |
+| `ffmpeg.rs` | Detekcia / inštalácia ffmpeg |
+| `probe.rs` | ffprobe + cache |
+| `filters.rs` | vf/af (vrátane `denoise_audio`) |
+| `encode.rs` | `build_args`, codecs, stream-copy |
+| `remux.rs` | MP4 faststart |
+| `thumbs.rs` | miniatúra + filmstrip |
+| `analyze.rs` | odhad exportu, sidecar |
+| `progress.rs` | worker + `video-progress` |
+| `commands.rs` | Tauri príkazy + spotlight/concat |
+| `audio_tools.rs` | extract / peaks / silence |
+| `batch.rs` | `batch_optimize` |
 
 ## Dátový model
 
@@ -57,11 +77,11 @@ Vstup: `OptimizeOptions` (cesta, preset, trim, titulky, …)
 1. **Analýza** — `analyze_video`, `estimate_export`
 2. **Rozhodnutie** — `can_stream_copy` pre trim-only H.264 MP4 (bez prekódovania)
 3. **Kódovanie** — priorita: VideoToolbox (macOS) → NVENC → libx264/libx265
-4. **Filtre** — `hqdn3d` (šum), `dynaudnorm` (zvuk), `drawtext` (titulky / SRT)
+4. **Filtre** — `hqdn3d` (video), `afftdn` + highpass (`denoise_audio`), `dynaudnorm`, `drawtext`
 5. **Remux** — MP4 faststart po encode
 6. **Progress** — event `video-progress` s `job_id`, percent, `done`
 
-Fronta na frontende (`useExportQueue`) spúšťa exporty **sekvenčne** — jeden aktívny job naraz.
+Fronta na frontende (`useExportQueue`) spúšťa exporty **sekvenčne**. Dávková optimalizácia knižnice volá `batch_optimize` (jeden Rust worker).
 
 ### `OptimizeOptions` (výber polí)
 
@@ -76,7 +96,8 @@ Fronta na frontende (`useExportQueue`) spúšťa exporty **sekvenčne** — jede
 | `replace_original` | Prepísať zdroj (len MP4) |
 | `srt_path` | Cesta k `.srt` |
 | `subtitle_cards` | `{ text, start_secs, end_secs }[]` |
-| `denoise`, `normalize_audio`, `remove_audio`, `use_hevc` | Bool prepínače |
+| `denoise`, `denoise_audio`, `normalize_audio`, `remove_audio`, `use_hevc` | Bool prepínače |
+| `flip_h`, `flip_v`, `rotate`, `fade_*`, `volume` | Transformácie / zvuk |
 
 ## Tauri príkazy
 
@@ -85,6 +106,11 @@ Fronta na frontende (`useExportQueue`) spúšťa exporty **sekvenčne** — jede
 | Príkaz | Návrat | Popis |
 |--------|--------|--------|
 | `get_bloom_dir` | `string` | Cesta + vytvorenie priečinka |
+| `get_library_directory` / `set_library_directory` | `LibraryDirectoryInfo` | Vlastný priečinok knižnice |
+| `get_backup_directory` / `set_backup_directory` | `BackupDirectoryInfo` | Priečinok záloh |
+| `create_library_backup` | `BackupResult` | Kópia knižnice do `Bloom-YYYY-…` |
+| `list_backups` | `BackupEntry[]` | Nedávne zálohy |
+| `get_default_recording_folder` / `set_…` | `string` | Predvolený podpriečinok nahrávok |
 | `get_disk_space` | `DiskInfo` | Voľné miesto + veľkosť Bloom |
 | `list_monitors` | `MonitorInfo[]` | Fyzické displeje |
 
@@ -114,7 +140,7 @@ Fronta na frontende (`useExportQueue`) spúšťa exporty **sekvenčne** — jede
 | `share_recording` | macOS share panel (`share.rs`) |
 | `save_snapshot` | PNG snímka z anotácií |
 
-### Video (`video.rs`)
+### Video (`video/`)
 
 | Príkaz | Popis |
 |--------|--------|
@@ -127,6 +153,10 @@ Fronta na frontende (`useExportQueue`) spúšťa exporty **sekvenčne** — jede
 | `estimate_export` | Odhad veľkosti + `stream_copy` flag |
 | `optimize_video` | Spustí async job → `job_id` |
 | `cancel_optimize` | Zruší bežiaci job |
+| `batch_optimize` | Sekvenčne N exportov → `job_id[]` |
+| `extract_audio` | WAV/MP3 vedľa zdroja |
+| `get_audio_peaks` | Waveform buckets 0–1 |
+| `detect_silence` | `silences` + `speech_ranges` |
 
 ### Kurzor (`cursor.rs`)
 
@@ -159,6 +189,6 @@ cd src-tauri && cargo test
 
 Hlavné oblasti pokrytia:
 
-- `video_tests.rs` — ffmpeg args, stream copy, shell PATH, odhad exportu
+- `video_tests.rs` — ffmpeg args, stream copy, silence/peaks helpers, odhad exportu
 - `finalize_tests.rs` — post-process logika
 - `util_tests.rs` — cesty a discovery

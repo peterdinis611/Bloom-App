@@ -55,9 +55,12 @@ import type {
 } from "@/types"
 import {
   analyzeVideo,
+  detectSilence,
   estimateExport,
+  extractAudio,
   formatBytes,
   formatDurationSecs,
+  getAudioPeaks,
   getFilmstrip,
   getVideoInfo,
   getClickTrack,
@@ -212,6 +215,8 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
   const [spotlightPreview, setSpotlightPreview] = useState(false)
   const [spotlightBusy, setSpotlightBusy] = useState(false)
   const [chapters, setChapters] = useState<EditorChapter[]>([])
+  const [peaks, setPeaks] = useState<number[]>([])
+  const [audioBusy, setAudioBusy] = useState(false)
 
   const active = segments[activeSegment] ?? segments[0]!
   const multiClip = segments.length > 1
@@ -304,7 +309,49 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
       .then(setFrames)
       .catch(() => setFrames([]))
       .finally(() => setFramesLoading(false))
+    getAudioPeaks(entry.path, 120)
+      .then((r) => setPeaks(r.peaks))
+      .catch(() => setPeaks([]))
   }, [entry.path, step, duration])
+
+  const handleExtractAudio = useCallback(async () => {
+    setAudioBusy(true)
+    try {
+      const out = await extractAudio({
+        path: entry.path,
+        format: "wav",
+        denoise_audio: denoiseAudio,
+        normalize_audio: normalizeAudio,
+      })
+      toastSuccess({ title: sk.editor.enhance.extractDone, description: out })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setAudioBusy(false)
+    }
+  }, [entry.path, denoiseAudio, normalizeAudio, toastSuccess, toastError, sk])
+
+  const handleSkipSilence = useCallback(async () => {
+    setAudioBusy(true)
+    try {
+      const report = await detectSilence(entry.path)
+      const ranges = report.speech_ranges.filter((r) => r.end - r.start >= 0.25)
+      if (ranges.length === 0) {
+        toastError({ title: sk.toast.actionFailed, description: sk.editor.enhance.skipSilenceHint })
+        return
+      }
+      const next = ranges.slice(0, MAX_SEGMENTS).map((r) => ({ start: r.start, end: r.end }))
+      setSegments(next)
+      setActiveSegment(0)
+      setPartsMode(next.length > 1 ? "join" : "separate")
+      syncFieldsFromSegment(next[0]!)
+      toastSuccess({ title: sk.editor.enhance.skipSilenceDone(next.length) })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setAudioBusy(false)
+    }
+  }, [entry.path, toastSuccess, toastError, sk, syncFieldsFromSegment])
 
   useEffect(() => {
     if (step !== "preview" && step !== "export") return
@@ -533,6 +580,9 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
       onFadeIn={setFadeIn}
       onFadeOut={setFadeOut}
       onVolume={setVolume}
+      onExtractAudio={() => { void handleExtractAudio() }}
+      onSkipSilence={() => { void handleSkipSilence() }}
+      audioBusy={audioBusy}
       analysis={analysis}
       onApplySuggestion={analysis ? () => {
         setPreset(analysis.suggested_preset)
@@ -661,6 +711,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
                     }}
                     onSeek={(t) => playerRef.current?.seek(t)}
                     clickTimes={[...clickTimes, ...chapters.map((c) => c.t)]}
+                    peaks={peaks}
                   />
 
                   <div className="flex flex-wrap gap-2">
