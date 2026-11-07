@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
 import { useSettings } from "@/hooks/useSettings"
 import { setGlobalShortcuts } from "@/hooks/useBloomBackend"
 import { MacGroup, MacGroupHeader, MacButton } from "@/components/mac/MacUIKit"

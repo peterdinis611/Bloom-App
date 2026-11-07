@@ -12,7 +12,7 @@ import {
   Wrench,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
 import { DOC_SECTIONS, type DocBlock } from "@/lib/docsContent"
 import { PageScrollArea } from "@/components/layout/PageScrollArea"
 import { MacPageHeader } from "@/components/mac/MacUIKit"

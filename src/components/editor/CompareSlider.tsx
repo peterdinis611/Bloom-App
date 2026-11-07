@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
 import { fileSrc, formatBytes, formatDurationSecs } from "@/hooks/useBloomBackend"
 import type { ExportEstimate, VideoInfo } from "@/types"
 

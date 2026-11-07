@@ -7,7 +7,7 @@ import {
   newPresetId,
   type RecordingPreset,
 } from "@/lib/presets"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
 import { RECORDING_QUALITIES } from "@/lib/videoOptions"
 import { ChoiceGroup } from "@/components/mac/MacUIKit"
 import type { RecordingSource } from "@/types"

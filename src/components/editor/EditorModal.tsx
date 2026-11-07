@@ -14,7 +14,7 @@ import {
 } from "lucide-react"
 import { useCloseOnEscape } from "@/hooks/useCloseOnEscape"
 import { cn } from "@/lib/utils"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
 import type { OptimizeSpeed } from "@/lib/i18n/sk"
 import { ChoiceGroup } from "@/components/mac/MacUIKit"
 import { OPTIMIZE_SPEEDS, speedToNumber } from "@/lib/videoOptions"

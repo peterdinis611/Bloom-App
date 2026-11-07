@@ -1,5 +1,5 @@
 import type { LetterKey } from "@tanstack/react-hotkeys"
-import type { AnnotationTool } from "@/hooks/useSettings"
+import type { AnnotationTool } from "@/lib/appSettings"
 
 export const ANNOTATION_TOOL_HOTKEYS: { hotkey: LetterKey; tool: AnnotationTool }[] = [
   { hotkey: "P", tool: "pen" },

@@ -23,7 +23,7 @@ import {
   listRecordings,
 } from "@/hooks/useBloomBackend"
 import { useToast } from "@/hooks/useToast"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
 import { localizeError } from "@/lib/i18n/localizeError"
 import { cn } from "@/lib/utils"
 import type { FfmpegStatus, RecordingEntry } from "@/types"

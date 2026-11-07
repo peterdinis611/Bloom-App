@@ -24,7 +24,8 @@ import {
   Minimize2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useMessages, getMessagesSync } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
+import { getMessagesSync } from "@/lib/i18n/messagesSync"
 import { fileSrc, formatDurationSecs } from "@/hooks/useBloomBackend"
 import { localizeError } from "@/lib/i18n/localizeError"
 

@@ -11,9 +11,9 @@ import {
   contentRectContain,
   type DrawState,
 } from "@/lib/annotation"
-import { ANNOTATION_COLORS } from "@/hooks/useSettings"
-import type { AnnotationTool } from "@/hooks/useSettings"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { ANNOTATION_COLORS } from "@/lib/themes"
+import type { AnnotationTool } from "@/lib/appSettings"
+import { useMessages } from "@/lib/i18n/i18nContext"
 
 interface LiveDrawOverlayProps {
   layer: AnnotationLayer

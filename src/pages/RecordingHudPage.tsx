@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { Square, Pause, Play } from "lucide-react"
 import { emit, listen } from "@tauri-apps/api/event"
 import { cn, formatDuration } from "@/lib/utils"
-import { applyTheme, readStoredSettings } from "@/hooks/useSettings"
+import { applyTheme, readStoredSettings } from "@/lib/appSettings"
 
 type HudPhase = "countdown" | "recording" | "paused"
 

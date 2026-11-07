@@ -4,7 +4,7 @@ import {
   Scale, Film, MousePointerClick,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
 import { markOnboardingDone, markPrivacyAccepted } from "@/lib/onboarding"
 import { openPrivacySettings } from "@/lib/privacySettings"
 import { checkFfmpeg, installFfmpeg } from "@/hooks/useBloomBackend"

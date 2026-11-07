@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react"
 import { Check, X } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
 import type { CropRect } from "@/lib/capture"
 
 interface RegionCropOverlayProps {

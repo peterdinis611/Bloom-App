@@ -3,7 +3,7 @@ export const sk = {
   app: {
     name: "Bloom",
     tagline: "Nahrávanie obrazovky",
-    version: "v1.0.0",
+    version: "v2.0.0",
   },
   pageEyebrow: {
     record: "Záber",

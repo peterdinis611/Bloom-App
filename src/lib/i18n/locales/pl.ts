@@ -5,7 +5,7 @@ export const pl: Messages = {
   app: {
     name: "Bloom",
     tagline: "Nagrywanie ekranu",
-    version: "v1.0.0",
+    version: "v2.0.0",
   },
   pageEyebrow: {
     record: "Nagrywanie",

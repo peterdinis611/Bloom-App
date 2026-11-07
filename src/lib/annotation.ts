@@ -1,4 +1,4 @@
-import type { AnnotationTool } from "@/hooks/useSettings"
+import type { AnnotationTool } from "@/lib/appSettings"
 
 export type { AnnotationTool }
 

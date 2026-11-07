@@ -1,6 +1,6 @@
 import { Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
 import {
   Dialog,
   DialogContent,

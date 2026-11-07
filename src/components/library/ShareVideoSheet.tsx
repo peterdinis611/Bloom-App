@@ -15,7 +15,7 @@ import {
   formatDurationSecs,
 } from "@/hooks/useBloomBackend"
 import { useToast } from "@/hooks/useToast"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
 import { localizeError } from "@/lib/i18n/localizeError"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"

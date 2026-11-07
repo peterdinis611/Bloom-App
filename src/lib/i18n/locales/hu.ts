@@ -4,7 +4,7 @@ export const hu: Messages = {
   app: {
     name: "Bloom",
     tagline: "Képernyőfelvétel",
-    version: "v1.0.0",
+    version: "v2.0.0",
   },
   pageEyebrow: {
     record: "Felvétel",

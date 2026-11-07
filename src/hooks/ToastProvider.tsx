@@ -1,19 +1,18 @@
-import { createContext, useCallback, useContext, useRef, useState, type CSSProperties } from "react"
+import { useCallback, useRef, useState, type CSSProperties } from "react"
 import { Check, CircleAlert, Info, TriangleAlert, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { feedback } from "@/lib/feedback"
-import { getMessagesSync } from "@/lib/i18n/I18nProvider"
-
-export type ToastVariant = "success" | "error" | "info" | "warning"
+import { getMessagesSync } from "@/lib/i18n/messagesSync"
+import {
+  ToastContext,
+  type ToastAction,
+  type ToastInput,
+  type ToastVariant,
+} from "@/hooks/toastContext"
 
 const TOAST_DURATION_MS = 3600
 const TOAST_WITH_ACTIONS_MS = 7800
 const TOAST_EXIT_MS = 180
-
-export interface ToastAction {
-  label: string
-  onClick: () => void
-}
 
 interface ToastItem {
   id: number
@@ -22,22 +21,6 @@ interface ToastItem {
   variant: ToastVariant
   actions?: ToastAction[]
 }
-
-interface ToastInput {
-  title: string
-  description?: string
-  actions?: ToastAction[]
-}
-
-interface ToastContextValue {
-  toast: (input: ToastInput & { variant?: ToastVariant }) => void
-  success: (input: ToastInput) => void
-  error: (input: ToastInput) => void
-  info: (input: ToastInput) => void
-  warning: (input: ToastInput) => void
-}
-
-const ToastContext = createContext<ToastContextValue | null>(null)
 
 const VARIANT_ICONS = {
   success: Check,
@@ -211,12 +194,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     [scheduleDismiss],
   )
 
-  const value: ToastContextValue = {
+  const value = {
     toast: push,
-    success: (input) => push({ ...input, variant: "success" }),
-    error: (input) => push({ ...input, variant: "error" }),
-    info: (input) => push({ ...input, variant: "info" }),
-    warning: (input) => push({ ...input, variant: "warning" }),
+    success: (input: ToastInput) => push({ ...input, variant: "success" as const }),
+    error: (input: ToastInput) => push({ ...input, variant: "error" as const }),
+    info: (input: ToastInput) => push({ ...input, variant: "info" as const }),
+    warning: (input: ToastInput) => push({ ...input, variant: "warning" as const }),
   }
 
   return (
@@ -225,10 +208,4 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       <ToastViewport toasts={toasts} exitingIds={exitingIds} onDismiss={dismiss} />
     </ToastContext.Provider>
   )
-}
-
-export function useToast(): ToastContextValue {
-  const ctx = useContext(ToastContext)
-  if (!ctx) throw new Error("useToast must be used within ToastProvider")
-  return ctx
 }

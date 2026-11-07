@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { Check } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
 import { WHATS_NEW } from "@/lib/whatsNewContent"
 import { PageScrollArea } from "@/components/layout/PageScrollArea"
 import { markNewsSeen } from "@/lib/whatsNew"

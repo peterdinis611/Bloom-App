@@ -4,10 +4,12 @@ import { open } from "@tauri-apps/plugin-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
 import { RECORDING_QUALITIES } from "@/lib/videoOptions"
 import { THEMES } from "@/lib/themes"
-import { ANNOTATION_COLORS, useSettings, type AnnotationTool } from "@/hooks/useSettings"
+import { ANNOTATION_COLORS } from "@/lib/themes"
+import type { AnnotationTool } from "@/lib/appSettings"
+import { useSettings } from "@/hooks/useSettings"
 import {
   checkCapturePermissions,
   deleteAllRecordings,

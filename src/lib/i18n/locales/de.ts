@@ -4,7 +4,7 @@ export const de: Messages = {
   app: {
     name: "Bloom",
     tagline: "Bildschirmaufnahme",
-    version: "v1.0.0",
+    version: "v2.0.0",
   },
   pageEyebrow: {
     record: "Aufnahme",

@@ -1,11 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useState,
-  type ReactNode,
-} from "react"
+import { useCallback, useEffect, useState, type ReactNode } from "react"
 import type { OptimizeOptions } from "@/types"
 import {
   cancelExportQueueItem,
@@ -18,46 +11,16 @@ import {
   retryExportQueueItem,
   type ExportQueueItemDto,
 } from "@/hooks/useBloomBackend"
-import { useToast } from "@/hooks/useToast"
-import { getMessagesSync } from "@/lib/i18n/I18nProvider"
+import { useToast } from "@/hooks/toastContext"
+import { getMessagesSync } from "@/lib/i18n/messagesSync"
 import { localizeError } from "@/lib/i18n/localizeError"
-
-/** Window event fired when an export finishes and `autoShareAfterExport` is on. */
-export const SHARE_EXPORT_EVENT = "bloom:share-export"
-
-export type QueueItemStatus = "pending" | "running" | "done" | "error" | "cancelled"
-
-export interface ExportQueueItem {
-  id: string
-  label: string
-  options: OptimizeOptions
-  status: QueueItemStatus
-  percent: number
-  error?: string
-  outputPath?: string
-  outputSize?: number
-  jobId?: string
-}
-
-export interface EnqueueJob {
-  label: string
-  options: OptimizeOptions
-  speechRanges?: { start: number; end: number }[]
-  preferredStem?: string
-}
-
-interface ExportQueueContextValue {
-  items: ExportQueueItem[]
-  activeCount: number
-  enqueue: (jobs: EnqueueJob | EnqueueJob[]) => void
-  /** Start all jobs via Rust export queue (one worker, sequential). */
-  enqueueBatch: (jobs: EnqueueJob[]) => Promise<void>
-  cancelItem: (id: string) => void
-  clearFinished: () => void
-  retryItem: (id: string) => void
-}
-
-const ExportQueueContext = createContext<ExportQueueContextValue | null>(null)
+import { SHARE_EXPORT_EVENT } from "@/lib/shareExportEvent"
+import {
+  ExportQueueContext,
+  type EnqueueJob,
+  type ExportQueueItem,
+  type QueueItemStatus,
+} from "@/hooks/exportQueueContext"
 
 function mapDto(
   dto: ExportQueueItemDto,
@@ -166,9 +129,7 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
     let unlisten: (() => void) | undefined
     onExportFinished((p) => {
       if (!p.auto_share || !p.path) return
-      // Native share already ran in Rust; open FE sheet only when user prefers it
-      // and the main window is visible (fallback / richer UI).
-      void import("@/hooks/useSettings").then(({ readStoredSettings }) =>
+      void import("@/lib/appSettings").then(({ readStoredSettings }) =>
         readStoredSettings().then((s) => {
           if (s.integrations.preferNativeShare) return
           if (document.visibilityState !== "visible") return
@@ -277,10 +238,4 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
       {children}
     </ExportQueueContext.Provider>
   )
-}
-
-export function useExportQueue(): ExportQueueContextValue {
-  const ctx = useContext(ExportQueueContext)
-  if (!ctx) throw new Error("useExportQueue must be used within ExportQueueProvider")
-  return ctx
 }

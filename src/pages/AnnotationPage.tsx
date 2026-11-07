@@ -19,7 +19,8 @@ import {
 import { getSafeWebviewWindow } from "@/lib/windowControl"
 import { emit } from "@tauri-apps/api/event"
 import { saveSnapshot as saveSnapshotToLibrary } from "@/hooks/useBloomBackend"
-import { ANNOTATION_COLORS, applyTheme, DEFAULTS, readStoredSettings, type AnnotationTool } from "@/hooks/useSettings"
+import { ANNOTATION_COLORS } from "@/lib/themes"
+import { applyTheme, DEFAULTS, readStoredSettings, type AnnotationTool } from "@/lib/appSettings"
 import { ANNOTATION_TOOL_HOTKEYS } from "@/lib/hotkeys"
 
 type Tool = AnnotationTool

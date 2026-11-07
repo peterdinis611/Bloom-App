@@ -1,7 +1,7 @@
 import { Circle, Library, Settings, Video, BookOpen, Newspaper, Scissors } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
 import { ExportQueuePanel } from "@/components/layout/ExportQueuePanel"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 

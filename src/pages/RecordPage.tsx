@@ -91,7 +91,8 @@ import {
   collectPreviewTechDetails,
   expectsPreviewStream,
 } from "@/lib/previewDiagnostics"
-import { useMessages, getMessagesSync } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
+import { getMessagesSync } from "@/lib/i18n/messagesSync"
 import { setLastRecordingId } from "@/lib/lastRecording"
 import { RECORDING_QUALITIES } from "@/lib/videoOptions"
 import { localizeError } from "@/lib/i18n/localizeError"
@@ -274,13 +275,15 @@ function AudioToggle({ active, onIcon: OnIcon, offIcon: OffIcon, label, onChange
 }
 
 // ── Preview canvas ─────────────────────────────────────────────────────────────
-function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, drawing, drawOverlay, previewVideoRef }: {
+function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, drawing, drawOverlay, previewVideoRef, previewOpening }: {
   source: RecordingSource; status: RecordingStatus; elapsed: number; countdown: number
   stream: MediaStream | null; summary?: string
   drawing?: boolean
   drawOverlay?: React.ReactNode
   /** Exposes the live preview <video> so callers can grab frames (snapshots). */
   previewVideoRef?: React.MutableRefObject<HTMLVideoElement | null>
+  /** True while camera/getUserMedia is in flight — suppress false “missing” faults. */
+  previewOpening?: boolean
 }) {
   const sk = useMessages()
   const isRecording = status === "recording"
@@ -303,7 +306,7 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
   }, [stream, status])
 
   useEffect(() => {
-    if (!expectsPreviewStream(source, status) && !(status === "idle" && source === "screen")) return
+    if (!expectsPreviewStream(source, status)) return
     const id = window.setInterval(() => setPoll((n) => n + 1), 400)
     return () => window.clearInterval(id)
   }, [source, status, stream])
@@ -312,6 +315,10 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
     const v = videoRef.current
     if (!v) return
     setPlayError("")
+    if (!stream) {
+      v.srcObject = null
+      return
+    }
     v.srcObject = stream
     const tryPlay = () => {
       v.play()
@@ -333,7 +340,7 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
 
   void poll
   const details = collectPreviewTechDetails(source, status, stream, videoRef.current, playError)
-  const fault = buildPreviewFault(source, status, details)
+  const fault = previewOpening ? null : buildPreviewFault(source, status, details)
   const hasFrames = details.videoElementSize !== "0×0" && !details.videoElementSize.startsWith("0×")
   const showFault = fault != null && (
     fault.kind === "idle_screen"
@@ -347,6 +354,7 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
   const showFullFault = showFault && fault != null && !showCompactFault
 
   const showVideo = !!stream && hasFrames
+  const showOpening = !!previewOpening && !showVideo && !showFault
 
   return (
     <div className={cn(
@@ -382,7 +390,14 @@ function PreviewCanvas({ source, status, elapsed, countdown, stream, summary, dr
         </div>
       )}
 
-      {status === "preparing" && !showFault && (
+      {showOpening && (
+        <div className="relative z-[2] flex flex-col items-center gap-2.5">
+          <div className="size-7 animate-spin rounded-full border-2 border-white/15 border-t-white/80" />
+          <p className="text-[12px] text-white/55">{sk.record.preparing}</p>
+        </div>
+      )}
+
+      {status === "preparing" && !showFault && !showOpening && (
         <div className="relative z-[2] flex flex-col items-center gap-2.5">
           <div className="size-7 animate-spin rounded-full border-2 border-white/15 border-t-white/80" />
           <p className="text-[12px] text-white/55">{sk.record.preparing}</p>
@@ -561,6 +576,7 @@ export function RecordPage({
   const { enqueue } = useExportQueue()
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null)
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null)
+  const [previewOpening, setPreviewOpening] = useState(false)
 
   const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null)
   const cdTimerRef     = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -679,25 +695,38 @@ export function RecordPage({
       setCameraStream(null)
     }
     async function run() {
-      if (status !== "idle") return  // keep the stream alive through recording
+      if (status !== "idle") {
+        setPreviewOpening(false)
+        return  // keep the stream alive through recording
+      }
       if (settings.source === "camera" || settings.source === "both") {
         stopLive()
+        setPreviewStream(null)
+        setPreviewOpening(true)
         try {
           const s = await openCameraStream(settings.cameraDeviceId || undefined, settings.quality)
           if (cancelled) { s.getTracks().forEach((t) => t.stop()); return }
           liveCamRef.current = s
           setCameraStream(s)
           setPreviewStream(s)
-        } catch {
-          if (!cancelled) setPreviewStream(null)
+          setError(null)
+        } catch (e) {
+          if (!cancelled) {
+            setPreviewStream(null)
+            setError(localizeError(e))
+          }
+        } finally {
+          if (!cancelled) setPreviewOpening(false)
         }
       } else {
         stopLive()
         setPreviewStream(null)
+        setPreviewOpening(false)
+        setError(null)
       }
     }
     run()
-    return () => { cancelled = true }
+    return () => { cancelled = true; setPreviewOpening(false) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, settings.source, settings.cameraDeviceId, settings.quality])
 
@@ -1256,10 +1285,11 @@ export function RecordPage({
               type="button"
               className="mt-1.5 text-[11px] font-semibold text-primary hover:underline"
               onClick={() => {
-                void openPrivacySettings("screen").catch(() => {})
+                const pane = settings.source === "camera" ? "camera" : "screen"
+                void openPrivacySettings(pane).catch(() => {})
               }}
             >
-              {sk.privacy.openScreen}
+              {settings.source === "camera" ? sk.privacy.openCamera : sk.privacy.openScreen}
             </button>
           </div>
           <button onClick={() => setError(null)} className="text-muted-foreground hover:text-foreground">
@@ -1279,6 +1309,7 @@ export function RecordPage({
           summary={previewSummary}
           drawing={drawingMode && isActive}
           previewVideoRef={previewVideoRef}
+          previewOpening={previewOpening}
           drawOverlay={
             status === "region" ? (
               <RegionCropOverlay

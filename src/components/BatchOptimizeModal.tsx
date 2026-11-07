@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react"
 import { X, Sparkles } from "lucide-react"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
 import type { OptimizePreset, RecordingEntry } from "@/types"
 import { useExportQueue } from "@/hooks/useExportQueue"
 import { useSettings } from "@/hooks/useSettings"

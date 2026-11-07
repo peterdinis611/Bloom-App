@@ -1,4 +1,4 @@
-import { getMessagesSync } from "@/lib/i18n/I18nProvider"
+import { getMessagesSync } from "@/lib/i18n/messagesSync"
 import type { Messages } from "@/lib/i18n/types"
 
 interface BloomErrorPayload {
@@ -52,8 +52,10 @@ function messageForCode(code: string, sk: Messages): string | null {
 /** Map backend / DOM error text to a localized user-facing message. */
 export function localizeError(err: unknown): string {
   const sk = getMessagesSync()
+  const name = err instanceof DOMException || err instanceof Error ? err.name : ""
   const raw = err instanceof Error ? err.message : String(err ?? "")
-  const text = raw.trim()
+  // Prefer DOMException.name when message is empty / opaque.
+  const text = (raw.trim() || name).trim()
   if (!text) return sk.errors.unknown
 
   const bloom = tryParseBloomError(text)

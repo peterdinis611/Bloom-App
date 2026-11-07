@@ -1,5 +1,5 @@
 import { useRef } from "react"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
 import { cn } from "@/lib/utils"
 import { fileSrc, formatDurationSecs } from "@/hooks/useBloomBackend"
 import type { EditorSegment } from "@/lib/editorSegments"

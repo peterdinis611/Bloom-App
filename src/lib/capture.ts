@@ -102,7 +102,7 @@ export function qualityFrameRate(quality: Quality): number {
 /** Open a camera stream for the given device (video only). */
 export async function openCameraStream(deviceId: string | undefined, quality: Quality): Promise<MediaStream> {
   const { w, h } = DIMENSIONS[quality]
-  return navigator.mediaDevices.getUserMedia({
+  const preferred: MediaStreamConstraints = {
     video: {
       deviceId: deviceId ? { ideal: deviceId } : undefined,
       width: { ideal: w },
@@ -110,7 +110,20 @@ export async function openCameraStream(deviceId: string | undefined, quality: Qu
       frameRate: { ideal: qualityFrameRate(quality) },
     },
     audio: false,
-  })
+  }
+  try {
+    return await navigator.mediaDevices.getUserMedia(preferred)
+  } catch (first) {
+    // Retry without resolution/fps constraints — some WebKit builds reject ideal caps.
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        video: deviceId ? { deviceId: { ideal: deviceId } } : true,
+        audio: false,
+      })
+    } catch {
+      throw first
+    }
+  }
 }
 
 async function openMicStream(deviceId: string | undefined): Promise<MediaStream | null> {

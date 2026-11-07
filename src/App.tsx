@@ -22,7 +22,7 @@ import {
   listRecordings,
   recoverIncompleteSession,
 } from "@/hooks/useBloomBackend"
-import { SHARE_EXPORT_EVENT } from "@/hooks/useExportQueue"
+import { SHARE_EXPORT_EVENT } from "@/lib/shareExportEvent"
 import { IncompleteSessionsDialog } from "@/components/library/IncompleteSessionsDialog"
 import { ShareVideoSheet } from "@/components/library/ShareVideoSheet"
 import { localizeError } from "@/lib/i18n/localizeError"
@@ -32,7 +32,7 @@ import { isOnboardingDone } from "@/lib/onboarding"
 import { hasUnreadNews, markNewsSeen } from "@/lib/whatsNew"
 import { useToast } from "@/hooks/useToast"
 import { getSafeWebviewWindow } from "@/lib/windowControl"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
 
 function AppShell() {
   const sk = useMessages()

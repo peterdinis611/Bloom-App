@@ -1,6 +1,6 @@
 import { ask, message } from "@tauri-apps/plugin-dialog"
 import { check } from "@tauri-apps/plugin-updater"
-import { getMessagesSync } from "@/lib/i18n/I18nProvider"
+import { getMessagesSync } from "@/lib/i18n/messagesSync"
 
 export type UpdateCheckResult = "up-to-date" | "available" | "skipped" | "error"
 

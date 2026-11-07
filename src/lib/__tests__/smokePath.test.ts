@@ -23,9 +23,9 @@ describe("capture smoke path helpers", () => {
   })
 })
 
-describe("1.0 product strings", () => {
-  it("ships version 1.0.0 in UI", () => {
-    expect(sk.app.version).toBe("v1.0.0")
+describe("2.0 product strings", () => {
+  it("ships version 2.0.0 in UI", () => {
+    expect(sk.app.version).toBe("v2.0.0")
   })
 
   it("includes permissions onboarding step", () => {

@@ -58,7 +58,7 @@ function TechDisclosure({ details }: { details: PreviewTechDetails }) {
 }
 
 /** Calm idle stage — not an error card. */
-function IdleStage({ fault, details, compact }: PreviewFaultPanelProps) {
+function IdleStage({ fault }: Pick<PreviewFaultPanelProps, "fault">) {
   return (
     <div className="preview-idle absolute inset-0 z-20 flex flex-col items-center justify-center px-6 py-8">
       <div className="preview-idle__glow" aria-hidden />
@@ -83,12 +83,6 @@ function IdleStage({ fault, details, compact }: PreviewFaultPanelProps) {
             <span className="min-w-0">{fault.steps[0]}</span>
           </p>
         )}
-
-        {!compact && (
-          <div className="mt-6 w-full max-w-sm">
-            <TechDisclosure details={details} />
-          </div>
-        )}
       </div>
     </div>
   )
@@ -99,7 +93,7 @@ export function PreviewFaultPanel({ fault, details, compact }: PreviewFaultPanel
   const isSoftWarning = fault.recordingMayWork
 
   if (isInfo) {
-    return <IdleStage fault={fault} details={details} compact={compact} />
+    return <IdleStage fault={fault} />
   }
 
   return (

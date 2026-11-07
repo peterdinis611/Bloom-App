@@ -1,6 +1,6 @@
 import { Check, CircleAlert, FolderOpen, LoaderCircle, RotateCcw, Trash2, X } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
 import { useExportQueue } from "@/hooks/useExportQueue"
 import { formatBytes, revealInFinder } from "@/hooks/useBloomBackend"
 

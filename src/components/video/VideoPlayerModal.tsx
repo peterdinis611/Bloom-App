@@ -7,7 +7,7 @@ import {
   openWithSystemApp,
   revealInFinder,
 } from "@/hooks/useBloomBackend"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { BloomVideoPlayer } from "@/components/video/BloomVideoPlayer"
 import { ShareVideoSheet } from "@/components/library/ShareVideoSheet"

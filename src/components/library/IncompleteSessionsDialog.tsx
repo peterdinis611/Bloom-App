@@ -2,7 +2,7 @@ import { FileWarning, Loader2, RotateCcw, Trash2 } from "lucide-react"
 import type { IncompleteSession } from "@/types"
 import { formatBytes } from "@/hooks/useBloomBackend"
 import { Button } from "@/components/ui/button"
-import { useMessages } from "@/lib/i18n/I18nProvider"
+import { useMessages } from "@/lib/i18n/i18nContext"
 import {
   Dialog,
   DialogContent,
