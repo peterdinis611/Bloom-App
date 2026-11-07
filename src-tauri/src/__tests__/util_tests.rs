@@ -27,6 +27,7 @@ fn sample_meta(id: &str, filename: &str, created_at: &str) -> RecordingMeta {
         tags: vec![],
         folder: String::new(),
         notes: String::new(),
+        chapters: vec![],
     }
 }
 

@@ -163,6 +163,7 @@ pub(crate) fn write_output_sidecar(
         tags: vec![],
         folder: base.as_ref().map(|m| m.folder.clone()).unwrap_or_default(),
         notes: base.as_ref().map(|m| m.notes.clone()).unwrap_or_default(),
+        chapters: vec![],
     };
 
     if let Ok(json) = serde_json::to_string_pretty(&meta) {

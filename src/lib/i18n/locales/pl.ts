@@ -101,6 +101,8 @@ export const pl: Messages = {
       `Dostępna jest wersja Bloom ${version}. Pobrać i zainstalować teraz?`,
     installed: "Aktualizacja zainstalowana. Uruchom ponownie Bloom, aby ją zastosować.",
     upToDate: "Masz najnowszą wersję",
+    pubkeyNotConfigured:
+      "Automatyczne aktualizacje nie są skonfigurowane (brak prawidłowego klucza minisign w tauri.conf.json). Zobacz docs/release.md.",
   },
   errors: {
     unknown: "Nieznany błąd",
@@ -823,6 +825,12 @@ export const pl: Messages = {
       yesterday: (time: string) => `Wczoraj, ${time}`,
       daysAgo: (days: number) =>
         `${days} ${days === 1 ? "dzień" : "dni"} temu`,
+    },
+    backupReminder: {
+      title: "Czas na kopię zapasową biblioteki",
+      body: "Minęło sporo czasu od ostatniej kopii. Skopiuj filmy i metadane do bezpiecznego folderu.",
+      action: "Utwórz kopię",
+      dismiss: "Później",
     },
     ffmpeg: {
       ready: "ffmpeg gotowy · optymalizacja i miniatury",

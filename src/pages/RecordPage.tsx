@@ -743,6 +743,10 @@ export function RecordPage({
       const preset = findPreset(appSettings.recording.activePresetId, appSettings.recording.presets)
       if (preset) applyPreset(preset)
     }).then((fn) => unsubs.push(fn))
+    // Rust watchdog (max duration / idle) — works with minimized window / tray.
+    listen<{ reason: string }>("recording-auto-stop", () => {
+      void stopRecordingRef.current()
+    }).then((fn) => unsubs.push(fn))
     return () => { unsubs.forEach((fn) => fn()) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appSettings.recording.activePresetId])

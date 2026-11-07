@@ -115,9 +115,7 @@ pub fn optimize_video(
     } else {
         build_output_path(&options, &input)
     };
-    let hw_h264 = videotoolbox_available(&ffmpeg);
-    let hw_hevc = hevc_videotoolbox_available(&ffmpeg);
-    let nvenc = nvenc_available(&ffmpeg) && !hw_h264;
+    let (hw_h264, hw_hevc, nvenc) = resolve_hw_flags(&app, &ffmpeg);
     let args = build_args(
         &options,
         &options.input_path,
@@ -337,6 +335,7 @@ pub(crate) fn register_new_output(
         tags: base.tags.clone(),
         folder: base.folder.clone(),
         notes: String::new(),
+        chapters: vec![],
     };
     let meta_path = meta_path_for(output);
     let json = serde_json::to_string_pretty(&meta).map_err(|e| format!("Serialise error: {e}"))?;

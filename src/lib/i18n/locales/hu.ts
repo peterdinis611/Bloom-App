@@ -92,6 +92,8 @@ export const hu: Messages = {
       `Elérhető a Bloom ${version}. Letöltöd és telepíted most?`,
     installed: "A frissítés telepítve. Indítsd újra a Bloomot a használathoz.",
     upToDate: "A legújabb verziót használod",
+    pubkeyNotConfigured:
+      "Az automatikus frissítések nincsenek beállítva (hiányzik érvényes minisign pubkey a tauri.conf.json-ban). Lásd: docs/release.md.",
   },
   errors: {
     unknown: "Ismeretlen hiba",
@@ -792,6 +794,12 @@ export const hu: Messages = {
       today: (time: string) => `Ma, ${time}`,
       yesterday: (time: string) => `Tegnap, ${time}`,
       daysAgo: (days: number) => (days === 1 ? "1 napja" : `${days} napja`),
+    },
+    backupReminder: {
+      title: "Ideje menteni a könyvtárat",
+      body: "Rég készítettél biztonsági mentést. Másold a videókat és metaadatokat egy biztonságos mappába.",
+      action: "Mentés készítése",
+      dismiss: "Később",
     },
     ffmpeg: {
       ready: "ffmpeg kész · optimalizálás és indexképek",

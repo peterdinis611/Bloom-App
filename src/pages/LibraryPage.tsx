@@ -41,6 +41,7 @@ import {
   Combine,
   MousePointerClick,
   Bookmark,
+  Archive,
 } from "lucide-react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { getCurrentWindow } from "@tauri-apps/api/window"
@@ -75,6 +76,7 @@ import {
   repairSidecars,
   onLibraryChanged,
   onAutoOptimizeDone,
+  createLibraryBackup,
 } from "@/hooks/useBloomBackend"
 import { useExportQueue } from "@/hooks/useExportQueue"
 import { VideoPlayerModal } from "@/components/video/VideoPlayerModal"
@@ -105,6 +107,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useToast } from "@/hooks/useToast"
 import { useSettings } from "@/hooks/useSettings"
+import { isBackupReminderDue } from "@/lib/backupReminder"
 import { localizeError } from "@/lib/i18n/localizeError"
 import {
   entryInFolder,
@@ -569,7 +572,7 @@ export function LibraryPage({
   onEditRecordingHandled,
 }: LibraryPageProps) {
   const sk = useMessages()
-  const { settings } = useSettings()
+  const { settings, updateFolders } = useSettings()
   const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
   const [entries, setEntries] = useState<RecordingEntry[]>([])
   const [stats, setStats] = useState<LibraryStats | null>(null)
@@ -612,6 +615,15 @@ export function LibraryPage({
   const [shareEntry, setShareEntry] = useState<RecordingEntry | null>(null)
   const [concatBusy, setConcatBusy] = useState(false)
   const [maintBusy, setMaintBusy] = useState<"thumbs" | "repair" | null>(null)
+  const [backupReminderDismissed, setBackupReminderDismissed] = useState(false)
+  const [backupFromBannerBusy, setBackupFromBannerBusy] = useState(false)
+
+  const showBackupReminder =
+    !backupReminderDismissed &&
+    isBackupReminderDue(
+      settings.folders.lastBackupAt,
+      settings.folders.backupReminderDays,
+    )
 
   const recheckFfmpeg = useCallback(async (showToast = false) => {
     setCheckingFfmpeg(true)
@@ -1145,6 +1157,23 @@ export function LibraryPage({
     }
   }
 
+  const handleBackupFromReminder = useCallback(async () => {
+    setBackupFromBannerBusy(true)
+    try {
+      const result = await createLibraryBackup()
+      updateFolders({ lastBackupAt: new Date().toISOString() })
+      setBackupReminderDismissed(true)
+      toastSuccess({
+        title: sk.settings.backupCreated,
+        description: sk.settings.backupCreatedHint(result.files, formatBytes(result.bytes)),
+      })
+    } catch (e) {
+      toastError({ title: sk.toast.actionFailed, description: localizeError(e) })
+    } finally {
+      setBackupFromBannerBusy(false)
+    }
+  }, [updateFolders, toastSuccess, toastError, sk])
+
   const handleRepair = async () => {
     setMaintBusy("repair")
     try {
@@ -1263,6 +1292,34 @@ export function LibraryPage({
           <StatPill icon={Film} label={sk.library.stats.clips} value={String(stats.total_recordings)} />
           <StatPill icon={Clock} label={sk.library.stats.duration} value={formatDurationSecs(stats.total_duration_secs)} />
           <StatPill icon={HardDrive} label={sk.library.stats.size} value={formatBytes(stats.total_size_bytes)} />
+        </div>
+      )}
+
+      {showBackupReminder && (
+        <div className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-3">
+          <Archive className="mt-0.5 size-4 shrink-0 text-primary" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-bold text-foreground">{sk.library.backupReminder.title}</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">{sk.library.backupReminder.body}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { void handleBackupFromReminder() }}
+                disabled={backupFromBannerBusy}
+                className="flex shrink-0 items-center gap-1 rounded-md border border-primary/40 bg-primary/15 px-2 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/25 disabled:opacity-40"
+              >
+                <Download className={cn("size-3", backupFromBannerBusy && "animate-pulse")} />
+                {sk.library.backupReminder.action}
+              </button>
+              <button
+                type="button"
+                onClick={() => setBackupReminderDismissed(true)}
+                className="rounded-md border border-border/60 px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {sk.library.backupReminder.dismiss}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

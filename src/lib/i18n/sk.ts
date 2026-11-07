@@ -91,6 +91,8 @@ export const sk = {
       `Je dostupná Bloom ${version}. Stiahnuť a nainštalovať teraz?`,
     installed: "Aktualizácia je nainštalovaná. Reštartuj Bloom, aby sa prejavila.",
     upToDate: "Používaš najnovšiu verziu",
+    pubkeyNotConfigured:
+      "Automatické aktualizácie nie sú nastavené (v tauri.conf.json chýba platný minisign pubkey). Pozri docs/release.md.",
   },
   errors: {
     unknown: "Neznáma chyba",
@@ -789,6 +791,12 @@ export const sk = {
       today: (time: string) => `Dnes, ${time}`,
       yesterday: (time: string) => `Včera, ${time}`,
       daysAgo: (days: number) => `Pred ${days} ${days === 1 ? "dňom" : "dňami"}`,
+    },
+    backupReminder: {
+      title: "Čas na zálohu knižnice",
+      body: "Už dlhšie si nevytvoril zálohu. Skopíruj videá a metadáta do bezpečného priečinka.",
+      action: "Vytvoriť zálohu",
+      dismiss: "Neskôr",
     },
     ffmpeg: {
       ready: "ffmpeg pripravený · optimalizácia a miniatúry",

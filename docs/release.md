@@ -23,13 +23,16 @@ Synchronizuj vždy tieto 4 miesta na rovnakú verziu:
 ## Updater (minisign)
 
 ```bash
-# vygeneruj kľúče
-npm run tauri signer generate -w ~/.tauri/bloom.key
+# vygeneruj kľúče (alebo: bash scripts/generate-updater-keys.sh)
+npx tauri signer generate -w ~/.tauri/bloom.key
 
 # verejný kľúč → tauri.conf.json → plugins.updater.pubkey
+#   (nahraď REPLACE_WITH_MINISIGN_PUBLIC_KEY — inak Settings → Aktualizácie ukáže varovanie)
 # súkromný kľúč → GitHub secret TAURI_SIGNING_PRIVATE_KEY
 # heslo → TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 ```
+
+FE updater používa `@tauri-apps/plugin-dialog` (nie `window.confirm`).
 
 Endpoint (upravený v `tauri.conf.json`):
 
@@ -41,11 +44,12 @@ Po release action vytvorí updater artefakty (`.sig` + `latest.json`).
 
 ## ffmpeg (first-run)
 
-Bloom **nebundluje** ffmpeg (veľkosť + notarizácia). Flow 1.0:
+Bloom **nebundluje** ffmpeg (veľkosť + notarizácia). Flow:
 
-1. Onboarding krok „ffmpeg“ — check / `brew install`
-2. Knižnica — banner + auto-install ak je Homebrew
-3. Lokalizované chybové hlášky cez `localizeError`
+1. Onboarding krok „ffmpeg“ — check / auto-install (Homebrew / winget)
+2. Knižnica — banner + auto-install
+3. Nastavenia → App info — Check / Install
+4. Lokalizované chybové hlášky cez `localizeError` (+ `ffmpeg_missing` kódy)
 
 Voliteľné neskôr: stiahnuť static ffmpeg do Application Support.
 

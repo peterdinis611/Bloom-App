@@ -66,10 +66,14 @@ import {
   getVideoInfo,
   getClickTrack,
   applyClickSpotlight,
+  updateRecordingMeta,
+  copyText,
 } from "@/hooks/useBloomBackend"
 import { useSettings } from "@/hooks/useSettings"
 import { useToast } from "@/hooks/useToast"
 import { localizeError } from "@/lib/i18n/localizeError"
+import { clearEditorDraft, loadEditorDraft, saveEditorDraft } from "@/lib/editorDraft"
+import { chaptersToSubtitleCards, chaptersToYouTube } from "@/lib/editorChapters"
 
 type Step = "preview" | "trim" | "export" | "queued"
 type SaveMode = "copy" | "replace"
@@ -218,6 +222,7 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
   const [chapters, setChapters] = useState<EditorChapter[]>([])
   const [peaks, setPeaks] = useState<number[]>([])
   const [audioBusy, setAudioBusy] = useState(false)
+  const draftLoadedRef = useRef(false)
 
   const active = segments[activeSegment] ?? segments[0]!
   const multiClip = segments.length > 1
@@ -265,16 +270,51 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
   }, [])
 
   useEffect(() => {
-    getVideoInfo(entry.path)
-      .then((i) => {
+    let alive = true
+    draftLoadedRef.current = false
+    void (async () => {
+      try {
+        const [i, draft] = await Promise.all([
+          getVideoInfo(entry.path),
+          loadEditorDraft(entry.meta.id),
+        ])
+        if (!alive) return
         setInfo(i)
         setDuration(i.duration_secs)
-        const segs = defaultSegments(i.duration_secs)
+        const segs =
+          draft?.segments?.length ? draft.segments : defaultSegments(i.duration_secs)
         setSegments(segs)
         syncFieldsFromSegment(segs[0]!)
-      })
-      .catch(() => {})
-  }, [entry.path, syncFieldsFromSegment])
+        if (draft?.crop) setCrop(draft.crop)
+        if (draft?.chapters?.length) {
+          setChapters(
+            draft.chapters.map((c) => ({ id: c.id, t: c.time, label: c.title })),
+          )
+        } else if (entry.meta.chapters?.length) {
+          setChapters(
+            entry.meta.chapters.map((c) => ({ id: c.id, t: c.time, label: c.title })),
+          )
+        }
+      } catch {
+        /* keep editor usable without probe */
+      } finally {
+        if (alive) draftLoadedRef.current = true
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [entry.path, entry.meta.id, syncFieldsFromSegment])
+
+  useEffect(() => {
+    if (!draftLoadedRef.current) return
+    const timer = window.setTimeout(() => {
+      const mapped = chapters.map((c) => ({ id: c.id, time: c.t, title: c.label }))
+      void saveEditorDraft(entry.meta.id, { segments, crop, chapters: mapped })
+      void updateRecordingMeta(entry.meta.id, { chapters: mapped }).catch(() => {})
+    }, 600)
+    return () => window.clearTimeout(timer)
+  }, [entry.meta.id, segments, crop, chapters])
 
   // Click track (screen recordings) — studio bay + filmstrip lane.
   useEffect(() => {
@@ -476,9 +516,12 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
 
   const buildExportJobs = useCallback(() => {
     const stem = fileStem(entry.path)
+    const chapterCards = chaptersToSubtitleCards(
+      chapters.map((c) => ({ id: c.id, time: c.t, title: c.label })),
+    )
     const subtitleOpts = {
       srt_path: baseOptions.srt_path,
-      subtitle_cards: baseOptions.subtitle_cards,
+      subtitle_cards: [...(baseOptions.subtitle_cards ?? []), ...chapterCards],
     }
     if (multiClip && partsMode === "separate") {
       return segments.map((seg, i) => ({
@@ -520,15 +563,22 @@ export function EditorModal({ entry, onClose, onComplete }: EditorModalProps) {
         ...subtitleOpts,
       } satisfies OptimizeOptions,
     }]
-  }, [entry, baseOptions, multiClip, partsMode, joinOutput, segments, active])
+  }, [entry, baseOptions, multiClip, partsMode, joinOutput, segments, active, chapters])
 
   const startExport = useCallback(() => {
     const jobs = buildExportJobs()
+    const mapped = chapters.map((c) => ({ id: c.id, time: c.t, title: c.label }))
+    void updateRecordingMeta(entry.meta.id, { chapters: mapped }).catch(() => {})
+    const yt = chaptersToYouTube(mapped)
+    if (yt.trim()) {
+      void copyText(yt).catch(() => {})
+    }
+    void clearEditorDraft(entry.meta.id)
     enqueue(jobs)
     setQueuedCount(jobs.length)
     onComplete()
     setStep("queued")
-  }, [buildExportJobs, enqueue, onComplete])
+  }, [buildExportJobs, enqueue, onComplete, entry.meta.id, chapters])
 
   const clipDuration = multiClip ? totalSegmentsDuration(segments) : segmentDuration(active)
   const showStudio = step === "preview" || step === "trim" || step === "export"

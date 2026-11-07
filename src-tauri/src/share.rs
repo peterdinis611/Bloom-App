@@ -16,9 +16,10 @@ use tauri::AppHandle;
 use crate::types::{ShareMode, ShareResult};
 
 pub fn share_file(app: &AppHandle, path: &str) -> Result<ShareResult, String> {
+    use crate::error::{coded, codes};
     let path_obj = Path::new(path);
     if !path_obj.exists() {
-        return Err("Súbor neexistuje.".into());
+        return Err(coded(codes::VIDEO_MISSING, "Súbor neexistuje."));
     }
 
     #[cfg(target_os = "macos")]
@@ -60,9 +61,12 @@ fn share_macos(app: &AppHandle, path: &str) -> Result<(), String> {
     use tauri::Manager;
 
     let path = path.to_string();
-    let window = app
-        .get_webview_window("main")
-        .ok_or_else(|| "Hlavné okno sa nenašlo.".to_string())?;
+    let window = app.get_webview_window("main").ok_or_else(|| {
+        crate::error::coded(
+            crate::error::codes::WINDOW_MISSING,
+            "Hlavné okno sa nenašlo.",
+        )
+    })?;
 
     window
         .with_webview(move |webview| {

@@ -14,6 +14,7 @@ mod i18n;
 mod library;
 mod naming;
 mod post_export;
+mod recording_watchdog;
 mod session;
 mod share;
 mod system;
@@ -36,6 +37,7 @@ pub fn run() {
         .manage(video::VideoJobs::default())
         .manage(export_queue::ExportQueue::default())
         .manage(export_queue::JobOutputs::default())
+        .manage(recording_watchdog::WatchdogControl::default())
         .manage(cursor::CursorTracker::default())
         .manage(cursor::ClickTracker::default())
         .manage(tray::RecordingTrayState::default())
@@ -56,6 +58,7 @@ pub fn run() {
             if let Err(e) = watcher::start_library_watcher(app.handle()) {
                 eprintln!("Bloom: library watcher not started: {e}");
             }
+            export_queue::restore_persisted_queue(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -144,6 +147,7 @@ pub fn run() {
             export_queue::cancel_export_queue_item,
             export_queue::list_export_queue,
             export_queue::clear_export_queue_finished,
+            export_queue::retry_export_queue_item,
             post_export::get_integrations_config,
             post_export::set_integrations_config,
             post_export::get_export_defaults_config,

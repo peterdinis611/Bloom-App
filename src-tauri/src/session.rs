@@ -144,6 +144,7 @@ pub(crate) fn open_session(
         tags: vec![],
         folder: default_folder,
         notes: String::new(),
+        chapters: vec![],
     };
 
     // Marker lets us offer recovery if the app dies mid-recording.
@@ -426,6 +427,7 @@ pub(crate) fn recover_incomplete_session(
             tags: vec![],
             folder: String::new(),
             notes: String::new(),
+            chapters: vec![],
         });
     meta.filename = filename;
 

@@ -148,13 +148,19 @@ fn move_recording_files(
 #[tauri::command]
 pub(crate) fn get_recording(app: tauri::AppHandle, id: String) -> Result<RecordingEntry, String> {
     let dir = bloom_dir(&app)?;
-    find_recording(&dir, &id).ok_or_else(|| format!("Recording {id} not found"))
+    find_recording(&dir, &id).ok_or_else(|| crate::error::coded(
+            crate::error::codes::RECORDING_NOT_FOUND,
+            format!("Recording {id} not found"),
+        ))
 }
 
 #[tauri::command]
 pub(crate) fn delete_recording(app: tauri::AppHandle, id: String) -> Result<(), String> {
     let dir = bloom_dir(&app)?;
-    let entry = find_recording(&dir, &id).ok_or_else(|| format!("Recording {id} not found"))?;
+    let entry = find_recording(&dir, &id).ok_or_else(|| crate::error::coded(
+            crate::error::codes::RECORDING_NOT_FOUND,
+            format!("Recording {id} not found"),
+        ))?;
 
     fs::remove_file(&entry.path).map_err(|e| format!("Cannot delete video: {e}"))?;
     let _ = fs::remove_file(&entry.meta_path); // best-effort
@@ -171,7 +177,10 @@ pub(crate) fn rename_recording(
     new_title: String,
 ) -> Result<RecordingMeta, String> {
     let dir = bloom_dir(&app)?;
-    let entry = find_recording(&dir, &id).ok_or_else(|| format!("Recording {id} not found"))?;
+    let entry = find_recording(&dir, &id).ok_or_else(|| crate::error::coded(
+            crate::error::codes::RECORDING_NOT_FOUND,
+            format!("Recording {id} not found"),
+        ))?;
 
     let mut meta = entry.meta;
     meta.title = new_title.trim().to_owned();
@@ -188,6 +197,7 @@ pub struct RecordingMetaPatch {
     pub tags: Option<Vec<String>>,
     pub folder: Option<String>,
     pub notes: Option<String>,
+    pub chapters: Option<Vec<crate::types::ChapterMarker>>,
 }
 
 #[tauri::command]
@@ -197,7 +207,10 @@ pub(crate) fn update_recording_meta(
     patch: RecordingMetaPatch,
 ) -> Result<RecordingMeta, String> {
     let dir = bloom_dir(&app)?;
-    let entry = find_recording(&dir, &id).ok_or_else(|| format!("Recording {id} not found"))?;
+    let entry = find_recording(&dir, &id).ok_or_else(|| crate::error::coded(
+            crate::error::codes::RECORDING_NOT_FOUND,
+            format!("Recording {id} not found"),
+        ))?;
 
     let mut meta = entry.meta;
     let mut meta_path = PathBuf::from(&entry.meta_path);
@@ -210,6 +223,9 @@ pub(crate) fn update_recording_meta(
     }
     if let Some(notes) = patch.notes {
         meta.notes = notes;
+    }
+    if let Some(chapters) = patch.chapters {
+        meta.chapters = chapters;
     }
     if let Some(folder) = patch.folder {
         let new_folder = sanitize_folder_name(&folder);
@@ -277,7 +293,10 @@ pub(crate) fn delete_all_recordings(app: tauri::AppHandle) -> Result<u32, String
 #[tauri::command]
 pub(crate) fn share_recording(app: tauri::AppHandle, id: String) -> Result<ShareResult, String> {
     let dir = bloom_dir(&app)?;
-    let entry = find_recording(&dir, &id).ok_or_else(|| format!("Recording {id} not found"))?;
+    let entry = find_recording(&dir, &id).ok_or_else(|| crate::error::coded(
+            crate::error::codes::RECORDING_NOT_FOUND,
+            format!("Recording {id} not found"),
+        ))?;
     share::share_file(&app, &entry.path)
 }
 
@@ -468,6 +487,7 @@ pub(crate) fn import_recording(
         tags: Vec::new(),
         folder: String::new(),
         notes: String::new(),
+        chapters: vec![],
     };
 
     let meta_path = meta_path_for(&dest);
@@ -543,6 +563,7 @@ pub(crate) fn ensure_demo_recording(app: tauri::AppHandle) -> Result<RecordingEn
         tags: vec!["demo".to_string()],
         folder: String::new(),
         notes: DEMO_NOTES_MARKER.to_string(),
+        chapters: vec![],
     };
 
     let meta_path = meta_path_for(&dest);
@@ -806,6 +827,7 @@ fn repair_sidecars_blocking(app: tauri::AppHandle) -> Result<RepairSidecarsResul
             tags: Vec::new(),
             folder,
             notes: String::new(),
+            chapters: vec![],
         };
         let json = serde_json::to_string_pretty(&meta).map_err(|e| format!("Serialise error: {e}"))?;
         if fs::write(meta_path_for(&video), json).is_ok() {

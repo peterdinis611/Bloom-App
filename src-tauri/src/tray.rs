@@ -106,6 +106,12 @@ pub fn set_recording_state(
         let s = strings(loc);
         let _ = tray.set_tooltip(Some(tooltip_text(next, &s)));
     }
+
+    // Global max-duration / idle-stop (works with minimized window / tray).
+    if next.active && !next.paused {
+        crate::recording_watchdog::ensure_watchdog(&app);
+    }
+
     Ok(())
 }
 

@@ -293,11 +293,18 @@ export async function renameRecording(id: string, newTitle: string): Promise<Rec
   return invoke<RecordingMeta>("rename_recording", { id, newTitle })
 }
 
+export interface ChapterMarker {
+  id: string
+  time: number
+  title: string
+}
+
 export interface RecordingMetaPatch {
   starred?: boolean
   tags?: string[]
   folder?: string
   notes?: string
+  chapters?: ChapterMarker[]
 }
 
 export async function updateRecordingMeta(id: string, patch: RecordingMetaPatch): Promise<RecordingMeta> {
@@ -580,6 +587,8 @@ export interface ExportQueueItemDto {
   jobId?: string | null
   error?: string | null
   outputPath?: string | null
+  outputSize?: number | null
+  options?: OptimizeOptions
 }
 
 /** Enqueue exports into the Rust worker (no FE pump required). */
@@ -604,6 +613,10 @@ export async function listExportQueue(): Promise<ExportQueueItemDto[]> {
 
 export async function clearExportQueueFinished(): Promise<void> {
   return invoke<void>("clear_export_queue_finished")
+}
+
+export async function retryExportQueueItem(id: string): Promise<ExportQueueItemDto> {
+  return invoke<ExportQueueItemDto>("retry_export_queue_item", { id })
 }
 
 export async function onExportQueueChanged(

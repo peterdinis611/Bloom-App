@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
+  chaptersToSrt,
   chaptersToSubtitleCards,
+  chaptersToYouTube,
   createChapter,
   sortChapters,
 } from "@/lib/editorChapters"
@@ -21,5 +23,23 @@ describe("editorChapters", () => {
       { text: "Intro", start_secs: 1.5, end_secs: 3.5 },
       { text: "Demo", start_secs: 8, end_secs: 10 },
     ])
+  })
+
+  it("maps chapters to SRT", () => {
+    const srt = chaptersToSrt([
+      createChapter(65.5, "Middle"),
+      createChapter(1, "Start"),
+    ])
+    expect(srt).toBe(
+      "1\n00:00:01,000 --> 00:00:03,400\nStart\n\n2\n00:01:05,500 --> 00:01:07,900\nMiddle",
+    )
+  })
+
+  it("maps chapters to YouTube lines", () => {
+    const lines = chaptersToYouTube([
+      createChapter(3661, "Outro"),
+      createChapter(90, "Demo"),
+    ])
+    expect(lines).toBe("1:30 Demo\n1:01:01 Outro")
   })
 })

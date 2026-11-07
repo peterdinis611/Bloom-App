@@ -1,11 +1,12 @@
-import { Check, CircleAlert, LoaderCircle, Trash2, X } from "lucide-react"
+import { Check, CircleAlert, FolderOpen, LoaderCircle, RotateCcw, Trash2, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useMessages } from "@/lib/i18n/I18nProvider"
 import { useExportQueue } from "@/hooks/useExportQueue"
+import { formatBytes, revealInFinder } from "@/hooks/useBloomBackend"
 
 export function ExportQueuePanel() {
   const sk = useMessages()
-  const { items, activeCount, cancelItem, clearFinished } = useExportQueue()
+  const { items, activeCount, cancelItem, clearFinished, retryItem } = useExportQueue()
   const visible = items.length > 0
 
   if (!visible) return null
@@ -44,6 +45,33 @@ export function ExportQueuePanel() {
               <span className={cn("min-w-0 flex-1 truncate text-[10px]", item.status === "running" && "font-semibold text-foreground")}>
                 {item.label}
               </span>
+              {item.status === "done" && item.outputSize != null && item.outputSize > 0 && (
+                <span className="shrink-0 font-mono text-[9px] text-muted-foreground">
+                  {formatBytes(item.outputSize)}
+                </span>
+              )}
+              {item.status === "done" && item.outputPath && (
+                <button
+                  type="button"
+                  onClick={() => { void revealInFinder(item.outputPath!) }}
+                  className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+                  title={sk.library.actions.reveal}
+                  aria-label={sk.library.actions.reveal}
+                >
+                  <FolderOpen className="size-3" />
+                </button>
+              )}
+              {item.status === "error" && retryItem && (
+                <button
+                  type="button"
+                  onClick={() => retryItem(item.id)}
+                  className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+                  title={sk.video.retry}
+                  aria-label={sk.video.retry}
+                >
+                  <RotateCcw className="size-3" />
+                </button>
+              )}
               {(item.status === "pending" || item.status === "running") && (
                 <button
                   type="button"

@@ -41,6 +41,8 @@ import {
   setFilenameTemplate,
   setLibraryDirectory,
   setTrayRecentCount,
+  checkFfmpeg,
+  installFfmpeg,
   type AppInfo,
   type FilenamePreview,
 } from "@/hooks/useBloomBackend"
@@ -107,6 +109,8 @@ export function SettingsPage({
   const [trayBusy, setTrayBusy] = useState(false)
   const [purgeBusy, setPurgeBusy] = useState(false)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
+  const [checkingFfmpeg, setCheckingFfmpeg] = useState(false)
+  const [installingFfmpeg, setInstallingFfmpeg] = useState(false)
   const [migrateOnChoose, setMigrateOnChoose] = useState(true)
   const [autoOptimize, setAutoOptimize] = useState(false)
   const [diskMinDraft, setDiskMinDraft] = useState("")
@@ -129,6 +133,66 @@ export function SettingsPage({
     { id: "circle", label: sk.settings.tools.circle },
     { id: "eraser", label: sk.settings.tools.eraser },
   ]
+  const refreshAppInfo = useCallback(async () => {
+    try {
+      setAppInfo(await getAppInfo())
+    } catch {
+      setAppInfo(null)
+    }
+  }, [])
+
+  const handleRecheckFfmpeg = useCallback(async () => {
+    setCheckingFfmpeg(true)
+    try {
+      const status = await checkFfmpeg()
+      await refreshAppInfo()
+      if (status.available) {
+        toastSuccess({
+          title: sk.library.ffmpeg.toastInstalled,
+          description: status.version ?? sk.library.ffmpeg.toastInstalledBody,
+        })
+      } else {
+        toastError({
+          title: sk.library.ffmpeg.toastNotFound,
+          description: sk.library.ffmpeg.toastNotFoundBody,
+        })
+      }
+    } catch (e) {
+      toastError({
+        title: sk.library.ffmpeg.toastCheckFailed,
+        description: localizeError(e),
+      })
+    } finally {
+      setCheckingFfmpeg(false)
+    }
+  }, [refreshAppInfo, toastSuccess, toastError, sk])
+
+  const handleInstallFfmpeg = useCallback(async () => {
+    setInstallingFfmpeg(true)
+    try {
+      const result = await installFfmpeg()
+      await refreshAppInfo()
+      if (result.success) {
+        toastSuccess({
+          title: sk.library.ffmpeg.toastInstalled,
+          description: result.message,
+        })
+      } else {
+        toastError({
+          title: sk.library.ffmpeg.toastInstallFailed,
+          description: result.message,
+        })
+      }
+    } catch (e) {
+      toastError({
+        title: sk.library.ffmpeg.toastInstallFailed,
+        description: localizeError(e),
+      })
+    } finally {
+      setInstallingFfmpeg(false)
+    }
+  }, [refreshAppInfo, toastSuccess, toastError, sk])
+
   const handleCheckUpdates = async () => {
     setUpdateBusy(true)
     try {
@@ -1243,11 +1307,35 @@ export function SettingsPage({
           </MacRow>
           {appInfo && (
             <MacRow label={sk.settings.appInfo} hint={sk.settings.appInfoHint}>
-              <p className="max-w-[min(100%,18rem)] text-right font-mono text-[10px] text-muted-foreground">
-                {appInfo.name} {appInfo.version} · {appInfo.platform}
-                <br />
-                ffmpeg {appInfo.ffmpegAvailable ? (appInfo.ffmpegVersion ?? "ok") : "—"}
-              </p>
+              <div className="flex max-w-[min(100%,18rem)] flex-col items-end gap-2">
+                <p className="text-right font-mono text-[10px] text-muted-foreground">
+                  {appInfo.name} {appInfo.version} · {appInfo.platform}
+                  <br />
+                  ffmpeg {appInfo.ffmpegAvailable ? (appInfo.ffmpegVersion ?? "ok") : "—"}
+                </p>
+                <div className="flex flex-wrap justify-end gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={checkingFfmpeg || installingFfmpeg}
+                    onClick={() => { void handleRecheckFfmpeg() }}
+                    className="text-[11px]"
+                  >
+                    <RefreshCw className={cn("size-3", checkingFfmpeg && "animate-spin")} />
+                    {sk.library.ffmpeg.recheck}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={checkingFfmpeg || installingFfmpeg || appInfo.ffmpegAvailable}
+                    onClick={() => { void handleInstallFfmpeg() }}
+                    className="text-[11px]"
+                  >
+                    <Sparkles className={cn("size-3", installingFfmpeg && "animate-pulse")} />
+                    {installingFfmpeg ? sk.library.ffmpeg.installing : sk.library.ffmpeg.install}
+                  </Button>
+                </div>
+              </div>
             </MacRow>
           )}
         </MacGroup>

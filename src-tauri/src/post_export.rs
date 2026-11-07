@@ -31,15 +31,57 @@ pub(crate) fn run_post_export(app: &tauri::AppHandle, path: &str, title: &str, j
         notify_webhooks(&integ, title, path);
     }
 
+    // System notification even when the main window is closed / minimized.
+    show_export_notification(title, path);
+
+    // Headless native share (macOS sheet / Win clipboard / Linux) without FE.
+    if integ.auto_share_after_export {
+        let _ = crate::share::share_file(app, path);
+    }
+
     let _ = app.emit(
         "export-finished",
         ExportFinishedEvent {
             path: path.to_string(),
             title: title.to_string(),
             job_id,
+            // FE may still open ShareVideoSheet as a secondary UX when window is open.
             auto_share: integ.auto_share_after_export,
         },
     );
+}
+
+fn show_export_notification(title: &str, path: &str) {
+    let body = format!("{title}\n{path}");
+    #[cfg(target_os = "macos")]
+    {
+        let script = format!(
+            "display notification \"{}\" with title \"Bloom\" subtitle \"Export hotový\"",
+            body.replace('\\', "\\\\").replace('"', "\\\"")
+        );
+        let _ = Command::new("osascript").args(["-e", &script]).status();
+        return;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!(
+                    "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; Write-Output '{}'",
+                    body.replace('\'', "''")
+                ),
+            ])
+            .status();
+        return;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let _ = Command::new("notify-send")
+            .args(["Bloom", &format!("Export hotový: {title}")])
+            .status();
+    }
 }
 
 fn open_path(path: &str) -> Result<(), String> {

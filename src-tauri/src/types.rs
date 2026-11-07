@@ -25,6 +25,16 @@ pub struct RecordingMeta {
     /// Free-form user notes for this recording.
     #[serde(default)]
     pub notes: String,
+    /// Named chapter markers (`time` in seconds).
+    #[serde(default)]
+    pub chapters: Vec<ChapterMarker>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChapterMarker {
+    pub id: String,
+    pub time: f64,
+    pub title: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

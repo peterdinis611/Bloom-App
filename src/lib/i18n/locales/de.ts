@@ -92,6 +92,8 @@ export const de: Messages = {
       `Bloom ${version} ist verfügbar. Jetzt herunterladen und installieren?`,
     installed: "Update installiert. Starte Bloom neu, damit es wirksam wird.",
     upToDate: "Du verwendest die neueste Version",
+    pubkeyNotConfigured:
+      "Automatische Updates sind nicht eingerichtet (fehlender gültiger minisign-Public-Key in tauri.conf.json). Siehe docs/release.md.",
   },
   errors: {
     unknown: "Unbekannter Fehler",
@@ -789,6 +791,12 @@ export const de: Messages = {
       today: (time: string) => `Heute, ${time}`,
       yesterday: (time: string) => `Gestern, ${time}`,
       daysAgo: (days: number) => `Vor ${days} ${days === 1 ? "Tag" : "Tagen"}`,
+    },
+    backupReminder: {
+      title: "Zeit für ein Bibliotheks-Backup",
+      body: "Seit der letzten Sicherung ist viel Zeit vergangen. Kopiere Videos und Metadaten in einen sicheren Ordner.",
+      action: "Backup erstellen",
+      dismiss: "Später",
     },
     ffmpeg: {
       ready: "ffmpeg bereit · Optimierung und Miniaturansichten",

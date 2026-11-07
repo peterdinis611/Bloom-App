@@ -62,6 +62,8 @@ export interface RecordingMeta {
   folder?: string
   /** Free-form user notes */
   notes?: string
+  /** Named chapter markers (seconds). */
+  chapters?: { id: string; time: number; title: string }[]
 }
 
 /** Mirrors RecordingEntry in Rust */

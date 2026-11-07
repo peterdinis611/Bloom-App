@@ -15,6 +15,7 @@ import {
   onExportFinished,
   onExportQueueChanged,
   onOptimizeProgress,
+  retryExportQueueItem,
   type ExportQueueItemDto,
 } from "@/hooks/useBloomBackend"
 import { useToast } from "@/hooks/useToast"
@@ -53,6 +54,7 @@ interface ExportQueueContextValue {
   enqueueBatch: (jobs: EnqueueJob[]) => Promise<void>
   cancelItem: (id: string) => void
   clearFinished: () => void
+  retryItem: (id: string) => void
 }
 
 const ExportQueueContext = createContext<ExportQueueContextValue | null>(null)
@@ -65,13 +67,16 @@ function mapDto(
   return {
     id: dto.id,
     label: dto.label,
-    options: prev?.options ?? ({ input_path: "", preset: "medium", resolution: "original", format: "mp4" } as OptimizeOptions),
+    options:
+      dto.options ??
+      prev?.options ??
+      ({ input_path: "", preset: "medium", resolution: "original", format: "mp4" } as OptimizeOptions),
     status,
     percent: dto.percent,
     error: dto.error ?? undefined,
     outputPath: dto.outputPath ?? undefined,
     jobId: dto.jobId ?? undefined,
-    outputSize: prev?.outputSize,
+    outputSize: dto.outputSize ?? prev?.outputSize,
   }
 }
 
@@ -160,11 +165,18 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let unlisten: (() => void) | undefined
     onExportFinished((p) => {
-      if (p.auto_share && p.path) {
-        window.dispatchEvent(
-          new CustomEvent(SHARE_EXPORT_EVENT, { detail: { path: p.path } }),
-        )
-      }
+      if (!p.auto_share || !p.path) return
+      // Native share already ran in Rust; open FE sheet only when user prefers it
+      // and the main window is visible (fallback / richer UI).
+      void import("@/hooks/useSettings").then(({ readStoredSettings }) =>
+        readStoredSettings().then((s) => {
+          if (s.integrations.preferNativeShare) return
+          if (document.visibilityState !== "visible") return
+          window.dispatchEvent(
+            new CustomEvent(SHARE_EXPORT_EVENT, { detail: { path: p.path } }),
+          )
+        }),
+      )
     }).then((fn) => {
       unlisten = fn
     })
@@ -236,13 +248,31 @@ export function ExportQueueProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
+  const retryItem = useCallback(
+    (id: string) => {
+      const sk = getMessagesSync()
+      void retryExportQueueItem(id)
+        .then((dto) => {
+          setItems((prev) => {
+            const without = prev.filter((i) => i.id !== id)
+            return [...without, mapDto(dto, prev.find((i) => i.id === id))]
+          })
+          info({ title: sk.toast.exportQueued(1), description: sk.toast.exportQueuedBody })
+        })
+        .catch((e) => {
+          error({ title: sk.toast.exportFailed, description: localizeError(e) })
+        })
+    },
+    [info, error],
+  )
+
   const activeCount = items.filter(
     (i) => i.status === "pending" || i.status === "running",
   ).length
 
   return (
     <ExportQueueContext.Provider
-      value={{ items, activeCount, enqueue, enqueueBatch, cancelItem, clearFinished }}
+      value={{ items, activeCount, enqueue, enqueueBatch, cancelItem, clearFinished, retryItem }}
     >
       {children}
     </ExportQueueContext.Provider>
